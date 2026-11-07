@@ -57,23 +57,23 @@ impl AzamApp {
         if self.refuse_mirror(&seg.piece) {
             return;
         }
-        let mut added = false;
+        let mut result = Err(azam_doc::DartError::NoSuchSegment);
         self.session.edit("Add Dart", |p| {
-            added = azam_doc::add_dart(
+            result = azam_doc::add_dart(
                 p,
                 &seg.piece,
                 &seg.segment,
                 seg.t,
                 azam_doc::DEFAULT_DART_WIDTH_MM,
                 azam_doc::DEFAULT_DART_DEPTH_MM,
-            )
-            .is_some();
-            azam_doc::sync_mirrors(p);
+            );
+            if result.is_ok() {
+                azam_doc::sync_mirrors(p);
+            }
         });
-        self.status = if added {
-            "Added a dart (its legs are sewn together)".into()
-        } else {
-            "That segment is too short for a dart".into()
+        self.status = match result {
+            Ok(_) => "Added a dart (its legs are sewn together)".into(),
+            Err(e) => format!("No dart: {e}"),
         };
     }
 

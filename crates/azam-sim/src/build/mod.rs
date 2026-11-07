@@ -161,10 +161,16 @@ impl Simulation {
         let fasteners = anchors::fasteners(project, &records);
         let pinned = anchors::pinned(project, &records);
         let mut pins = Pins::default();
-        for &q in &pinned {
+        for &(q, at) in &pinned {
+            let k = q as usize * 3;
+            if let Some(at) = at {
+                let held = at.map(|c| c as f32);
+                particles.x[k..k + 3].copy_from_slice(&held);
+                particles.prev[k..k + 3].copy_from_slice(&held);
+            }
             pins.vertex.push(q);
-            pins.pos
-                .extend_from_slice(&particles.x[q as usize * 3..q as usize * 3 + 3]);
+            pins.pos.extend_from_slice(&particles.x[k..k + 3]);
+            pins.fixed.push(at.is_some());
             particles.inv_mass[q as usize] = 0.0;
         }
         let coloring = Coloring::new(n, &stretch, &bend, &fasteners, &sewing);
@@ -214,7 +220,12 @@ impl Simulation {
         p.v.fill(0.0);
         for (e, &q) in self.pins.vertex.iter().enumerate() {
             let k = q as usize * 3;
-            self.pins.pos[e * 3..e * 3 + 3].copy_from_slice(&p.x[k..k + 3]);
+            if self.pins.fixed.get(e).copied().unwrap_or(false) {
+                p.x[k..k + 3].copy_from_slice(&self.pins.pos[e * 3..e * 3 + 3]);
+                p.prev[k..k + 3].copy_from_slice(&self.pins.pos[e * 3..e * 3 + 3]);
+            } else {
+                self.pins.pos[e * 3..e * 3 + 3].copy_from_slice(&p.x[k..k + 3]);
+            }
         }
         self.good.clone_from(&p.x);
         self.time = 0.0;

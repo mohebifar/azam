@@ -362,7 +362,7 @@ impl AzamApp {
         });
         let base_row = Self::choice("Base Size", &size_refs, base_size, cx, move |p, i| {
             if let Some(s) = p.sizes.get(i).cloned() {
-                p.base_size = s;
+                azam_doc::set_base_size(p, &s);
             }
         });
         let cw_names: Vec<&str> = colorways.iter().map(|(_, n)| n.as_str()).collect();
@@ -567,13 +567,7 @@ impl AzamApp {
         let step_num = |label, value, cx: &mut Context<Self>, axis_x: bool| {
             let (id, points) = (id.clone(), points.clone());
             Self::number(field(label, -100.0, 100.0, 0.5), value, cx, move |p, v| {
-                let current = azam_doc::grade_step(p, &id, &points[0]);
-                let step = if axis_x {
-                    azam_geom::Vec2::new(v, current.y)
-                } else {
-                    azam_geom::Vec2::new(current.x, v)
-                };
-                azam_doc::grade_points_linear(p, &id, &points, step);
+                azam_doc::set_grade_step_axis(p, &id, &points, axis_x, v);
             })
         };
         let x_row = step_num("Step X (mm per size)", step.x, cx, true);

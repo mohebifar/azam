@@ -287,3 +287,27 @@ fn pinning_cloth_is_saved_on_the_piece() {
         assert_eq!(pins(cx), 0, "a second click on it removes the pin");
     });
 }
+
+#[test]
+fn dragging_an_area_border_resizes_the_side_column() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let before = win.root().read(cx).area_layout().side_px;
+        let border = cx
+            .element_bounds(win.id, "border-Side")
+            .expect("the side column's border");
+        let x = border.origin.x + border.size.width / 2.0;
+        let y = border.origin.y + border.size.height / 2.0;
+        cx.simulate_drag(win.id, (x, y), (x - 100.0, y));
+        cx.draw(win.id);
+        let after = win.root().read(cx).area_layout().side_px;
+        assert!(
+            (after - (before + 100.0)).abs() < 3.0,
+            "side column {before} → {after}"
+        );
+    });
+}

@@ -5,6 +5,7 @@
 //! tests can drive them headless.
 
 pub mod app;
+pub mod areas;
 mod avatar_motion;
 pub mod decals;
 mod export;

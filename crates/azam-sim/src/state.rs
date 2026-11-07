@@ -213,6 +213,9 @@ pub struct Pins {
     pub vertex: Vec<u32>,
     /// Held positions, `x, y, z` per pin, mm.
     pub pos: Vec<f32>,
+    /// Per pin: whether its position is fixed in space (set on the draped garment) rather than
+    /// taken from wherever the cloth is when the simulation starts or resets.
+    pub fixed: Vec<bool>,
 }
 
 /// Cloth held by the pointer: particles near the grabbed point follow a target that chases the

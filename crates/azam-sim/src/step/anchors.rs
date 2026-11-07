@@ -111,6 +111,7 @@ impl Simulation {
         self.pins.vertex.push(q as u32);
         let pos = self.particles.position(q);
         self.pins.pos.extend_from_slice(&pos);
+        self.pins.fixed.push(true);
         self.particles.inv_mass[q] = 0.0;
         true
     }
@@ -122,6 +123,9 @@ impl Simulation {
         };
         self.pins.vertex.remove(e);
         self.pins.pos.drain(e * 3..e * 3 + 3);
+        if e < self.pins.fixed.len() {
+            self.pins.fixed.remove(e);
+        }
         if !self.pins.vertex.contains(&(q as u32)) {
             self.particles.inv_mass[q] = self.particles.inv_mass_free[q];
         }

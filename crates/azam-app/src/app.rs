@@ -104,7 +104,6 @@ const PIE_RADIUS: f32 = 110.0;
 /// Most results the operator search lists.
 const SEARCH_LIMIT: usize = 14;
 /// Width of the outliner and properties column, in logical pixels.
-const SIDE_COLUMN_PX: f32 = 330.0;
 
 /// The application view.
 pub struct AzamApp {
@@ -117,6 +116,14 @@ pub struct AzamApp {
     menu_title_bounds: Vec<Option<Bounds<f32>>>,
     /// The menu that was open when the mouse button last went down over the scrim.
     menu_at_press: Option<usize>,
+    /// How the areas share the window.
+    pub(crate) layout: crate::areas::AreaLayout,
+    /// The area border being dragged.
+    pub(crate) resizing: Option<crate::areas::Border>,
+    /// Where the main, side and outliner borders were laid out last frame.
+    pub(crate) border_bounds: [Option<Bounds<f32>>; 3],
+    /// Width of the window last frame, logical pixels.
+    pub(crate) window_width: f32,
     workspace: Workspace,
     pub(crate) tool: Tool,
     shading: Shading,
@@ -222,6 +229,10 @@ impl AzamApp {
             open_menu: None,
             menu_title_bounds: Vec::new(),
             menu_at_press: None,
+            layout: crate::areas::AreaLayout::default(),
+            resizing: None,
+            border_bounds: [None; 3],
+            window_width: 0.0,
             menu_anchor: (0.0, 0.0),
             workspace: Workspace::Design,
             tool: Tool::Select,
@@ -324,6 +335,12 @@ impl AzamApp {
     #[must_use]
     pub fn top_menu_count(&self) -> usize {
         self.top_menu_count
+    }
+
+    /// How the areas share the window.
+    #[must_use]
+    pub fn area_layout(&self) -> crate::areas::AreaLayout {
+        self.layout
     }
 
     /// Where the open pie menu is centred, if one is open.
@@ -804,6 +821,11 @@ impl AzamApp {
         let Some((piece, x, y)) = self.scene3d.particle_pattern_pos(particle) else {
             return;
         };
+        let at = self
+            .scene3d
+            .sim
+            .as_ref()
+            .map(|sim| sim.particles.position(particle).map(f64::from));
         let reach = self
             .session
             .project
@@ -828,6 +850,7 @@ impl AzamApp {
                     pc.pins.push(azam_doc::Pin {
                         x,
                         y,
+                        at,
                         extra: serde_json::Map::new(),
                     });
                 }
@@ -837,6 +860,10 @@ impl AzamApp {
     }
 
     fn on_mouse_move(&mut self, e: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.drag_border(e.position) {
+            cx.notify();
+            return;
+        }
         self.publish_cursor(e.position);
         let mut changed = self.viewport.navigate(e.position);
         changed |= self.pattern_drag_move(e.position, e.modifiers);
@@ -854,7 +881,8 @@ impl AzamApp {
     }
 
     fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let mut ended = self.viewport.drag.take().is_some() | self.pattern_drag_end();
+        let mut ended =
+            self.viewport.drag.take().is_some() | self.pattern_drag_end() | self.resizing.take().is_some();
         if self.scene3d.grab.take().is_some() {
             if let Some(sim) = self.scene3d.sim.as_mut() {
                 sim.release_grab();
@@ -1285,7 +1313,7 @@ impl AzamApp {
     fn side_column(&mut self, cx: &mut Context<Self>) -> Div {
         let outliner = div()
             .class("area")
-            .h(px(250.0))
+            .h(px(self.layout.outliner_px))
             .flex_shrink_0()
             .child(
                 div()
@@ -1307,9 +1335,10 @@ impl AzamApp {
             .child(self.properties_body(cx));
         div()
             .class("area-col")
-            .w(px(SIDE_COLUMN_PX))
+            .w(px(self.layout.side_px))
             .flex_shrink_0()
             .child(outliner)
+            .child(Self::area_border(crate::areas::Border::Outliner, cx))
             .child(properties)
     }
 
@@ -1523,6 +1552,7 @@ impl AzamApp {
         self.icons.set_scale(window.scale_factor());
         self.viewport.bounds = window.bounds_of(VIEWPORT_ID);
         self.pattern_bounds = window.bounds_of(PATTERN_ID);
+        self.note_borders(window);
         self.frames += 1;
         self.sync_collab();
         self.sync_scene();
@@ -1585,10 +1615,17 @@ impl AzamApp {
 
     /// The editor areas of the current workspace.
     fn workspace_areas(&mut self, cx: &mut Context<Self>) -> Div {
+        use crate::areas::Border;
         let areas = div().class("areas");
+        let side = |this: &mut Self, cx: &mut Context<Self>| {
+            div()
+                .class("area-col-wrap")
+                .child(Self::area_border(Border::Side, cx))
+                .child(this.side_column(cx))
+        };
         match self.workspace {
-            Workspace::Review => areas.child(self.viewport_area(cx)).child(self.side_column(cx)),
-            Workspace::Grading => areas.child(self.pattern_area(cx)).child(self.side_column(cx)),
+            Workspace::Review => areas.child(self.viewport_area(cx)).child(side(self, cx)),
+            Workspace::Grading => areas.child(self.pattern_area(cx)).child(side(self, cx)),
             Workspace::TechPack => {
                 let header = div()
                     .class("area-header")
@@ -1601,12 +1638,19 @@ impl AzamApp {
                     .flex_1()
                     .child(header)
                     .child(self.techpack_body());
-                areas.child(sheet).child(self.side_column(cx))
+                areas.child(sheet).child(side(self, cx))
             }
-            Workspace::Design | Workspace::Colorway => areas
-                .child(self.viewport_area(cx))
-                .child(self.pattern_area(cx))
-                .child(self.side_column(cx)),
+            Workspace::Design | Workspace::Colorway => {
+                let share = self.layout.main_share;
+                areas
+                    .child(self.viewport_area(cx).css("flex", format!("{share} 1 0px")))
+                    .child(Self::area_border(Border::Main, cx))
+                    .child(
+                        self.pattern_area(cx)
+                            .css("flex", format!("{} 1 0px", 1.0 - share)),
+                    )
+                    .child(side(self, cx))
+            }
         }
     }
 

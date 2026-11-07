@@ -61,8 +61,9 @@ pub(crate) fn fasteners(project: &Project, records: &[PieceRecord]) -> Fasteners
     out
 }
 
-/// Pinned particles of every piece, records in order.
-pub(crate) fn pinned(project: &Project, records: &[PieceRecord]) -> Vec<u32> {
+/// Pinned particles of every piece, records in order, with where each pin holds the cloth if it
+/// says.
+pub(crate) fn pinned(project: &Project, records: &[PieceRecord]) -> Vec<(u32, Option<[f64; 3]>)> {
     let mut out = Vec::new();
     for r in records {
         let Some(piece) = project.pieces.get(&r.id) else {
@@ -70,7 +71,7 @@ pub(crate) fn pinned(project: &Project, records: &[PieceRecord]) -> Vec<u32> {
         };
         for pin in &piece.pins {
             if let Some(q) = nearest_particle(r, pin.x, pin.y) {
-                out.push(q as u32);
+                out.push((q as u32, pin.at));
             }
         }
     }

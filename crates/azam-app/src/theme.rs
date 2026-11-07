@@ -41,10 +41,15 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .menu-sep { height: 1px; margin: 4px 8px; background: #2e2e2e; }
 
 /* -- editor areas ---------------------------------------------------------------------------- */
-.areas { flex: 1; display: flex; gap: 2px; padding: 2px; min-height: 0; }
+.areas { flex: 1; display: flex; padding: 2px; min-height: 0; }
 .area { display: flex; flex-direction: column; border-radius: 6px; overflow: hidden; background: #303030;
         min-width: 0; min-height: 0; }
-.area-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 0; }
+.area-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.area-col-wrap { display: flex; flex-shrink: 0; min-height: 0; }
+.area-split { flex-shrink: 0; }
+.area-split.v { width: 3px; cursor: ew-resize; }
+.area-split.h { height: 3px; cursor: ns-resize; }
+.area-split:hover { background: rgba(71,114,179,0.6); }
 .area-header { display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 5px; flex-shrink: 0;
                background: #303030; }
 .area-body { flex: 1; position: relative; min-height: 0; display: flex; }

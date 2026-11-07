@@ -311,3 +311,39 @@ fn the_background_untangler_matches_the_synchronous_one() {
     assert_eq!(result, expected);
     assert_eq!(worker.totals.runs, 1);
 }
+
+#[test]
+#[allow(clippy::float_cmp, reason = "positions are copied, not computed")]
+fn a_saved_pin_holds_its_spot_through_build_and_reset() {
+    let av = female_avatar();
+    let mut project = square_project(&["pc_sq"], SQUARE_MM);
+    let spot = [150.0, 1300.0, 220.0];
+    project
+        .pieces
+        .get_mut(&PieceId::new("pc_sq"))
+        .expect("square")
+        .pins
+        .push(azam_doc::Pin {
+            x: 0.0,
+            y: 0.0,
+            at: Some(spot),
+            extra: serde_json::Map::new(),
+        });
+    let mut sim = Simulation::build(&project, &av, None, &SimParams::default());
+    let q = sim.pins.vertex[0] as usize;
+    let held = spot.map(|c| c as f32);
+    assert_eq!(
+        sim.particles.position(q),
+        held,
+        "the build puts the pinned cloth at its spot"
+    );
+    for _ in 0..10 {
+        sim.step(&av, 1.0 / 60.0);
+    }
+    sim.reset(&av);
+    assert_eq!(
+        sim.particles.position(q),
+        held,
+        "a reset keeps it there, not at the arrangement"
+    );
+}

@@ -193,6 +193,10 @@ pub struct Pin {
     pub x: f64,
     /// y in mm.
     pub y: f64,
+    /// Where the pin holds the cloth in 3D, in mm (avatar space), when it was set on the draped
+    /// garment; without it the cloth is held wherever the arrangement puts it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[f64; 3]>,
     /// Fields this version does not interpret, kept as stored.
     #[serde(flatten)]
     pub extra: Map<String, Value>,

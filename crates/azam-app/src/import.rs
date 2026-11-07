@@ -4,11 +4,12 @@ use azam_doc::{LinePoint, PieceId, Project};
 use azam_io::ImportedPiece;
 
 /// Adds `pieces` (read from a DXF file) to `project` with their internal lines, and places each
-/// around the avatar by its name ("Back", "Sleeve L", "Collar"…). A second unsided sleeve goes on
-/// the right arm. Returns the new pieces' ids.
+/// around the avatar by its name ("Back", "Sleeve L", "Collar"…). A second piece that names no
+/// side and would land where an earlier one did goes on the other side ("Sleeve", "Sleeve" →
+/// left and right arm; "Front Leg", "Front Leg" → left and right leg). Returns the new pieces' ids.
 pub fn add_imported_pieces(project: &mut Project, pieces: &[ImportedPiece]) -> Vec<PieceId> {
     let mut created = Vec::new();
-    let mut arm_left_taken = false;
+    let mut taken: Vec<&'static str> = Vec::new();
     for piece in pieces {
         let points: Vec<(azam_geom::Vec2, bool)> = piece.points.iter().map(|q| (q.pos, q.curve)).collect();
         let Some(id) = azam_doc::create_piece(project, &points) else {
@@ -27,11 +28,15 @@ pub fn add_imported_pieces(project: &mut Project, pieces: &[ImportedPiece]) -> V
             azam_doc::add_internal_line(project, &id, &pts, line.closed);
         }
         let mut slot = azam_doc::slot_for_name(&piece.name);
-        if slot == Some("armL") {
-            if arm_left_taken && !names_a_side(&piece.name) {
-                slot = Some("armR");
-            }
-            arm_left_taken = true;
+        if let Some(s) = slot
+            && taken.contains(&s)
+            && !names_a_side(&piece.name)
+            && let Some(other) = azam_doc::mirror_slot(s)
+        {
+            slot = Some(other);
+        }
+        if let Some(s) = slot {
+            taken.push(s);
         }
         if let Some(pc) = project.pieces.get_mut(&id) {
             pc.name.clone_from(&piece.name);
@@ -86,14 +91,21 @@ mod tests {
             square("Sleeve", 200.0),
             square("Sleeve", 400.0),
             square("Pocket", 600.0),
+            square("Front Leg", 800.0),
+            square("Front Leg", 1000.0),
         ];
         let ids = add_imported_pieces(&mut project, &pieces);
-        assert_eq!(ids.len(), 4);
+        assert_eq!(ids.len(), 6);
         let slot = |i: usize| project.pieces[&ids[i]].arr.slot.clone();
         assert_eq!(slot(0), "back");
         assert_eq!(slot(1), "armL");
         assert_eq!(slot(2), "armR", "the second sleeve goes on the other arm");
         assert_eq!(slot(3), azam_doc::DEFAULT_SLOT);
+        assert_eq!(
+            (slot(4).as_str(), slot(5).as_str()),
+            ("legLF", "legRF"),
+            "the legs pair up too"
+        );
         assert_eq!(
             project.pieces[&ids[0]].internals.len(),
             1,

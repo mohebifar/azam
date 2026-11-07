@@ -49,26 +49,27 @@ impl PieceDecal {
     }
 }
 
-/// Decoded graphic images by file path (`None` for files that cannot be read).
+/// Decoded graphic images by file path. Files that cannot be read are tried again next time, so
+/// a graphic whose file appears later shows up.
 #[derive(Default)]
 pub struct ImageCache {
-    images: HashMap<String, Option<Arc<Rgba>>>,
+    images: HashMap<String, Arc<Rgba>>,
 }
 
 impl ImageCache {
     /// The image at `path`, decoded once.
     pub fn get(&mut self, path: &str) -> Option<Arc<Rgba>> {
-        self.images
-            .entry(path.to_owned())
-            .or_insert_with(|| {
-                let img = blenderui::Image::open(path)?;
-                Some(Arc::new(Rgba {
-                    width: img.width,
-                    height: img.height,
-                    data: img.to_rgba(),
-                }))
-            })
-            .clone()
+        if let Some(img) = self.images.get(path) {
+            return Some(Arc::clone(img));
+        }
+        let img = blenderui::Image::open(path)?;
+        let rgba = Arc::new(Rgba {
+            width: img.width,
+            height: img.height,
+            data: img.to_rgba(),
+        });
+        self.images.insert(path.to_owned(), Arc::clone(&rgba));
+        Some(rgba)
     }
 }
 
