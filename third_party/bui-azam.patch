@@ -1,0 +1,854 @@
+diff --git a/bindings/rust/blenderui-sys/src/lib.rs b/bindings/rust/blenderui-sys/src/lib.rs
+index 4a4c43e..ec0d2ac 100644
+--- a/bindings/rust/blenderui-sys/src/lib.rs
++++ b/bindings/rust/blenderui-sys/src/lib.rs
+@@ -246,6 +246,21 @@ unsafe extern "C" {
+     pub fn BK_imbuf_load(path: *const c_char, max_w: c_int, max_h: c_int) -> *mut BKImBuf;
+     pub fn BK_imbuf_from_rgba(rgba: *const c_uchar, w: c_int, h: c_int, stride: c_int) -> *mut BKImBuf;
+     pub fn BK_imbuf_free(ib: *mut BKImBuf);
++    pub fn BK_icon_imbuf(name: *const c_char, size: c_int, rgba: *const f32) -> *mut BKImBuf;
++    pub fn BK_icon_id(name: *const c_char) -> c_int;
++    pub fn BK_file_dialog(
++        title: *const c_char,
++        mode: c_int,
++        dir: *const c_char,
++        file: *const c_char,
++        filters: *const *const c_char,
++        nfilters: c_int,
++        multiple: c_int,
++        r_paths: *mut *mut *mut c_char,
++    ) -> c_int;
++    pub fn BK_file_dialog_free(paths: *mut *mut c_char);
++    pub fn BK_icon_list_count() -> c_int;
++    pub fn BK_icon_list_name(i: c_int) -> *const c_char;
+     pub fn BK_imbuf_size(ib: *const BKImBuf, r_w: *mut c_int, r_h: *mut c_int) -> c_int;
+     pub fn BK_imbuf_pixels(ib: *const BKImBuf, frame: c_int) -> *const u32;
+     pub fn BK_imbuf_delay(ib: *const BKImBuf, frame: c_int) -> c_int;
+diff --git a/bindings/rust/blenderui/src/arabic.rs b/bindings/rust/blenderui/src/arabic.rs
+new file mode 100644
+index 0000000..5dcc7ce
+--- /dev/null
++++ b/bindings/rust/blenderui/src/arabic.rs
+@@ -0,0 +1,206 @@
++//! Arabic-script shaping: letters take their contextual form (isolated, final, initial, medial)
++//! as Unicode presentation forms, so a font without a shaping engine draws joined text. Covers
++//! Arabic and the Persian letters (پ چ ژ گ ک ی ۀ), lam-alef ligatures, transparent marks and
++//! the zero-width non-joiner. Runs on logical-order text, before bidi reordering.
++
++/// How a letter joins its neighbours.
++#[derive(Clone, Copy, PartialEq, Eq)]
++enum Join {
++    /// Joins on both sides.
++    Dual,
++    /// Joins only to the letter before it (alef, dal, reh, waw …).
++    Right,
++    /// Joins both neighbours without changing shape (tatweel).
++    Causing,
++    /// Never joins.
++    None,
++    /// Marks: ignored when deciding joins.
++    Transparent,
++}
++
++/// Presentation forms of a letter: isolated, final, initial, medial (0 = no such form).
++struct Forms {
++    letter: u32,
++    join: Join,
++    forms: [u32; 4],
++}
++
++const fn dual(letter: u32, base: u32) -> Forms {
++    Forms { letter, join: Join::Dual, forms: [base, base + 1, base + 2, base + 3] }
++}
++
++const fn right(letter: u32, base: u32) -> Forms {
++    Forms { letter, join: Join::Right, forms: [base, base + 1, 0, 0] }
++}
++
++const FORMS: &[Forms] = &[
++    Forms { letter: 0x0621, join: Join::None, forms: [0xFE80, 0, 0, 0] },
++    right(0x0622, 0xFE81),
++    right(0x0623, 0xFE83),
++    right(0x0624, 0xFE85),
++    right(0x0625, 0xFE87),
++    dual(0x0626, 0xFE89),
++    right(0x0627, 0xFE8D),
++    dual(0x0628, 0xFE8F),
++    right(0x0629, 0xFE93),
++    dual(0x062A, 0xFE95),
++    dual(0x062B, 0xFE99),
++    dual(0x062C, 0xFE9D),
++    dual(0x062D, 0xFEA1),
++    dual(0x062E, 0xFEA5),
++    right(0x062F, 0xFEA9),
++    right(0x0630, 0xFEAB),
++    right(0x0631, 0xFEAD),
++    right(0x0632, 0xFEAF),
++    dual(0x0633, 0xFEB1),
++    dual(0x0634, 0xFEB5),
++    dual(0x0635, 0xFEB9),
++    dual(0x0636, 0xFEBD),
++    dual(0x0637, 0xFEC1),
++    dual(0x0638, 0xFEC5),
++    dual(0x0639, 0xFEC9),
++    dual(0x063A, 0xFECD),
++    Forms { letter: 0x0640, join: Join::Causing, forms: [0x0640, 0x0640, 0x0640, 0x0640] },
++    dual(0x0641, 0xFED1),
++    dual(0x0642, 0xFED5),
++    dual(0x0643, 0xFED9),
++    dual(0x0644, 0xFEDD),
++    dual(0x0645, 0xFEE1),
++    dual(0x0646, 0xFEE5),
++    dual(0x0647, 0xFEE9),
++    right(0x0648, 0xFEED),
++    right(0x0649, 0xFEEF),
++    dual(0x064A, 0xFEF1),
++    dual(0x067E, 0xFB56),
++    dual(0x0686, 0xFB7A),
++    right(0x0698, 0xFB8A),
++    dual(0x06A9, 0xFB8E),
++    dual(0x06AF, 0xFB92),
++    right(0x06C0, 0xFBA4),
++    dual(0x06CC, 0xFBFC),
++];
++
++const LAM: u32 = 0x0644;
++const ZWNJ: u32 = 0x200C;
++/// Lam followed by an alef: the alef and the ligature's isolated form (final is one more).
++const LAM_ALEF: [(u32, u32); 4] = [(0x0622, 0xFEF5), (0x0623, 0xFEF7), (0x0625, 0xFEF9), (0x0627, 0xFEFB)];
++
++fn forms(c: char) -> Option<&'static Forms> {
++    let u = c as u32;
++    FORMS.binary_search_by_key(&u, |f| f.letter).ok().map(|i| &FORMS[i])
++}
++
++fn join(c: char) -> Join {
++    let u = c as u32;
++    if let Some(f) = forms(c) {
++        f.join
++    } else if matches!(u, 0x0610..=0x061A | 0x064B..=0x065F | 0x0670 | 0x06D6..=0x06ED) {
++        Join::Transparent
++    } else {
++        Join::None
++    }
++}
++
++/// Whether `s` holds Arabic-script letters that shaping changes.
++#[must_use]
++pub(crate) fn needs_shaping(s: &str) -> bool {
++    s.chars().any(|c| forms(c).is_some() || c as u32 == ZWNJ)
++}
++
++/// `chars` with every Arabic-script letter in its contextual presentation form. Zero-width
++/// non-joiners are dropped once they have done their job.
++#[must_use]
++pub(crate) fn shape(chars: &[char]) -> Vec<char> {
++    let n = chars.len();
++    // Nearest non-transparent neighbours' joining types.
++    let neighbour = |from: usize, step: isize| -> Join {
++        let mut k = from as isize + step;
++        while k >= 0 && (k as usize) < n {
++            let j = join(chars[k as usize]);
++            if j != Join::Transparent {
++                return j;
++            }
++            k += step;
++        }
++        Join::None
++    };
++    let mut out = Vec::with_capacity(n);
++    let mut k = 0;
++    while k < n {
++        let c = chars[k];
++        if c as u32 == ZWNJ {
++            k += 1;
++            continue;
++        }
++        let Some(f) = forms(c) else {
++            out.push(c);
++            k += 1;
++            continue;
++        };
++        let joins_before = matches!(neighbour(k, -1), Join::Dual | Join::Causing);
++        // lam-alef ligature
++        if f.letter == LAM {
++            let mut j = k + 1;
++            while j < n && join(chars[j]) == Join::Transparent {
++                j += 1;
++            }
++            if let Some(&(_, lig)) = chars.get(j).and_then(|a| LAM_ALEF.iter().find(|(alef, _)| *alef == *a as u32)) {
++                let form = if joins_before { lig + 1 } else { lig };
++                out.push(char::from_u32(form).unwrap_or(c));
++                out.extend(&chars[k + 1..j]);
++                k = j + 1;
++                continue;
++            }
++        }
++        let joins_after = f.join == Join::Dual && matches!(neighbour(k, 1), Join::Dual | Join::Right | Join::Causing);
++        let index = match (f.join, joins_before, joins_after) {
++            (Join::Dual | Join::Causing, true, true) => 3,
++            (Join::Dual | Join::Causing, false, true) => 2,
++            (_, true, _) => 1,
++            _ => 0,
++        };
++        let code = if f.forms[index] != 0 { f.forms[index] } else { f.forms[0] };
++        out.push(char::from_u32(code).unwrap_or(c));
++        k += 1;
++    }
++    out
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn shaped(s: &str) -> String {
++        shape(&s.chars().collect::<Vec<_>>()).into_iter().collect()
++    }
++
++    #[test]
++    fn letters_take_contextual_forms() {
++        // سلام: seen initial, lam-alef ligature (final, joined to the seen), meem isolated
++        assert_eq!(shaped("سلام"), "\u{FEB3}\u{FEFC}\u{FEE1}");
++    }
++
++    #[test]
++    fn persian_letters_join() {
++        // پیش: peh initial, farsi yeh medial, sheen final
++        assert_eq!(shaped("پیش"), "\u{FB58}\u{FBFF}\u{FEB6}");
++    }
++
++    #[test]
++    fn right_joining_letters_break_the_chain() {
++        // دست: dal isolated (nothing before), seen initial, teh final
++        assert_eq!(shaped("دست"), "\u{FEA9}\u{FEB3}\u{FE96}");
++    }
++
++    #[test]
++    fn zwnj_stops_joining_and_disappears() {
++        // می‌روم: meem initial, yeh final, (zwnj), reh isolated, waw final? no: reh isolated, waw isolated, meem isolated
++        assert_eq!(shaped("می\u{200C}روم"), "\u{FEE3}\u{FBFD}\u{FEAD}\u{FEED}\u{FEE1}");
++    }
++
++    #[test]
++    fn latin_text_is_untouched() {
++        assert_eq!(shaped("Front 2"), "Front 2");
++        assert!(!needs_shaping("Front 2"));
++    }
++}
+diff --git a/bindings/rust/blenderui/src/lib.rs b/bindings/rust/blenderui/src/lib.rs
+index 6312c63..a1a9c13 100644
+--- a/bindings/rust/blenderui/src/lib.rs
++++ b/bindings/rust/blenderui/src/lib.rs
+@@ -95,6 +95,7 @@ pub use blenderui_macros::rsx as view;
+ pub use blenderui_macros::Props;
+ 
+ pub mod anim;
++mod arabic;
+ pub mod calc;
+ pub mod components;
+ pub mod effects;
+@@ -209,6 +210,98 @@ pub fn theme_color(key: &str) -> Option<[f32; 4]> {
+     (unsafe { sys::BK_theme_color(c.as_ptr(), out.as_mut_ptr()) } != 0).then_some(out)
+ }
+ 
++/// Every icon name the kit draws: Blender's SVG icons, then BUI's own vector icons.
++/// Pass one to [`Image::icon`].
++pub fn icon_names() -> impl Iterator<Item = &'static str> {
++    // SAFETY: a constant query.
++    let n = unsafe { sys::BK_icon_list_count() };
++    (0..n).filter_map(|i| {
++        // SAFETY: `i` is in range; the kit returns static NUL-terminated strings.
++        let p = unsafe { sys::BK_icon_list_name(i) };
++        (!p.is_null()).then(|| unsafe { std::ffi::CStr::from_ptr(p) }.to_str().ok()).flatten()
++    })
++}
++
++/// What a [`file_dialog`] is for.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum FileDialogMode {
++    /// Choose existing files.
++    Open,
++    /// Choose a file name to write.
++    Save,
++    /// Choose a folder.
++    Directory,
++}
++
++/// The outcome of a [`file_dialog`].
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub enum FileDialogResult {
++    /// The chosen paths.
++    Chosen(Vec<std::path::PathBuf>),
++    /// The user cancelled.
++    Cancelled,
++    /// No native window host (headless): the app must ask some other way.
++    Unavailable,
++}
++
++/// Runs Blender's File Browser in its own window until the user answers. `filters` are
++/// `"Label\tpattern pattern"` entries (`"Projects\t*.azam.json"`).
++pub fn file_dialog(
++    title: &str,
++    mode: FileDialogMode,
++    dir: Option<&std::path::Path>,
++    file: Option<&str>,
++    filters: &[&str],
++    multiple: bool,
++) -> FileDialogResult {
++    use std::ffi::{CStr, CString};
++    let cstring = |s: &str| CString::new(s.replace('\0', "")).unwrap_or_default();
++    let title = cstring(title);
++    let dir = dir.map(|d| cstring(&d.to_string_lossy()));
++    let file = file.map(cstring);
++    let filters: Vec<CString> = filters.iter().map(|f| cstring(f)).collect();
++    let filter_ptrs: Vec<*const std::ffi::c_char> = filters.iter().map(|f| f.as_ptr()).collect();
++    let mode = match mode {
++        FileDialogMode::Open => 0,
++        FileDialogMode::Save => 1,
++        FileDialogMode::Directory => 2,
++    };
++    let mut paths: *mut *mut std::ffi::c_char = std::ptr::null_mut();
++    // SAFETY: every pointer is NUL-terminated and outlives the call; the kit allocates `paths`,
++    // which is freed below with its own free function.
++    let n = unsafe {
++        sys::BK_file_dialog(
++            title.as_ptr(),
++            mode,
++            dir.as_ref().map_or(std::ptr::null(), |d| d.as_ptr()),
++            file.as_ref().map_or(std::ptr::null(), |f| f.as_ptr()),
++            filter_ptrs.as_ptr(),
++            filter_ptrs.len() as i32,
++            i32::from(multiple),
++            &raw mut paths,
++        )
++    };
++    if n < 0 {
++        return FileDialogResult::Unavailable;
++    }
++    if n == 0 || paths.is_null() {
++        return FileDialogResult::Cancelled;
++    }
++    let mut out = Vec::with_capacity(n as usize);
++    for i in 0..n as usize {
++        // SAFETY: the kit returned `n` NUL-terminated strings in a NULL-terminated array.
++        let p = unsafe { *paths.add(i) };
++        if p.is_null() {
++            break;
++        }
++        // SAFETY: as above.
++        out.push(std::path::PathBuf::from(unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()));
++    }
++    // SAFETY: `paths` came from BK_file_dialog.
++    unsafe { sys::BK_file_dialog_free(paths) };
++    FileDialogResult::Chosen(out)
++}
++
+ /// Whether this platform has native windows: Win32 on Windows, X11 on Linux
+ /// (when a display is available) and Cocoa on macOS (experimental).
+ /// Without them, apps run headless.
+diff --git a/bindings/rust/blenderui/src/paint.rs b/bindings/rust/blenderui/src/paint.rs
+index 03b6e4c..b144bde 100644
+--- a/bindings/rust/blenderui/src/paint.rs
++++ b/bindings/rust/blenderui/src/paint.rs
+@@ -56,6 +56,18 @@ impl Image {
+         Self::wrap(unsafe { sys::BK_imbuf_decode(bytes.as_ptr().cast(), bytes.len(), max_w as i32, max_h as i32) })
+     }
+ 
++    /// Blender icon `name` (one of Blender's SVG icons, e.g. `"MESH_DATA"`; see
++    /// [`crate::icon_names`]) rasterized at `size` pixels. `tint` colors a mono icon; a
++    /// transparent tint keeps the icon's theme color. Colored icons keep their colors.
++    #[must_use]
++    pub fn icon(name: &str, size: u32, tint: Rgba) -> Option<Self> {
++        let name = std::ffi::CString::new(name).ok()?;
++        let rgba = [tint.r, tint.g, tint.b, tint.a];
++        let size = i32::try_from(size).ok()?;
++        // SAFETY: `name` is NUL-terminated and `rgba` holds 4 floats; both outlive the call.
++        Self::wrap(unsafe { sys::BK_icon_imbuf(name.as_ptr(), size, rgba.as_ptr()) })
++    }
++
+     /// Decode an image file (any format the kit reads), at full size.
+     #[must_use]
+     pub fn open(path: &str) -> Option<Self> {
+@@ -367,8 +379,10 @@ impl Painter {
+     }
+ 
+     /// Text with its top-left at (x, y).
++    /// Arabic-script text is shaped and right-to-left runs are put in visual order, as in
++    /// laid-out text.
+     pub fn text(&mut self, x: f32, y: f32, text: &str, size: f32, color: impl Into<Rgba>) {
+-        self.styled_text(x, y, text, size, 0, color.into());
++        self.styled_text(x, y, &crate::text::display(text), size, 0, color.into());
+     }
+ 
+     pub(crate) fn styled_text(&mut self, x: f32, y: f32, text: &str, size: f32, flags: i32, color: Rgba) {
+diff --git a/bindings/rust/blenderui/src/text.rs b/bindings/rust/blenderui/src/text.rs
+index 99d673e..13d961c 100644
+--- a/bindings/rust/blenderui/src/text.rs
++++ b/bindings/rust/blenderui/src/text.rs
+@@ -273,18 +273,37 @@ fn class(c: char) -> Class {
+     }
+ }
+ 
++/// `s` as drawn: Arabic-script letters shaped and right-to-left runs in visual order.
++pub(crate) fn display(s: &str) -> std::borrow::Cow<'_, str> {
++    // Text without right-to-left script (the common case) is drawn as it is, without allocating.
++    if !s.chars().any(|c| u32::from(c) >= 0x0590) {
++        return std::borrow::Cow::Borrowed(s);
++    }
++    bidi_visual(s, false, false).map_or(std::borrow::Cow::Borrowed(s), std::borrow::Cow::Owned)
++}
++
+ /// `s` in visual (left-to-right display) order. `rtl`: the paragraph's
+ /// direction; `override_`: `unicode-bidi: bidi-override` (every character
+ /// takes the paragraph's direction). Returns None when nothing moves (pure
+ /// left-to-right text, the common case).
+ pub(crate) fn bidi_visual(s: &str, rtl: bool, override_: bool) -> Option<String> {
++    // Arabic-script letters take their joined forms first (shaping works on logical order).
++    let shaped = crate::arabic::needs_shaping(s);
++    let chars: Vec<char> = if shaped {
++        crate::arabic::shape(&s.chars().collect::<Vec<_>>())
++    } else {
++        s.chars().collect()
++    };
+     if override_ {
+-        return rtl.then(|| s.chars().rev().collect());
++        return if rtl {
++            Some(chars.iter().rev().collect())
++        } else {
++            shaped.then(|| chars.iter().collect())
++        };
+     }
+-    let chars: Vec<char> = s.chars().collect();
+     let classes: Vec<Class> = chars.iter().map(|&c| class(c)).collect();
+     if !rtl && !classes.contains(&Class::R) {
+-        return None;
++        return shaped.then(|| chars.iter().collect());
+     }
+     let base: u8 = rtl as u8;
+     // resolved levels: R odd, L even (W/I rules simplified: digits take the
+@@ -369,7 +388,7 @@ pub(crate) fn bidi_visual(s: &str, rtl: bool, override_: bool) -> Option<String>
+         c => c,
+     };
+     let out: String = order.iter().map(|&k| if levels[k] % 2 == 1 { mirror(chars[k]) } else { chars[k] }).collect();
+-    (out != s).then_some(out)
++    (shaped || out != s).then_some(out)
+ }
+ 
+ #[cfg(test)]
+diff --git a/bindings/rust/blenderui/src/widgets.rs b/bindings/rust/blenderui/src/widgets.rs
+index ae613f8..d710f88 100644
+--- a/bindings/rust/blenderui/src/widgets.rs
++++ b/bindings/rust/blenderui/src/widgets.rs
+@@ -81,6 +81,10 @@ pub(crate) struct WidgetSpec {
+     pub groups: Vec<(usize, String)>,
+     /// `<meter>`'s low, high and optimum.
+     pub meter: [Option<f64>; 3],
++    /// HTML `autofocus`: a text field starts out taking typed text.
++    pub autofocus: bool,
++    /// `live`: a text field reports every keystroke, not only the committed value.
++    pub live: bool,
+ }
+ 
+ impl WidgetSpec {
+@@ -157,6 +161,8 @@ impl WidgetSpec {
+             html: false,
+             groups: Vec::new(),
+             meter: [None; 3],
++            autofocus: attr(attrs, "autofocus").is_some(),
++            live: attr(attrs, "live").is_some(),
+         }
+     }
+ 
+@@ -283,6 +289,12 @@ impl WidgetSpec {
+             }
+             _ => return None,
+         }
++        // `label`: the text Blender draws inside number fields and sliders ("Gravity: 1.00").
++        if let Some(label) = attr(attrs, "label")
++            && matches!(s.kind, WKind::Number | WKind::Slider | WKind::Text { .. } | WKind::Select)
++        {
++            label.clone_into(&mut s.label);
++        }
+         Some(s)
+     }
+ }
+@@ -454,10 +466,16 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
+         }
+         if old.is_none_or(|o| o.label != spec.label) && !spec.label.is_empty() {
+             match spec.kind {
+-                WKind::Button | WKind::Progress => set_str(c"text", &spec.label),
+-                _ => set_str(c"label", &spec.label),
++                WKind::Button | WKind::Progress => set_str(c"text", &crate::text::display(&spec.label)),
++                _ => set_str(c"label", &crate::text::display(&spec.label)),
+             }
+         }
++        if old.is_none_or(|o| o.live != spec.live) {
++            set_num(c"live", f64::from(u8::from(spec.live)));
++        }
++        if old.is_none() && spec.autofocus && matches!(spec.kind, WKind::Text { .. }) {
++            set_num(c"editing", 1.0);
++        }
+         if old.is_none_or(|o| o.placeholder != spec.placeholder) && !spec.placeholder.is_empty() {
+             set_str(c"placeholder", &spec.placeholder);
+         }
+@@ -491,7 +509,9 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
+         }
+         if old.is_none_or(|o| (&o.items, &o.groups, o.html) != (&spec.items, &spec.groups, spec.html))
+             && spec.kind == WKind::Select {
+-            let items = spec.kit_items();
++            // drawn as shaped, visual-order text (the index, not the string, comes back)
++            let items: Vec<String> =
++                spec.kit_items().iter().map(|i| crate::text::display(i).into_owned()).collect();
+             let cs: Vec<CString> = items.iter().map(|s| cstr(s)).collect();
+             let ptrs: Vec<*const std::ffi::c_char> = cs.iter().map(|c| c.as_ptr()).collect();
+             sys::BK_set_strs(n, c"items".as_ptr(), ptrs.as_ptr(), ptrs.len() as i32);
+diff --git a/gpu/intern/gpu_raster.c b/gpu/intern/gpu_raster.c
+index e2e3eb7..14aa1ef 100644
+--- a/gpu/intern/gpu_raster.c
++++ b/gpu/intern/gpu_raster.c
+@@ -2501,6 +2501,7 @@ typedef struct TextRun {
+   int ng; /* -1: not built yet */
+   uint16_t *gid;
+   float *gx;
++  uint8_t *gslot; /* font slot of each glyph: the run's, or a fallback's */
+ } TextRun;
+ 
+ #define RUN_CAP 8192 /* power of two */
+@@ -2527,11 +2528,16 @@ static void runs_flush(void)
+     free(g_runs[i].mask);
+     free(g_runs[i].gid);
+     free(g_runs[i].gx);
++    free(g_runs[i].gslot);
+   }
+   memset(g_runs, 0, sizeof(TextRun) * RUN_CAP);
+   g_run_count = 0;
+ }
+ 
++/* Fallback slot of each slot (-2: not looked up yet, -1: none). */
++static int g_fallback_of[MAX_FONTS];
++static int g_fallback_of_ready = 0;
++
+ static void fonts_flush(void)
+ {
+   g_text_gen++;
+@@ -2539,6 +2545,7 @@ static void fonts_flush(void)
+     be_font_close(&g_fonts[i]);
+   }
+   g_font_count = 0;
++  g_fallback_of_ready = 0;
+   be_flush_glyphs();
+   runs_flush(); /* runs reference font slots */
+ }
+@@ -3587,6 +3594,8 @@ static int face_find(const char *family, int style, int *r_have)
+   return -1;
+ }
+ 
++static int slot_init(FontSlot *s, int face, int style, int have, int px);
++
+ static int be_font_open(FontSlot *s, const char *family, int flags, int px)
+ {
+   const int style = flags & (BUI_FONT_BOLD | BUI_FONT_ITALIC);
+@@ -3595,6 +3604,12 @@ static int be_font_open(FontSlot *s, const char *family, int flags, int px)
+   if (face < 0) {
+     return 0;
+   }
++  return slot_init(s, face, style, have, px);
++}
++
++/* Fills slot `s` for `face` at `px` pixels; `have`: the styles the face has itself. */
++static int slot_init(FontSlot *s, int face, int style, int have, int px)
++{
+   const Face *f = &g_faces[face];
+   s->face = face;
+   s->scale = stbtt_ScaleForMappingEmToPixels(&f->info, (float)px); /* GDI: -px = em height */
+@@ -3631,6 +3646,79 @@ static void be_font_close(FontSlot *s)
+ #  endif
+ }
+ 
++/* -- fallback faces ----------------------------------------------------------
++ * Glyphs the UI font lacks (Arabic, Persian, Hebrew, CJK ...) come from a system
++ * font that covers them, as Blender falls back to its bundled Noto/DejaVu faces.
++ * BUI_FALLBACK_FONT names the file to use instead. */
++
++static int g_fallback_face = -2; /* -2: not loaded yet, -1: none found */
++
++static int fallback_face(void)
++{
++  if (g_fallback_face != -2) {
++    return g_fallback_face;
++  }
++  g_fallback_face = -1;
++  const char *env = getenv("BUI_FALLBACK_FONT");
++  static const char *const candidates[] = {
++#    if defined(__APPLE__)
++      "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
++      "/Library/Fonts/Arial Unicode.ttf",
++      "/System/Library/Fonts/Supplemental/Tahoma.ttf",
++#    elif defined(_WIN32)
++      "C:\\Windows\\Fonts\\segoeui.ttf",
++      "C:\\Windows\\Fonts\\tahoma.ttf",
++      "C:\\Windows\\Fonts\\arial.ttf",
++#    else
++      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
++      "/usr/share/fonts/TTF/DejaVuSans.ttf",
++      "/usr/share/fonts/dejavu/DejaVuSans.ttf",
++      "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
++#    endif
++  };
++  if (env && env[0]) {
++    g_fallback_face = face_load_file(env);
++  }
++  for (size_t i = 0; g_fallback_face < 0 && i < sizeof(candidates) / sizeof(candidates[0]); i++) {
++    g_fallback_face = face_load_file(candidates[i]);
++  }
++  return g_fallback_face;
++}
++
++/* The slot drawing slot `slot`'s missing glyphs (same size and style), or -1. */
++static int fallback_slot(int slot)
++{
++  if (!g_fallback_of_ready) {
++    for (int i = 0; i < MAX_FONTS; i++) {
++      g_fallback_of[i] = -2;
++    }
++    g_fallback_of_ready = 1;
++  }
++  if (slot < 0 || slot >= MAX_FONTS) {
++    return -1;
++  }
++  if (g_fallback_of[slot] != -2) {
++    return g_fallback_of[slot];
++  }
++  g_fallback_of[slot] = -1;
++  const int face = fallback_face();
++  /* a new slot must not flush the table while a run is being walked */
++  if (face < 0 || face == g_fonts[slot].face || g_font_count >= MAX_FONTS) {
++    return -1;
++  }
++  FontSlot *fb = &g_fonts[g_font_count];
++  memset(fb, 0, sizeof(*fb));
++  snprintf(fb->family, sizeof(fb->family), "\x01" "fallback");
++  fb->px = g_fonts[slot].px;
++  fb->flags = g_fonts[slot].flags;
++  const int style = fb->flags & (BUI_FONT_BOLD | BUI_FONT_ITALIC);
++  if (!slot_init(fb, face, style, 0, fb->px)) {
++    return -1;
++  }
++  g_fallback_of[slot] = g_font_count++;
++  return g_fallback_of[slot];
++}
++
+ /* UTF-8 decode; invalid bytes map to U+FFFD. */
+ static int utf8_next(const char *s, int len, int *i)
+ {
+@@ -3807,42 +3895,52 @@ static const GlyphBmp *glyph_get(int slot, const FontSlot *s, int glyph, int pha
+   return g;
+ }
+ 
+-/* Walks the glyphs of a run: pen positions in pixels (unrounded). */
+-typedef void (*GlyphFn)(void *user, int glyph, float pen);
++/* Walks the glyphs of a run: pen positions in pixels (unrounded), and the
++ * slot each glyph is drawn from (the run's, or its fallback's). */
++typedef void (*GlyphFn)(void *user, int glyph, float pen, int slot);
+ 
+ static float glyph_walk(const FontSlot *s, const char *utf8, int len, GlyphFn fn, void *user)
+ {
+-  const stbtt_fontinfo *info = &g_faces[s->face].info;
+-#  if TEXT_FT
+-  /* advances of the instance in use (weight, optical size), unhinted */
+-  FT_Face ft = ft_use(s);
+-#  endif
++  const int base = (int)(s - g_fonts);
+   float pen = 0.0f;
+-  int prev = 0;
++  int prev = 0, prev_slot = -1;
+   for (int i = 0; i < len;) {
+     int cp = utf8_next(utf8, len, &i);
+     if (cp == '\t') {
+       cp = ' ';
+     }
+-    const int glyph = stbtt_FindGlyphIndex(info, cp);
+-    if (prev) {
+-      pen += s->scale * (float)stbtt_GetGlyphKernAdvance(info, prev, glyph);
++    int slot = base;
++    int glyph = stbtt_FindGlyphIndex(&g_faces[g_fonts[slot].face].info, cp);
++    if (glyph == 0 && cp > 0x7F) {
++      const int fb = fallback_slot(base);
++      const int g2 = fb >= 0 ? stbtt_FindGlyphIndex(&g_faces[g_fonts[fb].face].info, cp) : 0;
++      if (g2 != 0) {
++        slot = fb;
++        glyph = g2;
++      }
++    }
++    const FontSlot *gs = &g_fonts[slot];
++    const stbtt_fontinfo *info = &g_faces[gs->face].info;
++    if (prev && prev_slot == slot) {
++      pen += gs->scale * (float)stbtt_GetGlyphKernAdvance(info, prev, glyph);
+     }
+     if (fn) {
+-      fn(user, glyph, pen);
++      fn(user, glyph, pen, slot);
+     }
++    prev = glyph;
++    prev_slot = slot;
+ #  if TEXT_FT
++    /* advances of the instance in use (weight, optical size), unhinted */
++    FT_Face ft = ft_use(gs);
+     FT_Fixed ftadv;
+     if (ft && FT_Get_Advance(ft, (FT_UInt)glyph, FT_LOAD_NO_HINTING, &ftadv) == 0) {
+-      pen += (float)ftadv / 65536.0f + s->embolden;
+-      prev = glyph;
++      pen += (float)ftadv / 65536.0f + gs->embolden;
+       continue;
+     }
+ #  endif
+     int adv, lsb;
+     stbtt_GetGlyphHMetrics(info, glyph, &adv, &lsb);
+-    pen += s->scale * (float)adv + s->embolden;
+-    prev = glyph;
++    pen += gs->scale * (float)adv + gs->embolden;
+   }
+   return pen;
+ }
+@@ -3857,7 +3955,7 @@ typedef struct GlyphList {
+   int cap;
+ } GlyphList;
+ 
+-static void list_glyph(void *user, int glyph, float pen)
++static void list_glyph(void *user, int glyph, float pen, int slot)
+ {
+   GlyphList *l = (GlyphList *)user;
+   TextRun *e = l->e;
+@@ -3865,16 +3963,17 @@ static void list_glyph(void *user, int glyph, float pen)
+     l->cap = l->cap ? l->cap * 2 : 16;
+     uint16_t *g = (uint16_t *)realloc(e->gid, sizeof(uint16_t) * (size_t)l->cap);
+     float *x = (float *)realloc(e->gx, sizeof(float) * (size_t)l->cap);
+-    if (!g || !x) {
+-      e->gid = g ? g : e->gid;
+-      e->gx = x ? x : e->gx;
++    uint8_t *sl = (uint8_t *)realloc(e->gslot, (size_t)l->cap);
++    e->gid = g ? g : e->gid;
++    e->gx = x ? x : e->gx;
++    e->gslot = sl ? sl : e->gslot;
++    if (!g || !x || !sl) {
+       return;
+     }
+-    e->gid = g;
+-    e->gx = x;
+   }
+   e->gid[e->ng] = (uint16_t)glyph;
+   e->gx[e->ng] = pen;
++  e->gslot[e->ng] = (uint8_t)slot;
+   e->ng++;
+ }
+ 
+@@ -3892,8 +3991,7 @@ static int run_glyphs(TextRun *e)
+ static int glyph_draw_info(const TextRun *e, int i, int *r_face, float *r_scale, float *r_embolden,
+                            float *r_shear)
+ {
+-  (void)i;
+-  const FontSlot *s = &g_fonts[e->font];
++  const FontSlot *s = &g_fonts[e->gslot ? e->gslot[i] : e->font];
+   *r_face = s->face;
+   *r_scale = s->scale;
+   *r_embolden = s->embolden;
+@@ -3906,11 +4004,12 @@ static int glyph_draw_info(const TextRun *e, int i, int *r_face, float *r_scale,
+ static const void *glyph_bitmap(const TextRun *e, int i, float pen, int *r_x, int *r_y, int *r_w,
+                                 int *r_h, const uint8_t **r_bits)
+ {
+-  const FontSlot *s = &g_fonts[e->font];
++  const int slot = e->gslot ? e->gslot[i] : e->font;
++  const FontSlot *s = &g_fonts[slot];
+   const float px = floorf(pen * 4.0f + 0.5f) * 0.25f;
+   const int whole = (int)floorf(px);
+   const int phase = (int)((px - (float)whole) * 4.0f) & 3;
+-  const GlyphBmp *g = glyph_get(e->font, s, e->gid[i], phase);
++  const GlyphBmp *g = glyph_get(slot, s, e->gid[i], phase);
+   if (!g || !g->bits) {
+     return NULL;
+   }
+@@ -4135,13 +4234,13 @@ typedef struct BuildCtx {
+   float shear; /* synthetic italic: pixels per pixel above the baseline */
+ } BuildCtx;
+ 
+-static void build_glyph(void *user, int glyph, float pen)
++static void build_glyph(void *user, int glyph, float pen, int slot)
+ {
+   BuildCtx *c = (BuildCtx *)user;
+   const float px = floorf(pen * 4.0f + 0.5f) * 0.25f;
+   const int whole = (int)floorf(px);
+   const int phase = (int)((px - (float)whole) * 4.0f) & 3;
+-  const GlyphBmp *g = glyph_get(c->slot, c->s, glyph, phase);
++  const GlyphBmp *g = glyph_get(slot, &g_fonts[slot], glyph, phase);
+   if (!g || !g->bits) {
+     return;
+   }
+diff --git a/kit/include/BUI_kit.h b/kit/include/BUI_kit.h
+index 1e6e215..482cfd9 100644
+--- a/kit/include/BUI_kit.h
++++ b/kit/include/BUI_kit.h
+@@ -324,6 +324,11 @@ BKImBuf *BK_imbuf_load(const char *path, int max_w, int max_h);
+ BKImBuf *BK_imbuf_from_rgba(const unsigned char *rgba, int w, int h, int stride); /* straight RGBA */
+ BKImBuf *BK_imbuf_from_argb(const uint32_t *argb, int w, int h); /* premultiplied */
+ void BK_imbuf_free(BKImBuf *ib);
++/* Blender icon `name` (an SVG icon, e.g. "MESH_DATA") rasterized at `size` pixels as a new
++ * image the caller frees with BK_imbuf_free. `rgba` tints a mono icon (NULL or alpha 0: the
++ * icon's theme tint, else the theme text color); colored icons keep their colors. NULL for an
++ * unknown name or a size <= 0. */
++BKImBuf *BK_icon_imbuf(const char *name, int size, const float rgba[4]);
+ int BK_imbuf_size(const BKImBuf *ib, int *r_w, int *r_h); /* returns the frame count */
+ int BK_imbuf_format(const BKImBuf *ib);
+ const uint32_t *BK_imbuf_pixels(const BKImBuf *ib, int frame); /* premultiplied 0xAARRGGBB */
+diff --git a/kit/intern/kit_core.c b/kit/intern/kit_core.c
+index bc3f09a..2538d09 100644
+--- a/kit/intern/kit_core.c
++++ b/kit/intern/kit_core.c
+@@ -904,6 +904,15 @@ int BK_set_num(BKNode *n, const char *key, double v)
+   if (n->cls->set_num && n->cls->set_num(n, key, v)) {
+     return 1;
+   }
++  /* "editing" = 1 on a text field starts typing into it (HTML autofocus); 0 is ignored. */
++  if (strcmp(key, "editing") == 0) {
++    if (v != 0 && n->edit == NULL &&
++        (strcmp(n->cls->name, "text") == 0 || strcmp(n->cls->name, "search") == 0))
++    {
++      bk_begin_edit(n, n->text ? n->text : "", true);
++    }
++    return 1;
++  }
+   if ((key[0] == 'x' || key[0] == 'y') && view_set_num(n, key, v)) {
+     return 1;
+   }
+diff --git a/kit/intern/kit_draw.c b/kit/intern/kit_draw.c
+index 210b80b..58aa1d8 100644
+--- a/kit/intern/kit_draw.c
++++ b/kit/intern/kit_draw.c
+@@ -1536,6 +1536,27 @@ int BK_icon_id(const char *name)
+ {
+   return bk_icons_lookup(name);
+ }
++
++BKImBuf *BK_icon_imbuf(const char *name, int size, const float rgba[4])
++{
++  const int icon = name ? bk_icons_lookup(name) : 0;
++  if (icon < BK_SVG_BASE || icon >= BK_SVG_BASE + bk_svg_icon_count || size <= 0) {
++    return NULL;
++  }
++  float c[4];
++  const float *tint = bk_icon_tint(icon);
++  if (rgba && rgba[3] > 0.0f) {
++    memcpy(c, rgba, sizeof(c));
++  }
++  else if (tint) {
++    memcpy(c, tint, sizeof(c));
++  }
++  else {
++    bk_rgba(bk_theme.text, c);
++  }
++  const BKImBuf *ib = svg_bitmap(icon - BK_SVG_BASE, size, c);
++  return ib ? BK_imbuf_from_argb(ib->rect, ib->x, ib->y) : NULL;
++}
+ int BK_icon_count(void)
+ {
+   return bk_icon_def_count - 1;

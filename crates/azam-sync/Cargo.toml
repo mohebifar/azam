@@ -1,0 +1,22 @@
+[package]
+name = "azam-sync"
+description = "Live collaboration for azam projects: a CRDT model of the document, peer-to-peer LAN sync and a shared update log."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+azam-doc.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+# 0.27 and later need a newer compiler than the workspace's Rust 1.89.
+yrs = { version = "=0.26.0", features = ["sync"] }
+mdns-sd = "0.21"
+
+[dev-dependencies]
+proptest = "1"
+azam-geom.workspace = true
+
+[lints]
+workspace = true

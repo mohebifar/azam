@@ -1,0 +1,16 @@
+[package]
+name = "cjk-subset"
+description = "Builds the bundled CJK fallback font of azam-io: a subset of Noto Sans CJK SC Regular that keeps a cmap."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "GPL-3.0-or-later"
+publish = false
+
+# A standalone tool, outside the azam workspace.
+[workspace]
+
+[dependencies]
+encoding_rs = "0.8"
+subsetter = { version = "0.2.6", default-features = false }
+ttf-parser = "0.25.1"

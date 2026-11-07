@@ -1,0 +1,16 @@
+[package]
+name = "azam-mhpack"
+description = "Builds the morph-target avatar pack (assets/makehuman/makehuman-cc0.bin) from MakeHuman's CC0 system assets."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+azam-avatar.workspace = true
+glam.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,24 @@
+[package]
+name = "azam-sim-gpu"
+description = "GPU cloth solver: the XPBD cloth frame as wgpu compute passes over an azam-sim simulation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+azam-sim.workspace = true
+azam-avatar.workspace = true
+wgpu.workspace = true
+bytemuck.workspace = true
+pollster.workspace = true
+
+[dev-dependencies]
+azam-doc.workspace = true
+azam-geom.workspace = true
+glam.workspace = true
+# offline validation of every shader module (same naga as wgpu 24)
+naga = { version = "24", features = ["wgsl-in"] }
+
+[lints]
+workspace = true

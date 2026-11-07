@@ -1,0 +1,19 @@
+[package]
+name = "azam-mesh"
+description = "Triangle meshes of pattern pieces for cloth simulation: boundary sampling, grain-aligned interior lattice and Delaunay triangulation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+azam-geom.workspace = true
+# Exact orientation predicate for the Delaunay triangulation.
+robust = "1.2"
+
+[dev-dependencies]
+serde.workspace = true
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[lints]
+workspace = true

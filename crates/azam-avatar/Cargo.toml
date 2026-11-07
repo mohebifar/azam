@@ -1,0 +1,21 @@
+[package]
+name = "azam-avatar"
+description = "Avatars for draping: a parametric signed-distance body, a morph-target body fitted to tailor measurements, collision grids, display meshes and piece arrangement around the body."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+azam-geom.workspace = true
+glam.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rayon = "1.11"
+
+[dev-dependencies]
+# exact decimal parsing so golden numbers compare bit for bit
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[lints]
+workspace = true

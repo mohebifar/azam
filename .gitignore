@@ -1,0 +1,4 @@
+/target
+.DS_Store
+/tools/golden/node_modules
+/third_party/bui/

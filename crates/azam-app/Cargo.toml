@@ -1,0 +1,30 @@
+[package]
+name = "azam-app"
+description = "azam: a garment design app with a Blender-style interface."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "azam"
+path = "src/main.rs"
+
+[dependencies]
+azam-avatar.workspace = true
+azam-doc.workspace = true
+azam-geom.workspace = true
+azam-io.workspace = true
+azam-mesh.workspace = true
+azam-render.workspace = true
+azam-sim.workspace = true
+azam-sim-gpu = { path = "../azam-sim-gpu" }
+azam-sync = { path = "../azam-sync" }
+azam-trace = { path = "../azam-trace" }
+blenderui.workspace = true
+glam.workspace = true
+png = "0.17"
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,47 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "tools/mhpack"]
+exclude = ["third_party"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+azam-geom = { path = "crates/azam-geom" }
+azam-mesh = { path = "crates/azam-mesh" }
+azam-doc = { path = "crates/azam-doc" }
+azam-avatar = { path = "crates/azam-avatar" }
+azam-sim = { path = "crates/azam-sim" }
+azam-io = { path = "crates/azam-io" }
+azam-render = { path = "crates/azam-render" }
+blenderui = { path = "third_party/bui/bindings/rust/blenderui" }
+bytemuck = { version = "1", features = ["derive"] }
+wgpu = "24"
+pollster = "0.4"
+glam = { version = "0.34", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+# Geometry code reads best with short maths names (a, b, p, q, t) and numeric casts.
+many_single_char_names = "allow"
+similar_names = "allow"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+module_name_repetitions = "allow"
+# Colours are written as 0xRRGGBB, which separators would make harder to read.
+unreadable_literal = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2

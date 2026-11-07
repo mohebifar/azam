@@ -1,0 +1,24 @@
+[package]
+name = "azam-io"
+description = "Pattern import and export (DXF, SVG, OBJ), tech-pack tables and CSV, and print-ready pattern and tech-pack PDFs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+azam-doc.workspace = true
+azam-geom.workspace = true
+glam.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+indexmap = "2"
+miniz_oxide = "0.8"
+rustybuzz = "0.20.1"
+unicode-bidi = "0.3.18"
+subsetter = { version = "0.2.6", default-features = false }
+
+[dev-dependencies]
+
+[lints]
+workspace = true

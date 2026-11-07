@@ -1,0 +1,23 @@
+[package]
+name = "azam-sim"
+description = "CPU cloth solver: XPBD stretch, bending and sewing, body and cloth collision, untangling and fit maps."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+azam-geom.workspace = true
+azam-mesh.workspace = true
+azam-avatar.workspace = true
+azam-doc.workspace = true
+glam.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# exact decimal parsing so golden numbers compare bit for bit
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[lints]
+workspace = true

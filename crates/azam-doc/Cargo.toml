@@ -1,0 +1,19 @@
+[package]
+name = "azam-doc"
+description = "Project document model: pieces, sewing, fabrics, templates and undoable pattern edits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+azam-geom.workspace = true
+glam.workspace = true
+serde.workspace = true
+# `preserve_order` keeps object keys in file order, so a loaded project saves back in the same order
+# and "first colorway" means the same thing it does in the file.
+serde_json = { workspace = true, features = ["preserve_order"] }
+indexmap = { version = "2", features = ["serde"] }
+
+[lints]
+workspace = true

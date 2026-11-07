@@ -1,0 +1,23 @@
+[package]
+name = "azam-trace"
+description = "Offline path tracer for presentation renders of the draped garment (Blender's F12)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+azam-render.workspace = true
+glam.workspace = true
+png = "0.17"
+rayon = "1.11"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# The `tee` example drapes the T-shirt template to benchmark a realistic scene.
+azam-avatar.workspace = true
+azam-doc.workspace = true
+azam-sim.workspace = true
+serde_json.workspace = true
