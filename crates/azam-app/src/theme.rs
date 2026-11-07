@@ -168,7 +168,9 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
             border-radius: 12px; background: #2a2a2a; border: 1px solid #1a1a1a; color: #e6e6e6;
             white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
 .pie-item:hover { background: #4772b3; color: #ffffff; }
-.pie-title { position: absolute; color: #e6e6e6; font-weight: 600; white-space: nowrap; }
+.pie-title { position: absolute; color: #e6e6e6; font-weight: 600; white-space: nowrap; padding: 3px 10px;
+             border-radius: 4px; background: #232323; border: 1px solid #111111;
+             box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
 
 /* -- operator search (F3) ----------------------------------------------------------------------------- */
 .search { position: absolute; left: 50%; top: 80px; width: 460px; margin-left: -230px; z-index: 40;

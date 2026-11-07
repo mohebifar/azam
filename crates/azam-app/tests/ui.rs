@@ -2,6 +2,7 @@
 
 use azam_app::AzamApp;
 use azam_app::pattern::PATTERN_ID;
+use azam_app::viewport::VIEWPORT_ID;
 use blenderui::prelude::*;
 
 fn options() -> WindowOptions {
@@ -177,6 +178,43 @@ fn moving_over_another_menu_title_switches_menus() {
             win.root().read(cx).open_menu_title(),
             None,
             "clicking the open title closes it"
+        );
+    });
+}
+
+#[test]
+fn view_menu_opens_a_pie_in_the_middle_of_the_3d_view() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        let centre = |cx: &mut App, id: &str| {
+            let b = cx.element_bounds(win.id, id).unwrap_or_else(|| panic!("{id}"));
+            (b.origin.x + b.size.width / 2.0, b.origin.y + b.size.height / 2.0)
+        };
+        let view_menu = format!("menu-{}", win.root().read(cx).top_menu_count());
+        let (x, y) = centre(cx, &view_menu);
+        cx.simulate_click(win.id, x, y);
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let (x, y) = centre(cx, "submenu-Pie Menus");
+        cx.simulate_click(win.id, x, y);
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let (x, y) = centre(cx, "op-Shading Pie");
+        cx.simulate_click(win.id, x, y);
+        cx.draw(win.id);
+
+        let viewport = cx.element_bounds(win.id, VIEWPORT_ID).expect("3D view");
+        let (px, py) = win.root().read(cx).pie_centre().expect("the shading pie opens");
+        let (vx, vy) = (
+            viewport.origin.x + viewport.size.width / 2.0,
+            viewport.origin.y + viewport.size.height / 2.0,
+        );
+        assert!(
+            (px - vx).abs() < 1.0 && (py - vy).abs() < 1.0,
+            "pie at ({px}, {py}), view centre ({vx}, {vy})"
         );
     });
 }

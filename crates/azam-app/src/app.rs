@@ -299,6 +299,19 @@ impl AzamApp {
         &self.pattern_scene
     }
 
+    /// How many menus the top bar has; the editors' header menus follow them (the 3D view's View
+    /// menu is `menu-{top_menu_count}`).
+    #[must_use]
+    pub fn top_menu_count(&self) -> usize {
+        self.top_menu_count
+    }
+
+    /// Where the open pie menu is centred, if one is open.
+    #[must_use]
+    pub fn pie_centre(&self) -> Option<(f32, f32)> {
+        self.pie.as_ref().map(|p| p.at)
+    }
+
     /// The operator search's query, while the search is open.
     #[must_use]
     pub fn search_query(&self) -> Option<&str> {
@@ -378,6 +391,7 @@ impl AzamApp {
 
     /// Runs `op`.
     pub(crate) fn run(&mut self, op: Operator, window: &mut Window, cx: &mut Context<Self>) {
+        let from_menu = self.open_menu.is_some();
         self.open_menu = None;
         self.pie = None;
         match op {
@@ -430,7 +444,16 @@ impl AzamApp {
                 window.focus_id("search-input");
             }
             Operator::ShadingPie | Operator::ViewPie => {
-                let at = window.mouse_position();
+                // under the pointer for a key press over the 3D view, else (chosen from a menu,
+                // or the pointer elsewhere) in the middle of the view
+                let p = window.mouse_position();
+                let at = match self.viewport.bounds {
+                    Some(b) if from_menu || !contains(&b, p) => Point {
+                        x: px(b.origin.x + b.size.width / 2.0),
+                        y: px(b.origin.y + b.size.height / 2.0),
+                    },
+                    _ => p,
+                };
                 let kind = if op == Operator::ShadingPie {
                     PieKind::Shading
                 } else {
@@ -846,15 +869,9 @@ impl AzamApp {
 
     /// The menu whose title lies under `p`, while a menu is open.
     fn menu_title_at(&self, p: Point<Pixels>) -> Option<usize> {
-        let (x, y) = (p.x.0, p.y.0);
-        self.menu_title_bounds.iter().position(|b| {
-            b.is_some_and(|b| {
-                x >= b.origin.x
-                    && x < b.origin.x + b.size.width
-                    && y >= b.origin.y
-                    && y < b.origin.y + b.size.height
-            })
-        })
+        self.menu_title_bounds
+            .iter()
+            .position(|b| b.is_some_and(|b| contains(&b, p)))
     }
 
     /// A menu's title: click opens it, hovering moves between open menus (as in Blender).
@@ -939,6 +956,7 @@ impl AzamApp {
         };
         div()
             .class("menu-item")
+            .id(format!("op-{}", op.label()))
             .child(icon)
             .child(div().class("menu-label").child(op.label()))
             .when_some(op.shortcut(), |el, s| {
@@ -1314,8 +1332,8 @@ impl AzamApp {
             .child(
                 div()
                     .class("pie-title")
-                    .css("left", format!("{}px", pie.at.0 - 30.0))
-                    .css("top", format!("{}px", pie.at.1 - PIE_RADIUS * 0.75 - 44.0))
+                    .css("left", format!("{}px", pie.at.0 - 40.0))
+                    .css("top", format!("{}px", pie.at.1 - PIE_RADIUS * 0.75 - 54.0))
                     .child(title),
             )
             .child(
@@ -1546,4 +1564,10 @@ impl Render for AzamApp {
             .child(head().child(title().child("azam")).child(style().child(CSS)))
             .child(body().child(root))
     }
+}
+
+/// Whether `p` lies inside `b`.
+fn contains(b: &Bounds<f32>, p: Point<Pixels>) -> bool {
+    let (x, y) = (p.x.0, p.y.0);
+    x >= b.origin.x && x < b.origin.x + b.size.width && y >= b.origin.y && y < b.origin.y + b.size.height
 }

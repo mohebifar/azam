@@ -644,6 +644,9 @@ pub const NEW_MENU: &[Operator] = &[
     Operator::New(Template::Aba),
 ];
 
+/// The 3D view's View ▸ Pie Menus submenu: the pies Z and ` open, for finding them by menu.
+pub const PIE_MENU: &[Operator] = &[Operator::ShadingPie, Operator::ViewPie];
+
 /// A top-bar menu: its title and entries.
 pub struct Menu {
     /// Title in the top bar.
@@ -673,6 +676,8 @@ pub fn editor_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::ToggleAvatar),
                 Item(O::ToggleGrid),
+                Separator,
+                MenuEntry::Sub("Pie Menus", "MENU_PANEL", PIE_MENU),
             ],
         },
         Menu {
