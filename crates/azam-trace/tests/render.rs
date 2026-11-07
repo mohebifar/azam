@@ -21,6 +21,7 @@ fn plane(y: f32, half: f32, material: Material) -> Mesh {
         // Counter-clockwise seen from above, so the face normal points up.
         indices: vec![0, 2, 1, 0, 3, 2],
         material,
+        decal: None,
     }
 }
 
@@ -57,6 +58,7 @@ fn sphere(center: Vec3, radius: f32, material: Material) -> Mesh {
         uvs: Vec::new(),
         indices,
         material,
+        decal: None,
     }
 }
 

@@ -17,14 +17,18 @@ struct Draw {
     color: vec4<f32>,
     // x: highlight amount, y: vertex colour weight, z: inside brightness, w: specular strength.
     params: vec4<f32>,
-    // x: weave kind, y: weave repeat in mm, z: roughness, w: unused.
+    // x: weave kind, y: weave repeat in mm, z: roughness, w: 1 when a decal is bound.
     material: vec4<f32>,
+    // Decal placement in UV (pattern mm) space: xy the image's min corner, zw 1 / its size.
+    decal: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var shadow_map: texture_depth_2d;
 @group(0) @binding(2) var shadow_sampler: sampler_comparison;
 @group(1) @binding(0) var<uniform> draw: Draw;
+@group(2) @binding(0) var decal_image: texture_2d<f32>;
+@group(2) @binding(1) var decal_sampler: sampler;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -153,7 +157,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     }
     let kind = u32(draw.material.x + 0.5);
     let pattern = weave(in.uv, kind, draw.material.y);
-    let base = draw.color.rgb * mix(vec3<f32>(1.0), in.color.rgb, draw.params.y) * pattern;
+    let cloth = draw.color.rgb * mix(vec3<f32>(1.0), in.color.rgb, draw.params.y) * pattern;
+    // graphics printed on the piece, over the weave
+    let duv = (in.uv - draw.decal.xy) * draw.decal.zw;
+    let print = textureSample(decal_image, decal_sampler, duv);
+    let on_image = all(duv >= vec2<f32>(0.0)) && all(duv <= vec2<f32>(1.0)) && draw.material.w > 0.5;
+    let base = mix(cloth, print.rgb, select(0.0, print.a, on_image));
     let key = normalize(frame.light.xyz);
     let shadow = lit(in.world, n);
     let hemi = mix(GROUND, SKY, n.y * 0.5 + 0.5);

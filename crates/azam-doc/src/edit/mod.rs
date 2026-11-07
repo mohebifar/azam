@@ -1,5 +1,6 @@
 //! Pattern edits: the operations commands are built from.
 
+mod dart;
 mod grading;
 mod library;
 mod pieces;
@@ -8,6 +9,7 @@ mod segment;
 mod shapes;
 mod transform;
 
+pub use dart::{DEFAULT_DART_DEPTH_MM, DEFAULT_DART_WIDTH_MM, add_dart};
 pub use grading::{grade_points_linear, grade_step, set_sizes};
 pub use library::{duplicate_colorway, duplicate_fabric};
 pub use pieces::{

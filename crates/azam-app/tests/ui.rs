@@ -244,3 +244,46 @@ fn operator_search_switches_the_fit_map() {
         );
     });
 }
+
+#[test]
+fn pinning_cloth_is_saved_on_the_piece() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        for _ in 0..200 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+            if win.root().read(cx).sim_time().is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let pins = |cx: &App| -> usize {
+            win.root()
+                .read(cx)
+                .session()
+                .project
+                .pieces
+                .values()
+                .map(|p| p.pins.len())
+                .sum()
+        };
+        assert_eq!(pins(cx), 0);
+        let vp = cx.element_bounds(win.id, VIEWPORT_ID).expect("3D view");
+        // the chest of the avatar, where the tee's front hangs
+        let (x, y) = (
+            vp.origin.x + vp.size.width / 2.0,
+            vp.origin.y + vp.size.height * 0.42,
+        );
+        cx.simulate_mouse_move(win.id, x, y);
+        cx.simulate_key(win.id, "i", "i");
+        cx.draw(win.id);
+        cx.simulate_click(win.id, x, y);
+        cx.draw(win.id);
+        assert_eq!(pins(cx), 1, "a click with the Pin tool stores a pin on the piece");
+        cx.simulate_click(win.id, x, y);
+        cx.draw(win.id);
+        assert_eq!(pins(cx), 0, "a second click on it removes the pin");
+    });
+}

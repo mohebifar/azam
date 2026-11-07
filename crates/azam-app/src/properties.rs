@@ -405,7 +405,7 @@ impl AzamApp {
                 vec![
                     cw_row,
                     cw_name_row,
-                    self.new_colorway_button(cx),
+                    Self::new_colorway_button(cx),
                     self.colorway_grid(),
                 ],
             ),
@@ -667,7 +667,7 @@ impl AzamApp {
     }
 
     /// A button that adds a copy of the active colorway and makes it active.
-    fn new_colorway_button(&self, cx: &mut Context<Self>) -> Div {
+    fn new_colorway_button(cx: &mut Context<Self>) -> Div {
         div()
             .class("pbuttons")
             .child(div().class("pbtn").child("New Colorway").on_click(cx.listener(

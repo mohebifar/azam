@@ -1,4 +1,5 @@
-//! The `azam` binary: `azam` opens the window; `azam --screenshot out.png [--size WxH]` renders one
+//! The `azam` binary: `azam [project.json]` opens the window (on that project);
+//! `azam --screenshot out.png [--size WxH]` renders one
 //! frame headless; `azam --render out.png [--frames N] [--render-size WxH] [--samples N]` drapes
 //! for `N` frames and path-traces the 3D view (Blender's F12) headless.
 
@@ -16,6 +17,8 @@ struct Args {
     samples: u32,
     workspace: Option<String>,
     template: Option<String>,
+    /// A project file to open (the first argument that is not an option or its value).
+    open: Option<String>,
     frames: usize,
     size: (f32, f32),
 }
@@ -49,6 +52,32 @@ fn parse_args() -> Args {
             .unwrap_or(azam_app::render_view::RENDER_SAMPLES),
         workspace: value("--workspace"),
         template: value("--template"),
+        open: {
+            const WITH_VALUE: [&str; 8] = [
+                "--screenshot",
+                "--render",
+                "--render-size",
+                "--samples",
+                "--workspace",
+                "--template",
+                "--frames",
+                "--size",
+            ];
+            let mut open = None;
+            let mut k = 1;
+            while k < args.len() {
+                if WITH_VALUE.contains(&args[k].as_str()) {
+                    k += 2;
+                    continue;
+                }
+                if !args[k].starts_with("--") {
+                    open = Some(args[k].clone());
+                    break;
+                }
+                k += 1;
+            }
+            open
+        },
         frames: value("--frames").and_then(|f| f.parse().ok()).unwrap_or(0),
         size,
     }
@@ -104,9 +133,15 @@ fn main() {
                 .as_deref()
                 .and_then(azam_app::operators::Template::from_key),
         );
+        let open = args.open.clone();
         window.root().update(cx, |app, _| {
             if let Some(t) = template {
                 app.open_template(t);
+            }
+            if let Some(path) = &open
+                && let Err(e) = app.open_file(std::path::Path::new(path))
+            {
+                eprintln!("azam: could not open {path}: {e}");
             }
             if let Some(w) = workspace {
                 app.set_workspace(w);

@@ -156,7 +156,7 @@ impl AzamApp {
     }
 
     /// Whether `piece` is a linked mirror (edit its source instead); says so in the status bar.
-    fn refuse_mirror(&mut self, piece: &PieceId) -> bool {
+    pub(super) fn refuse_mirror(&mut self, piece: &PieceId) -> bool {
         let mirrored = self
             .session
             .project

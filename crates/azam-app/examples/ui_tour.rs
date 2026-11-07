@@ -82,5 +82,34 @@ fn main() {
             cx.simulate_click(win.id, 1162.0, 325.0 + 28.0 * i as f32);
             shot(cx, name);
         }
+        // a logo printed on the front, draped, in the viewport and the path tracer
+        let logo = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../third_party/bui/public/Logo.png"
+        );
+        if std::path::Path::new(logo).is_file() {
+            win.root().update(cx, |app, _| {
+                app.edit_project("Add Graphic", |p| {
+                    let front = p.pieces.values().find(|pc| pc.name == "Front").map(|pc| {
+                        let b = azam_geom::bbox(pc.pts.iter().map(|q| q.pos)).expect("outline");
+                        (pc.id.clone(), b.center())
+                    });
+                    if let Some((id, c)) = front {
+                        azam_doc::add_graphic(p, &id, c, azam_geom::Vec2::new(140.0, 140.0), Some(logo));
+                    }
+                });
+                app.set_playing(true);
+            });
+            for _ in 0..240 {
+                win.root().update(cx, |_, cx| cx.notify());
+                cx.draw(win.id);
+            }
+            win.root().update(cx, |app, _| app.set_playing(false));
+            shot(cx, "11-graphic-3d");
+            let rendered = win.root().read(cx).render_still(640, 400, 32);
+            if let Ok((image, _)) = rendered {
+                let _ = image.write_png(&out.join("11b-graphic-render.png"));
+            }
+        }
     });
 }

@@ -24,6 +24,7 @@ const fn segment_tool(tool: Tool) -> bool {
             | Tool::CurvePoint
             | Tool::Curvature
             | Tool::Notch
+            | Tool::Dart
             | Tool::Topstitch
             | Tool::EditPoints
     )

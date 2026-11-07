@@ -97,6 +97,7 @@ impl AzamApp {
             Tool::Polygon | Tool::InternalLine => self.draft_press(press),
             Tool::Rectangle | Tool::Ellipse | Tool::InternalEllipse => self.shape_press(press),
             Tool::Notch => self.notch_press(press),
+            Tool::Dart => self.dart_press(press),
             Tool::Sew => self.sew_press(press, false),
             Tool::FreeSew => self.sew_press(press, true),
             Tool::EditSew => self.edit_sew_press(press),
@@ -319,6 +320,11 @@ impl AzamApp {
             Tool::Rectangle | Tool::Ellipse => "Drag to draw a piece (Shift: square)".into(),
             Tool::InternalEllipse => "Drag inside a piece".into(),
             Tool::Notch => "Click a segment to add a notch".into(),
+            Tool::Dart => format!(
+                "Click a segment to cut a {:.0} × {:.0} mm dart there; move its points with Edit Points",
+                azam_doc::DEFAULT_DART_WIDTH_MM,
+                azam_doc::DEFAULT_DART_DEPTH_MM
+            ),
             Tool::Sew | Tool::FreeSew => SewDraft::hint(sewing, self.tool == Tool::FreeSew),
             Tool::EditSew => {
                 "Click a seam to select it · flip, swap or delete it from the Sewing menu".into()

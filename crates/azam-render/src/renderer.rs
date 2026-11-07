@@ -143,7 +143,14 @@ pub struct Draw {
     pub weave_mm: f32,
     /// Whether the mesh casts a shadow.
     pub casts_shadow: bool,
+    /// An image printed on the mesh (graphics on a piece), and where it lies in the mesh's UV
+    /// space (pattern mm): `[min u, min v, 1 / width, 1 / height]`.
+    pub decal: Option<(DecalId, [f32; 4])>,
 }
+
+/// Identifies a decal image uploaded to a [`Renderer`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DecalId(pub u32);
 
 impl Draw {
     /// A plain opaque draw of `mesh` in `color` (sRGB).
@@ -160,6 +167,7 @@ impl Draw {
             weave: Weave::None,
             weave_mm: 1.2,
             casts_shadow: true,
+            decal: None,
         }
     }
 }
@@ -197,6 +205,7 @@ struct DrawUniform {
     color: [f32; 4],
     params: [f32; 4],
     material: [f32; 4],
+    decal: [f32; 4],
 }
 
 /// Converts one sRGB channel to linear.
@@ -272,6 +281,7 @@ struct Pipelines {
     frame_layout: wgpu::BindGroupLayout,
     light_layout: wgpu::BindGroupLayout,
     draw_layout: wgpu::BindGroupLayout,
+    decal_layout: wgpu::BindGroupLayout,
 }
 
 /// Draws scenes into RGBA pixels.
@@ -288,6 +298,9 @@ pub struct Renderer {
     draw_capacity: u64,
     draw_stride: u64,
     meshes: BTreeMap<MeshId, GpuMesh>,
+    decals: BTreeMap<DecalId, wgpu::BindGroup>,
+    no_decal: wgpu::BindGroup,
+    decal_sampler: wgpu::Sampler,
     targets: Option<Targets>,
     pixels: Vec<u8>,
 }
@@ -389,6 +402,21 @@ impl Renderer {
         let draw_capacity = 16;
         let (draw_buffer, draw_group) =
             Self::draw_slots(&device, &pipelines.draw_layout, draw_stride, draw_capacity);
+        let decal_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("decal"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let no_decal = Self::decal_group(
+            &device,
+            &queue,
+            &pipelines.decal_layout,
+            &decal_sampler,
+            1,
+            1,
+            &[0; 4],
+        );
         Self {
             device,
             queue,
@@ -402,6 +430,9 @@ impl Renderer {
             draw_capacity,
             draw_stride,
             meshes: BTreeMap::new(),
+            decals: BTreeMap::new(),
+            no_decal,
+            decal_sampler,
             targets: None,
             pixels: Vec::new(),
         }
@@ -444,6 +475,86 @@ impl Renderer {
             }],
         });
         (buffer, group)
+    }
+
+    /// A bind group holding a `width` × `height` sRGB RGBA image.
+    fn decal_group(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> wgpu::BindGroup {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("decal"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("decal"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        })
+    }
+
+    /// Uploads or replaces decal `id`: a `width` × `height` image of sRGB RGBA bytes (row by
+    /// row, top first). An image whose byte count does not match is ignored.
+    pub fn set_decal(&mut self, id: DecalId, width: u32, height: u32, rgba: &[u8]) {
+        if width == 0 || height == 0 || rgba.len() != (width * height * 4) as usize {
+            return;
+        }
+        let group = Self::decal_group(
+            &self.device,
+            &self.queue,
+            &self.pipelines.decal_layout,
+            &self.decal_sampler,
+            width,
+            height,
+            rgba,
+        );
+        self.decals.insert(id, group);
+    }
+
+    /// Forgets decal `id`.
+    pub fn remove_decal(&mut self, id: DecalId) {
+        self.decals.remove(&id);
     }
 
     /// Uploads or replaces mesh `id`.
@@ -636,7 +747,13 @@ impl Renderer {
                     d.color[3],
                 ],
                 params: [d.highlight, d.vertex_colors, d.inside, d.specular],
-                material: [d.weave.code(), d.weave_mm, d.roughness, 0.0],
+                material: [
+                    d.weave.code(),
+                    d.weave_mm,
+                    d.roughness,
+                    if self.has_decal(d) { 1.0 } else { 0.0 },
+                ],
+                decal: d.decal.map_or([0.0; 4], |(_, rect)| rect),
             };
             let at = i * self.draw_stride as usize;
             bytes[at..at + DRAW_UNIFORM_SIZE as usize].copy_from_slice(bytemuck::bytes_of(&uniform));
@@ -644,6 +761,11 @@ impl Renderer {
         if !bytes.is_empty() {
             self.queue.write_buffer(&self.draw_buffer, 0, &bytes);
         }
+    }
+
+    /// Whether draw `d` names a decal that is uploaded.
+    fn has_decal(&self, d: &Draw) -> bool {
+        d.decal.is_some_and(|(id, _)| self.decals.contains_key(&id))
     }
 
     fn encode_shadow_pass(&self, encoder: &mut wgpu::CommandEncoder, draws: &[Draw]) {
@@ -714,6 +836,11 @@ impl Renderer {
                 continue;
             };
             pass.set_bind_group(1, &self.draw_group, &[(i as u64 * self.draw_stride) as u32]);
+            let decal = d
+                .decal
+                .and_then(|(id, _)| self.decals.get(&id))
+                .unwrap_or(&self.no_decal);
+            pass.set_bind_group(2, decal, &[]);
             pass.set_vertex_buffer(0, mesh.positions.slice(..));
             pass.set_vertex_buffer(1, mesh.normals.slice(..));
             pass.set_vertex_buffer(2, mesh.colors.slice(..));
@@ -787,7 +914,28 @@ impl Pipelines {
             label: Some("draw"),
             entries: &[uniform(0, true)],
         });
-        let mesh = Self::mesh_pipeline(device, &frame_layout, &draw_layout);
+        let decal_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("decal"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let mesh = Self::mesh_pipeline(device, &frame_layout, &draw_layout, &decal_layout);
         let grid = Self::grid_pipeline(device, &frame_layout);
         let shadow = Self::shadow_pipeline(device, &light_layout);
         Self {
@@ -797,6 +945,7 @@ impl Pipelines {
             frame_layout,
             light_layout,
             draw_layout,
+            decal_layout,
         }
     }
 
@@ -822,11 +971,12 @@ impl Pipelines {
         device: &wgpu::Device,
         frame_layout: &wgpu::BindGroupLayout,
         draw_layout: &wgpu::BindGroupLayout,
+        decal_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/mesh.wgsl"));
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("mesh"),
-            bind_group_layouts: &[frame_layout, draw_layout],
+            bind_group_layouts: &[frame_layout, draw_layout, decal_layout],
             push_constant_ranges: &[],
         });
         let attribute = |location, format| wgpu::VertexAttribute {

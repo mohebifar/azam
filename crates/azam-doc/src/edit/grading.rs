@@ -154,7 +154,10 @@ mod tests {
             "L is gone, so the base is shown"
         );
         assert!(
-            p.pieces[&piece].grade.as_ref().is_none_or(|r| r.is_empty()),
+            p.pieces[&piece]
+                .grade
+                .as_ref()
+                .is_none_or(std::collections::BTreeMap::is_empty),
             "rules for S and L are dropped"
         );
         assert!(!set_sizes(&mut p, &names(&["", " "])), "an empty run is refused");

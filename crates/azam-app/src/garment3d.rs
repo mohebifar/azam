@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, channel};
 
 use azam_avatar::{Avatar, AvatarKind, AvatarParams, MEASUREMENTS, Motion};
 use azam_doc::{PieceId, Project};
-use azam_render::{Draw, MeshData, MeshId, Renderer, Weave, srgb_to_linear};
+use azam_render::{DecalId, Draw, MeshData, MeshId, Renderer, Weave, srgb_to_linear};
 use azam_sim::{AutoStop, FitMode, FitSummary, SimParams, Simulation, StopReason, resolve_settings};
 use azam_sim_gpu::{GpuSim, GpuSolver};
 use glam::Vec3;
@@ -72,6 +72,10 @@ pub struct Scene3d {
     pub gpu_error: Option<String>,
     /// The avatar motion played with the simulation.
     pub motion: MotionState,
+    /// Each piece's composited graphics: what they were made from, the renderer's id, the image.
+    decals: std::collections::HashMap<PieceId, (String, DecalId, Arc<crate::decals::PieceDecal>)>,
+    decal_images: crate::decals::ImageCache,
+    next_decal: u32,
     /// Use the parametric mannequin even when the morph-target pack is available.
     pub mannequin: bool,
 }
@@ -190,6 +194,7 @@ impl Scene3d {
             self.sim = Some(sim);
             self.attach_gpu(renderer);
             self.upload_pieces(renderer);
+            self.sync_decals(project, renderer);
             self.fit_frame = 0;
             // the new simulation starts on the resting avatar
             self.motion.stop();
@@ -203,6 +208,43 @@ impl Scene3d {
             self.show_body(renderer, &avatar);
         }
         self.pending.is_some()
+    }
+
+    /// Composites the graphics of pieces whose graphics changed and uploads them; forgets those of
+    /// pieces that no longer have any.
+    fn sync_decals(&mut self, project: &Project, renderer: &mut Renderer) {
+        let stale: Vec<PieceId> = self
+            .decals
+            .keys()
+            .filter(|id| project.pieces.get(*id).is_none_or(|pc| pc.graphics.is_empty()))
+            .cloned()
+            .collect();
+        for id in stale {
+            if let Some((_, decal, _)) = self.decals.remove(&id) {
+                renderer.remove_decal(decal);
+            }
+        }
+        for (id, piece) in &project.pieces {
+            if piece.graphics.is_empty() {
+                continue;
+            }
+            let key = crate::decals::decal_key(piece);
+            if self.decals.get(id).is_some_and(|(k, _, _)| *k == key) {
+                continue;
+            }
+            let Some(image) = crate::decals::piece_decal(piece, &mut self.decal_images) else {
+                continue;
+            };
+            let decal = self.decals.get(id).map_or_else(
+                || {
+                    self.next_decal += 1;
+                    DecalId(self.next_decal)
+                },
+                |(_, d, _)| *d,
+            );
+            renderer.set_decal(decal, image.image.width, image.image.height, &image.image.data);
+            self.decals.insert(id.clone(), (key, decal, Arc::new(image)));
+        }
     }
 
     /// Gives the solver and the renderer `body` (a posed or the resting avatar).
@@ -383,6 +425,17 @@ impl Scene3d {
             renderer.update_colors(MeshId(FIRST_PIECE_MESH + ri as u32), &colors);
         }
     }
+    /// The piece particle `q` belongs to and where it lies on the flat pattern, in mm.
+    #[must_use]
+    pub fn particle_pattern_pos(&self, q: usize) -> Option<(PieceId, f64, f64)> {
+        let sim = self.sim.as_ref()?;
+        let r = sim
+            .records
+            .iter()
+            .find(|r| (r.offset..r.offset + r.count).contains(&q))?;
+        let k = 2 * (q - r.offset);
+        Some((r.id.clone(), *r.mesh.xy.get(k)?, *r.mesh.xy.get(k + 1)?))
+    }
 
     /// The nearest garment hit along a ray: piece record, global particle nearest the hit, distance.
     #[must_use]
@@ -470,6 +523,9 @@ impl Scene3d {
                 draw.specular = 0.08;
             }
             draw.vertex_colors = if fit { 1.0 } else { 0.0 };
+            if !fit && let Some((_, decal, image)) = self.decals.get(&record.id) {
+                draw.decal = Some((*decal, image.rect()));
+            }
             if selection.pieces.contains(&record.id) && !fit {
                 draw.highlight = if selection.active.as_ref() == Some(&record.id) {
                     0.5
@@ -498,6 +554,7 @@ impl Scene3d {
                 uvs: Vec::new(),
                 indices: avatar.mesh.indices.clone(),
                 material: azam_trace::Material::skin(linear(skin)),
+                decal: None,
             });
         }
         let Some(sim) = &self.sim else { return meshes };
@@ -517,6 +574,15 @@ impl Scene3d {
                 uvs: pattern_uvs(&view.record.mesh.xy),
                 indices: view.triangles.to_vec(),
                 material,
+                decal: self.decals.get(&view.record.id).map(|(_, _, d)| {
+                    Arc::new(azam_trace::Decal {
+                        width: d.image.width,
+                        height: d.image.height,
+                        rgba: d.image.data.clone(),
+                        min: [d.min.x as f32, d.min.y as f32],
+                        size: [d.size.x as f32, d.size.y as f32],
+                    })
+                }),
             });
         }
         meshes

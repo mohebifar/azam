@@ -7,14 +7,15 @@ use crate::project::{Colorway, Project};
 const COLORWAY_PREFIX: &str = "cw";
 
 /// `name` with Blender's numeric suffix (`Name.001`, `Name.002`…) that no name in `taken` has.
-fn next_name<'a>(name: &str, taken: impl Iterator<Item = &'a str> + Clone) -> String {
+fn next_name(name: &str, taken: &[&str]) -> String {
     let base = match name.rsplit_once('.') {
         Some((stem, digits)) if digits.len() == 3 && digits.bytes().all(|b| b.is_ascii_digit()) => stem,
         _ => name,
     };
-    (1..)
+    // one of the first `taken.len() + 1` suffixes is always free
+    (1..=taken.len() + 1)
         .map(|n| format!("{base}.{n:03}"))
-        .find(|candidate| !taken.clone().any(|t| t == candidate))
+        .find(|candidate| !taken.contains(&candidate.as_str()))
         .unwrap_or_else(|| base.to_owned())
 }
 
@@ -24,7 +25,8 @@ fn next_name<'a>(name: &str, taken: impl Iterator<Item = &'a str> + Clone) -> St
 pub fn duplicate_fabric(project: &mut Project, source: &FabricId) -> Option<FabricId> {
     let mut fabric = project.fabrics.get(source)?.clone();
     let id = FabricId::new(project.fresh_id(prefix::FABRIC));
-    fabric.name = next_name(&fabric.name, project.fabrics.values().map(|f| f.name.as_str()));
+    let names: Vec<&str> = project.fabrics.values().map(|f| f.name.as_str()).collect();
+    fabric.name = next_name(&fabric.name, &names);
     fabric.id = id.clone();
     for cw in project.colorways.values_mut() {
         if let Some(over) = cw.over.get(source).cloned() {
@@ -39,7 +41,8 @@ pub fn duplicate_fabric(project: &mut Project, source: &FabricId) -> Option<Fabr
 /// id; `None` if there is no such colorway.
 pub fn duplicate_colorway(project: &mut Project, source: &ColorwayId) -> Option<ColorwayId> {
     let src = project.colorways.get(source)?;
-    let name = next_name(&src.name, project.colorways.values().map(|c| c.name.as_str()));
+    let names: Vec<&str> = project.colorways.values().map(|c| c.name.as_str()).collect();
+    let name = next_name(&src.name, &names);
     let order = project.colorways.values().map(|c| c.order + 1).max().unwrap_or(0);
     let over = src.over.clone();
     let extra = src.extra.clone();
@@ -64,9 +67,9 @@ mod tests {
     #[test]
     fn names_take_the_next_free_suffix() {
         let taken = ["Jersey", "Jersey.001"];
-        assert_eq!(next_name("Jersey", taken.iter().copied()), "Jersey.002");
-        assert_eq!(next_name("Jersey.001", taken.iter().copied()), "Jersey.002");
-        assert_eq!(next_name("Denim", taken.iter().copied()), "Denim.001");
+        assert_eq!(next_name("Jersey", &taken), "Jersey.002");
+        assert_eq!(next_name("Jersey.001", &taken), "Jersey.002");
+        assert_eq!(next_name("Denim", &taken), "Denim.001");
     }
 
     #[test]

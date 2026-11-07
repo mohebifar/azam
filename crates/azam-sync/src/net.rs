@@ -795,10 +795,10 @@ impl Engine {
             .transact()
             .encode_state_as_update_v1(&yrs::StateVector::default());
         match log.compact(&state) {
-            // Our own reader will meet the snapshot in the new file: nothing new for anyone.
-            Ok(Some(snapshot)) => {
-                self.mark_seen(hash_bytes(&snapshot));
-            }
+            // The snapshot also holds records other writers appended that this replica has not
+            // read yet: apply it like any record from the log (which also keeps our reader from
+            // applying it a second time when it meets it in the new file).
+            Ok(Some(snapshot)) => self.integrate(snapshot, Source::Log),
             Ok(None) => {}
             Err(e) => self.error = Some(format!("could not compact the update log: {e}")),
         }

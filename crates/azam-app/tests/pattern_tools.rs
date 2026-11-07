@@ -502,3 +502,37 @@ fn curvature_bends_a_segment() {
         assert_eq!(ui.app(cx).session().project.pieces[&back].pts, before);
     });
 }
+
+#[test]
+fn dart_tool_cuts_a_sewn_dart() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        let (middle, seams_before) = {
+            let app = ui.app(cx);
+            let ol = app.session().project.pieces[&back].outline();
+            let longest = ol
+                .segments
+                .iter()
+                .max_by(|a, b| a.len.total_cmp(&b.len))
+                .expect("segments");
+            (longest.point_at(0.5).pos, app.session().project.sewing.len())
+        };
+        ui.key(cx, "d", "d");
+        assert_eq!(ui.app(cx).current_tool(), azam_app::operators::Tool::Dart);
+        ui.click(cx, middle);
+        let app = ui.app(cx);
+        assert_eq!(
+            app.session().project.sewing.len(),
+            seams_before + 1,
+            "the dart's legs are sewn"
+        );
+        let seam = app.session().project.sewing.values().last().expect("seam");
+        assert!(
+            seam.a[0].piece == back && seam.b[0].piece == back,
+            "both legs are on the back"
+        );
+        ui.undo(cx);
+        assert_eq!(ui.app(cx).session().project.sewing.len(), seams_before);
+    });
+}

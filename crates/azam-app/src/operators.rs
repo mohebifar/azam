@@ -89,6 +89,8 @@ pub enum Tool {
     InternalEllipse,
     /// Put a notch on a segment.
     Notch,
+    /// Cut a sewn dart into a segment.
+    Dart,
     /// Sew two segments (Shift: several segments per side).
     Sew,
     /// Sew two stretches between freely picked points.
@@ -134,6 +136,7 @@ impl Tool {
             Self::InternalLine,
             Self::InternalEllipse,
             Self::Notch,
+            Self::Dart,
         ],
         &[Self::Sew, Self::FreeSew, Self::EditSew],
         &[
@@ -169,6 +172,7 @@ impl Tool {
             Self::InternalLine => "Internal Polygon / Line",
             Self::InternalEllipse => "Internal Ellipse",
             Self::Notch => "Notch",
+            Self::Dart => "Dart",
             Self::Sew => "Segment Sewing",
             Self::FreeSew => "Free Sewing",
             Self::EditSew => "Edit Sewing",
@@ -200,6 +204,7 @@ impl Tool {
             Self::InternalLine => "OUTLINER_DATA_GP_LAYER",
             Self::InternalEllipse => "CURVE_NCIRCLE",
             Self::Notch => "SNAP_PERPENDICULAR",
+            Self::Dart => "MOD_TRIANGULATE",
             Self::Sew => "AUTOMERGE_ON",
             Self::FreeSew => "SNAP_EDGE",
             Self::EditSew => "LINKED",
@@ -213,6 +218,32 @@ impl Tool {
             Self::Grab => "HAND",
             Self::Pin => "PINNED",
             Self::Measure => "DRIVER_DISTANCE",
+        }
+    }
+
+    /// What the left mouse button does with this tool, for the status bar.
+    #[must_use]
+    pub const fn lmb_hint(self) -> &'static str {
+        match self {
+            Self::Select => "Select / Move",
+            Self::EditPoints => "Select Points",
+            Self::Curvature => "Bend Segment",
+            Self::CurvePoint => "Add Curve Point",
+            Self::AddPoint | Self::Polygon | Self::InternalLine => "Add Point",
+            Self::Rectangle | Self::Ellipse | Self::InternalEllipse => "Drag Shape",
+            Self::Notch => "Add Notch",
+            Self::Dart => "Add Dart",
+            Self::Sew | Self::FreeSew | Self::Topstitch => "Pick Segment",
+            Self::EditSew => "Select Seam",
+            Self::EditTopstitch => "Select Topstitch",
+            Self::Button => "Place Button",
+            Self::Buttonhole => "Place Buttonhole",
+            Self::FastenButton => "Fasten Button",
+            Self::Graphic => "Place Graphic",
+            Self::Comment => "Add Comment",
+            Self::Grab => "Drag Cloth",
+            Self::Pin => "Pin / Unpin",
+            Self::Measure => "Measure",
         }
     }
 
@@ -239,6 +270,7 @@ impl Tool {
             Self::Grab => "G",
             Self::Pin => "I",
             Self::Measure => "M",
+            Self::Dart => "D",
             Self::Notch | Self::Button | Self::Buttonhole | Self::FastenButton | Self::Comment => {
                 return None;
             }
@@ -268,6 +300,7 @@ impl Tool {
             ("g", false) => Self::Grab,
             ("i", false) => Self::Pin,
             ("m", false) => Self::Measure,
+            ("d", false) => Self::Dart,
             _ => return None,
         })
     }
@@ -651,7 +684,8 @@ pub const NEW_MENU: &[Operator] = &[
     Operator::New(Template::Aba),
 ];
 
-/// The 3D view's View ▸ Pie Menus submenu: the pies Z and ` open, for finding them by menu.
+/// The 3D view's View ▸ Pie Menus submenu: the pies Z and the backquote key open, for finding
+/// them by menu.
 pub const PIE_MENU: &[Operator] = &[Operator::ShadingPie, Operator::ViewPie];
 
 /// The fit maps, in the order the 3D header's dropdown lists them.

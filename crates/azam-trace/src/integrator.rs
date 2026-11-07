@@ -85,6 +85,8 @@ pub(crate) struct Prepared {
     normals: Vec<Vec3>,
     uvs: Vec<Vec2>,
     materials: Vec<Material>,
+    /// Printed image of each material's mesh, if any.
+    decals: Vec<Option<std::sync::Arc<crate::Decal>>>,
     lights: Vec<Light>,
     sky: Sky,
     floor: Option<Floor>,
@@ -155,12 +157,18 @@ impl Prepared {
         let mut tri_normal = Vec::new();
         let mut corners = Vec::new();
         let mut materials = Vec::new();
+        let mut decals = Vec::new();
         for (mi, mesh) in scene.meshes.iter().enumerate() {
             let mut material = mesh.material;
             if mesh.uvs.len() != mesh.positions.len() {
                 material.weave = Weave::None;
             }
             materials.push(material);
+            decals.push(
+                mesh.decal
+                    .clone()
+                    .filter(|_| mesh.uvs.len() == mesh.positions.len()),
+            );
             let base = positions.len() as u32;
             let n = mesh.positions.len();
             positions.extend(mesh.positions.iter().map(|p| Vec3::from(*p)));
@@ -203,6 +211,7 @@ impl Prepared {
             normals,
             uvs,
             materials,
+            decals,
             lights,
             sky: scene.lighting.sky,
             floor: scene.lighting.floor,
@@ -293,7 +302,8 @@ impl Prepared {
         if ns == Vec3::ZERO {
             ns = ng;
         }
-        let material = &self.materials[self.tri_material[prim] as usize];
+        let mi = self.tri_material[prim] as usize;
+        let material = &self.materials[mi];
         let wo = -ray.dir;
         // The vertex normals say which side is the outside; seen from the other side it's the inside.
         if ns.dot(ng) < 0.0 {
@@ -313,11 +323,15 @@ impl Prepared {
             material.inside.clamp(0.0, 1.0)
         };
         let mut albedo = Vec3::from(material.base_color) * brightness;
+        let uv = self.uvs[i0] * w + self.uvs[i1] * u + self.uvs[i2] * v;
         if material.weave != Weave::None {
-            let uv = self.uvs[i0] * w + self.uvs[i1] * u + self.uvs[i2] * v;
             // A pixel's footprint stretches on surfaces seen at a glancing angle.
             let stretched = footprint / ng.dot(wo).abs().max(0.25);
             albedo *= weave(uv, material.weave, material.weave_mm, stretched);
+        }
+        // graphics printed on the piece, over the weave
+        if let Some((print, alpha)) = self.decals[mi].as_ref().and_then(|d| d.sample(uv)) {
+            albedo = albedo.lerp(print * brightness, alpha);
         }
         Surface {
             p,

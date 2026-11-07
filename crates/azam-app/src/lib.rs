@@ -6,6 +6,7 @@
 
 pub mod app;
 mod avatar_motion;
+pub mod decals;
 mod export;
 pub mod garment3d;
 mod icons;

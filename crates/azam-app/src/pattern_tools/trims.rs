@@ -49,6 +49,34 @@ impl AzamApp {
         }
     }
 
+    pub(super) fn dart_press(&mut self, press: &Press) {
+        let Some(seg) = press.hit.segment.clone() else {
+            self.status = "Click on a segment to add a dart".into();
+            return;
+        };
+        if self.refuse_mirror(&seg.piece) {
+            return;
+        }
+        let mut added = false;
+        self.session.edit("Add Dart", |p| {
+            added = azam_doc::add_dart(
+                p,
+                &seg.piece,
+                &seg.segment,
+                seg.t,
+                azam_doc::DEFAULT_DART_WIDTH_MM,
+                azam_doc::DEFAULT_DART_DEPTH_MM,
+            )
+            .is_some();
+            azam_doc::sync_mirrors(p);
+        });
+        self.status = if added {
+            "Added a dart (its legs are sewn together)".into()
+        } else {
+            "That segment is too short for a dart".into()
+        };
+    }
+
     pub(super) fn stitch_press(&mut self, press: &Press) {
         let Some(seg) = press.hit.segment.clone() else {
             self.status = "Click on a segment to topstitch it".into();

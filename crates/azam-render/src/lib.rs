@@ -12,4 +12,4 @@ mod renderer;
 
 pub use camera::{OrbitCamera, ViewPreset};
 pub use mesh::{MeshData, MeshId};
-pub use renderer::{Draw, Overlays, RenderError, Renderer, Weave, srgb_to_linear};
+pub use renderer::{DecalId, Draw, Overlays, RenderError, Renderer, Weave, srgb_to_linear};

@@ -1,5 +1,7 @@
 //! The scene description: meshes with cloth materials, and the studio lighting.
 
+use std::sync::Arc;
+
 use glam::{Mat3, Vec2, Vec3};
 
 use crate::Weave;
@@ -114,6 +116,48 @@ pub struct Mesh {
     pub indices: Vec<u32>,
     /// The surface material.
     pub material: Material,
+    /// An image printed on the surface (a piece's graphics), placed by the texture coordinates.
+    pub decal: Option<Arc<Decal>>,
+}
+
+/// An image printed on a mesh, placed in its texture coordinates (pattern mm).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Decal {
+    /// Width in texels.
+    pub width: u32,
+    /// Height in texels.
+    pub height: u32,
+    /// sRGB RGBA bytes, row by row, top row first (the smallest v).
+    pub rgba: Vec<u8>,
+    /// Texture coordinates of the image's top-left corner.
+    pub min: [f32; 2],
+    /// Size of the image in texture coordinates.
+    pub size: [f32; 2],
+}
+
+impl Decal {
+    /// The linear colour and alpha (0..1) printed at texture coordinates `uv` (nearest texel),
+    /// or `None` outside the image.
+    #[must_use]
+    pub fn sample(&self, uv: Vec2) -> Option<(Vec3, f32)> {
+        if self.width == 0 || self.height == 0 || self.size[0] <= 0.0 || self.size[1] <= 0.0 {
+            return None;
+        }
+        let s = (uv.x - self.min[0]) / self.size[0];
+        let t = (uv.y - self.min[1]) / self.size[1];
+        if !(0.0..1.0).contains(&s) || !(0.0..1.0).contains(&t) {
+            return None;
+        }
+        let x = ((s * self.width as f32) as u32).min(self.width - 1);
+        let y = ((t * self.height as f32) as u32).min(self.height - 1);
+        let at = ((y * self.width + x) * 4) as usize;
+        let px = self.rgba.get(at..at + 4)?;
+        let lin = |c: u8| azam_render::srgb_to_linear(f32::from(c) / 255.0);
+        Some((
+            Vec3::new(lin(px[0]), lin(px[1]), lin(px[2])),
+            f32::from(px[3]) / 255.0,
+        ))
+    }
 }
 
 /// A one-sided rectangular area light (a softbox).

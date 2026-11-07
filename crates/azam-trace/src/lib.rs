@@ -33,7 +33,7 @@ pub use bvh::{Bvh, Hit, Ray};
 pub use camera::Camera;
 pub use renderer::{Image, Renderer, Settings};
 pub use rng::Rng;
-pub use scene::{AreaLight, Backdrop, Floor, Lighting, Material, Mesh, Scene, Sky};
+pub use scene::{AreaLight, Backdrop, Decal, Floor, Lighting, Material, Mesh, Scene, Sky};
 pub use tonemap::{aces_filmic, linear_to_srgb};
 
 pub use azam_render::{OrbitCamera, Weave};

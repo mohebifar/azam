@@ -18,6 +18,7 @@ Then:
 
 ```bash
 cargo run --release -p azam-app                      # the window
+cargo run --release -p azam-app -- shirt.azam.json   # the window, on a saved project
 cargo run --release -p azam-app -- --screenshot shot.png --workspace grading --template labadeh
 cargo run --release -p azam-app -- --screenshot drape.png --template dress --frames 300   # simulate first
 cargo run --release -p azam-app -- --render render.png --template dress --frames 300      # path-traced
@@ -31,14 +32,16 @@ On macOS, `scripts/bundle-macos.sh` builds `target/release/azam.app` (with the M
 Blender's controls apply: middle drag orbits the 3D view (Shift pans), the wheel zooms, `Z` opens the
 shading pie, `` ` `` the view pie, `F3` the operator search, `Space` plays the simulation, `Ctrl Z`
 undoes. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
-`P` add point, `H` polygon, `S` rectangle, `N` sew (`Shift N` free sew), `M` measure; hover a tool for
-its name and key.
+`P` add point, `H` polygon, `S` rectangle, `D` dart, `N` sew (`Shift N` free sew), `M` measure; hover a
+tool for its name and key. The Dart tool cuts a 20 × 80 mm dart into the clicked segment and sews its
+legs; reshape it with Edit Points.
 
 A piece's starting place around the avatar (slot, distance, angle, height) is in the Piece tab's
 Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleeve L", "Collar"…).
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
 per size for the selected points). View ▸ Fit Map (or the 3D header in fit map shading) switches
-between the Fit, Strain, Stress and Pressure maps.
+between the Fit, Strain, Stress and Pressure maps. Graphics placed on pieces are printed on the cloth
+in the 3D view and in renders (F12), and pins set with the 3D Pin tool are saved with the project.
 
 ## Layout
 

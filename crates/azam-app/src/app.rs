@@ -284,6 +284,23 @@ impl AzamApp {
         self.framed = false;
     }
 
+    /// Opens the project file at `path`.
+    ///
+    /// # Errors
+    /// Returns why the file could not be read or is not a project.
+    pub fn open_file(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let project = Session::load(path)?;
+        self.session.replace(project, Some(path.to_path_buf()));
+        self.framed = false;
+        self.status = format!("Opened {}", path.display());
+        Ok(())
+    }
+
+    /// Applies `f` to the project as one undoable edit named `label` (for tests and tools).
+    pub fn edit_project(&mut self, label: &str, f: impl FnOnce(&mut azam_doc::Project)) {
+        self.session.edit(label, f);
+    }
+
     /// The open project (for tests and tools).
     #[must_use]
     pub fn session(&self) -> &Session {
@@ -446,27 +463,8 @@ impl AzamApp {
                 self.search = Some(String::new());
                 window.focus_id("search-input");
             }
-            Operator::ShadingPie | Operator::ViewPie => {
-                // under the pointer for a key press over the 3D view, else (chosen from a menu,
-                // or the pointer elsewhere) in the middle of the view
-                let p = window.mouse_position();
-                let at = match self.viewport.bounds {
-                    Some(b) if from_menu || !contains(&b, p) => Point {
-                        x: px(b.origin.x + b.size.width / 2.0),
-                        y: px(b.origin.y + b.size.height / 2.0),
-                    },
-                    _ => p,
-                };
-                let kind = if op == Operator::ShadingPie {
-                    PieKind::Shading
-                } else {
-                    PieKind::View
-                };
-                self.pie = Some(Pie {
-                    kind,
-                    at: (at.x.0, at.y.0),
-                });
-            }
+            Operator::ShadingPie => self.open_pie(PieKind::Shading, from_menu, window),
+            Operator::ViewPie => self.open_pie(PieKind::View, from_menu, window),
             Operator::SetTool(tool) => {
                 self.tool = tool;
                 self.cancel_pattern_tool();
@@ -747,21 +745,20 @@ impl AzamApp {
                 .viewport
                 .ray(e.position)
                 .and_then(|(o, d)| self.scene3d.hit(o, d));
-            if let (Some((_, particle, depth)), Some(sim)) = (hit, self.scene3d.sim.as_mut()) {
-                if self.tool == Tool::Grab {
-                    if sim.grab_at(particle) {
-                        self.scene3d.grab = Some(GrabState { depth });
-                        if !self.playing {
-                            self.playing = true;
-                            self.scene3d.restart_auto_stop();
-                        }
-                    }
-                } else if sim.pin(particle) {
-                    self.status = "Pinned".into();
-                } else {
-                    sim.unpin(particle);
-                    self.status = "Unpinned".into();
+            if self.tool == Tool::Grab
+                && let (Some((_, particle, depth)), Some(sim)) = (hit, self.scene3d.sim.as_mut())
+                && sim.grab_at(particle)
+            {
+                self.scene3d.grab = Some(GrabState { depth });
+                if !self.playing {
+                    self.playing = true;
+                    self.scene3d.restart_auto_stop();
                 }
+            }
+            if self.tool == Tool::Pin
+                && let Some((_, particle, _)) = hit
+            {
+                self.toggle_pin(particle);
             }
             cx.notify();
             return;
@@ -784,6 +781,58 @@ impl AzamApp {
         if e.button == MouseButton::Middle {
             self.viewport.begin_navigate(e.position, e.modifiers.shift);
             cx.notify();
+        }
+    }
+
+    /// Opens pie `kind`: under the pointer for a key press over the 3D view, else (chosen from a
+    /// menu, or the pointer elsewhere) in the middle of the view.
+    fn open_pie(&mut self, kind: PieKind, from_menu: bool, window: &Window) {
+        let p = window.mouse_position();
+        let at = match self.viewport.bounds {
+            Some(b) if from_menu || !contains(&b, p) => {
+                (b.origin.x + b.size.width / 2.0, b.origin.y + b.size.height / 2.0)
+            }
+            _ => (p.x.0, p.y.0),
+        };
+        self.pie = Some(Pie { kind, at });
+    }
+
+    /// Pins the cloth at particle `particle`, or unpins it if a pin is there. Pins are stored on
+    /// the piece, so they stay through resets and are saved with the project; the simulation is
+    /// rebuilt from its current state, so the drape is kept.
+    fn toggle_pin(&mut self, particle: usize) {
+        let Some((piece, x, y)) = self.scene3d.particle_pattern_pos(particle) else {
+            return;
+        };
+        let reach = self
+            .session
+            .project
+            .pieces
+            .get(&piece)
+            .map_or(10.0, |pc| pc.pd * 0.6);
+        let existing = self.session.project.pieces.get(&piece).and_then(|pc| {
+            pc.pins
+                .iter()
+                .position(|pin| (pin.x - x).hypot(pin.y - y) <= reach)
+        });
+        if let Some(index) = existing {
+            self.session.edit("Unpin Cloth", |p| {
+                if let Some(pc) = p.pieces.get_mut(&piece) {
+                    pc.pins.remove(index);
+                }
+            });
+            self.status = "Unpinned".into();
+        } else {
+            self.session.edit("Pin Cloth", |p| {
+                if let Some(pc) = p.pieces.get_mut(&piece) {
+                    pc.pins.push(azam_doc::Pin {
+                        x,
+                        y,
+                        extra: serde_json::Map::new(),
+                    });
+                }
+            });
+            self.status = "Pinned (saved with the project)".into();
         }
     }
 
@@ -1279,7 +1328,7 @@ impl AzamApp {
                 div()
                     .class("status-hint")
                     .child(self.icons.icon("MOUSE_LMB"))
-                    .child("Select"),
+                    .child(self.tool.lmb_hint()),
             )
             .child(
                 div()
