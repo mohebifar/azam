@@ -369,6 +369,8 @@ pub enum Operator {
     About,
     /// Path-trace the 3D view into an image (Blender's F12).
     RenderImage,
+    /// Show a fit map (switching to fit map shading).
+    SetFitMap(azam_sim::FitMode),
 }
 
 impl Operator {
@@ -380,6 +382,7 @@ impl Operator {
             Self::SetTool(t) => format!("Tool: {}", t.label()),
             Self::SetShading(Shading::Solid) => "Solid Shading".into(),
             Self::SetShading(Shading::FitMap) => "Fit Map Shading".into(),
+            Self::SetFitMap(m) => format!("Fit Map: {}", fit_label(m)),
             Self::View(v) => match v {
                 ViewPreset::Front => "Front View",
                 ViewPreset::Back => "Back View",
@@ -435,7 +438,7 @@ impl Operator {
             Self::Shortcuts => "Keyboard Shortcuts",
             Self::About => "About azam",
             Self::RenderImage => "Render Image",
-            Self::New(_) | Self::SetTool(_) | Self::SetShading(_) | Self::View(_) => "",
+            Self::New(_) | Self::SetTool(_) | Self::SetShading(_) | Self::SetFitMap(_) | Self::View(_) => "",
         }
     }
 
@@ -473,7 +476,7 @@ impl Operator {
             Self::StepSim => "FRAME_NEXT",
             Self::SetTool(t) => t.icon(),
             Self::SetShading(Shading::Solid) => "SHADING_SOLID",
-            Self::SetShading(Shading::FitMap) => "SHADING_TEXTURE",
+            Self::SetShading(Shading::FitMap) | Self::SetFitMap(_) => "SHADING_TEXTURE",
             Self::View(ViewPreset::Top) => "AXIS_TOP",
             Self::View(ViewPreset::Right | ViewPreset::Left) => "AXIS_SIDE",
             Self::View(_) => "AXIS_FRONT",
@@ -601,6 +604,10 @@ impl Operator {
             Self::StepSim,
             Self::SetShading(Shading::Solid),
             Self::SetShading(Shading::FitMap),
+            Self::SetFitMap(azam_sim::FitMode::Fit),
+            Self::SetFitMap(azam_sim::FitMode::Strain),
+            Self::SetFitMap(azam_sim::FitMode::Stress),
+            Self::SetFitMap(azam_sim::FitMode::Pressure),
             Self::View(ViewPreset::Front),
             Self::View(ViewPreset::Back),
             Self::View(ViewPreset::Right),
@@ -646,6 +653,33 @@ pub const NEW_MENU: &[Operator] = &[
 
 /// The 3D view's View ▸ Pie Menus submenu: the pies Z and ` open, for finding them by menu.
 pub const PIE_MENU: &[Operator] = &[Operator::ShadingPie, Operator::ViewPie];
+
+/// The fit maps, in the order the 3D header's dropdown lists them.
+pub const FIT_MODES: [azam_sim::FitMode; 4] = [
+    azam_sim::FitMode::Fit,
+    azam_sim::FitMode::Strain,
+    azam_sim::FitMode::Stress,
+    azam_sim::FitMode::Pressure,
+];
+
+/// View ▸ Fit Map: one entry per fit map.
+pub const FIT_MAP_MENU: &[Operator] = &[
+    Operator::SetFitMap(azam_sim::FitMode::Fit),
+    Operator::SetFitMap(azam_sim::FitMode::Strain),
+    Operator::SetFitMap(azam_sim::FitMode::Stress),
+    Operator::SetFitMap(azam_sim::FitMode::Pressure),
+];
+
+/// The name of fit map `mode`.
+#[must_use]
+pub const fn fit_label(mode: azam_sim::FitMode) -> &'static str {
+    match mode {
+        azam_sim::FitMode::Fit => "Fit",
+        azam_sim::FitMode::Strain => "Strain",
+        azam_sim::FitMode::Stress => "Stress",
+        azam_sim::FitMode::Pressure => "Pressure",
+    }
+}
 
 /// A top-bar menu: its title and entries.
 pub struct Menu {
@@ -839,6 +873,7 @@ pub fn top_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::SetShading(Shading::Solid)),
                 Item(O::SetShading(Shading::FitMap)),
+                MenuEntry::Sub("Fit Map", "SHADING_TEXTURE", FIT_MAP_MENU),
                 Item(O::ToggleAvatar),
                 Item(O::ToggleGrid),
             ],

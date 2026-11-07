@@ -30,7 +30,15 @@ On macOS, `scripts/bundle-macos.sh` builds `target/release/azam.app` (with the M
 
 Blender's controls apply: middle drag orbits the 3D view (Shift pans), the wheel zooms, `Z` opens the
 shading pie, `` ` `` the view pie, `F3` the operator search, `Space` plays the simulation, `Ctrl Z`
-undoes. In the pattern editor: `W` select, `E` edit points, `P` add point, `S` sew, `M` measure.
+undoes. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
+`P` add point, `H` polygon, `S` rectangle, `N` sew (`Shift N` free sew), `M` measure; hover a tool for
+its name and key.
+
+A piece's starting place around the avatar (slot, distance, angle, height) is in the Piece tab's
+Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleeve L", "Collar"…).
+Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
+per size for the selected points). View ▸ Fit Map (or the 3D header in fit map shading) switches
+between the Fit, Strain, Stress and Pressure maps.
 
 ## Layout
 
@@ -42,7 +50,7 @@ undoes. In the pattern editor: `W` select, `E` edit points, `P` add point, `S` s
 | `crates/azam-avatar` | The avatar: MakeHuman morph body fitted to measurements (default), parametric SDF mannequin, collision grid, arrangement slots, posing and motions (raise arms, walk, sit, turntable). |
 | `crates/azam-sim` | The XPBD cloth solver on the CPU: constraints, sewing, body and self collision, untangling, fit maps. |
 | `crates/azam-sim-gpu` | The same solver as wgpu compute shaders (23 passes), sharing the renderer's device; the app falls back to the CPU solver on any GPU error. |
-| `crates/azam-io` | DXF/SVG/OBJ import and export, tech pack tables, pattern and tech-pack PDF (embedded, shaped Persian/Arabic, Hebrew and Greek text; CJK through a system font when one is installed). |
+| `crates/azam-io` | DXF import (outlines and internal lines) and export; SVG and OBJ export; tech pack tables; pattern and tech-pack PDF with embedded fonts (shaped Persian/Arabic, Hebrew, Greek, and a bundled CJK subset). |
 | `crates/azam-trace` | Path tracer for presentation renders (Render ▸ Render Image, F12): BVH, cloth BSDF with sheen, studio lights, shadow-catcher floor, denoiser. |
 | `crates/azam-sync` | Live collaboration: a yrs CRDT of the project, peer-to-peer over TCP with mDNS discovery, or an update log next to the project file (File ▸ Share / Join Session). |
 | `crates/azam-render` | Offscreen wgpu renderer for the 3D viewport: studio lighting, key-light shadow map with a shadow-catching floor, procedural fabric weaves, Blender's floor grid. |

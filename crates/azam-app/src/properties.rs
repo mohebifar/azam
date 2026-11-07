@@ -330,6 +330,11 @@ impl AzamApp {
             .iter()
             .position(|s| *s == project.active_size)
             .unwrap_or(0);
+        let base_size = project
+            .sizes
+            .iter()
+            .position(|s| *s == project.base_size)
+            .unwrap_or(0);
         let stats = format!(
             "{} pieces · {} seams · {} fabrics",
             project.pieces.len(),
@@ -351,6 +356,15 @@ impl AzamApp {
                 p.active_size = s;
             }
         });
+        let run_row = Self::text_row("Size Run", sizes.join(", "), cx, |p, t| {
+            let names: Vec<azam_geom::SizeName> = t.split(',').map(azam_geom::SizeName::from).collect();
+            azam_doc::set_sizes(p, &names);
+        });
+        let base_row = Self::choice("Base Size", &size_refs, base_size, cx, move |p, i| {
+            if let Some(s) = p.sizes.get(i).cloned() {
+                p.base_size = s;
+            }
+        });
         let cw_names: Vec<&str> = colorways.iter().map(|(_, n)| n.as_str()).collect();
         let cw_ids: Vec<azam_doc::ColorwayId> = colorways.iter().map(|(id, _)| id.clone()).collect();
         let cw_row = Self::choice("Colorway", &cw_names, active_cw, cx, move |p, i| {
@@ -358,6 +372,18 @@ impl AzamApp {
                 p.active_colorway = id.clone();
             }
         });
+        let cw_name_row = {
+            let active = project.active_colorway.clone();
+            let cw_name = colorways
+                .get(active_cw)
+                .map(|(_, n)| n.clone())
+                .unwrap_or_default();
+            Self::text_row("Colorway Name", cw_name, cx, move |p, t| {
+                if let Some(cw) = p.colorways.get_mut(&active) {
+                    t.trim().clone_into(&mut cw.name);
+                }
+            })
+        };
         let name_row = Self::text_row("Name", name, cx, |p, t| t.clone_into(&mut p.meta.name));
         let file = self
             .session
@@ -373,8 +399,16 @@ impl AzamApp {
                     Self::info_row("Contents", stats),
                 ],
             ),
-            self.panel("Sizes", vec![size_row, self.pom_table()]),
-            self.panel("Colorways", vec![cw_row, self.colorway_grid()]),
+            self.panel("Sizes", vec![size_row, run_row, base_row, self.pom_table()]),
+            self.panel(
+                "Colorways",
+                vec![
+                    cw_row,
+                    cw_name_row,
+                    self.new_colorway_button(cx),
+                    self.colorway_grid(),
+                ],
+            ),
         ]
     }
 
@@ -413,6 +447,13 @@ impl AzamApp {
             Self::text_row("Name", name, cx, move |p, t| {
                 if let Some(pc) = p.pieces.get_mut(&id) {
                     t.clone_into(&mut pc.name);
+                    // a piece still in the default slot follows its name ("Back", "Sleeve R"…)
+                    if pc.arr.slot == azam_doc::DEFAULT_SLOT
+                        && let Some(slot) = azam_doc::slot_for_name(t)
+                    {
+                        slot.clone_into(&mut pc.arr.slot);
+                        pc.arr.ang = None;
+                    }
                 }
             })
         };
@@ -479,8 +520,173 @@ impl AzamApp {
             ),
             self.panel("Material", vec![fabric_row, grain_row]),
             self.panel("Seam Allowance", vec![sa_row]),
+            self.arrangement_panel(&id, cx),
+            self.grading_panel(&id, cx),
             self.panel("Simulation", vec![state_row, pd_row, layer_row]),
         ]
+    }
+
+    /// Linear grading of the selected points of piece `id`: how far they move per size away from
+    /// the base size, and what that gives in each size.
+    fn grading_panel(&mut self, id: &azam_doc::PieceId, cx: &mut Context<Self>) -> Div {
+        let project = &self.session.project;
+        let piece = &project.pieces[id];
+        let points: Vec<azam_geom::PointId> = self
+            .session
+            .selection
+            .points
+            .iter()
+            .filter_map(|&i| piece.pts.get(i).map(|q| q.id.clone()))
+            .collect();
+        let Some(first) = points.first() else {
+            return self.panel(
+                "Grading",
+                vec![
+                    div()
+                        .class("hint")
+                        .child("Select points (Edit Points tool) to grade them."),
+                ],
+            );
+        };
+        let step = azam_doc::grade_step(project, id, first);
+        let per_size: Vec<String> = project
+            .sizes
+            .iter()
+            .enumerate()
+            .map(|(i, size)| {
+                let base = project
+                    .sizes
+                    .iter()
+                    .position(|s| *s == project.base_size)
+                    .unwrap_or(0);
+                let k = i as f64 - base as f64;
+                format!("{} {:+.0}, {:+.0}", size.0, step.x * k, step.y * k)
+            })
+            .collect();
+        let count = format!("{} point(s), base {}", points.len(), project.base_size.0);
+        let step_num = |label, value, cx: &mut Context<Self>, axis_x: bool| {
+            let (id, points) = (id.clone(), points.clone());
+            Self::number(field(label, -100.0, 100.0, 0.5), value, cx, move |p, v| {
+                let current = azam_doc::grade_step(p, &id, &points[0]);
+                let step = if axis_x {
+                    azam_geom::Vec2::new(v, current.y)
+                } else {
+                    azam_geom::Vec2::new(current.x, v)
+                };
+                azam_doc::grade_points_linear(p, &id, &points, step);
+            })
+        };
+        let x_row = step_num("Step X (mm per size)", step.x, cx, true);
+        let y_row = step_num("Step Y (mm per size)", step.y, cx, false);
+        self.panel(
+            "Grading",
+            vec![
+                Self::info_row("Selected", count),
+                x_row,
+                y_row,
+                Self::info_row("Per Size", per_size.join(" · ")),
+            ],
+        )
+    }
+
+    /// Where piece `id` starts around the avatar before simulating: its slot (front, back, an
+    /// arm…), distance from the body, angle around it and height. A new slot resets the angle to
+    /// the slot's own.
+    fn arrangement_panel(&mut self, id: &azam_doc::PieceId, cx: &mut Context<Self>) -> Div {
+        let arr = self.session.project.pieces[id].arr.clone();
+        let slot = azam_avatar::slot_by_id(&arr.slot);
+        let labels: Vec<&str> = azam_avatar::SLOTS.iter().map(|s| s.label).collect();
+        let index = azam_avatar::SLOTS
+            .iter()
+            .position(|s| s.id == slot.id)
+            .unwrap_or(0);
+        let slot_row = {
+            let id = id.clone();
+            Self::choice("Slot", &labels, index, cx, move |p, i| {
+                if let (Some(pc), Some(s)) = (p.pieces.get_mut(&id), azam_avatar::SLOTS.get(i)) {
+                    s.id.clone_into(&mut pc.arr.slot);
+                    pc.arr.ang = None;
+                }
+            })
+        };
+        let arr_num = |spec, value, cx: &mut Context<Self>, set: fn(&mut azam_doc::Arrangement, f64)| {
+            let id = id.clone();
+            Self::number(spec, value, cx, move |p, v| {
+                if let Some(pc) = p.pieces.get_mut(&id) {
+                    set(&mut pc.arr, v);
+                }
+            })
+        };
+        let off_row = arr_num(
+            field("Distance (mm)", 0.0, 400.0, 5.0),
+            arr.off.unwrap_or(azam_avatar::DEFAULT_OFFSET_MM),
+            cx,
+            |a, v| a.off = Some(v),
+        );
+        let ang_row = arr_num(
+            field("Angle (°)", -180.0, 180.0, 5.0),
+            arr.ang.unwrap_or(slot.angle_deg),
+            cx,
+            |a, v| a.ang = Some(v),
+        );
+        let h_row = arr_num(
+            field("Height (mm, 0 = auto)", 0.0, 2200.0, 10.0),
+            arr.h.unwrap_or(0.0),
+            cx,
+            |a, v| a.h = (v > 0.0).then_some(v),
+        );
+        self.panel("Arrangement", vec![slot_row, off_row, ang_row, h_row])
+    }
+
+    /// A button that adds a copy of fabric `fid` and gives it to the selected piece, so its
+    /// colour and physics can be changed without touching the pieces that keep the original.
+    fn new_fabric_button(&self, fid: &azam_doc::FabricId, cx: &mut Context<Self>) -> Div {
+        let fid = fid.clone();
+        let piece = self.active_piece();
+        div()
+            .class("pbuttons")
+            .child(div().class("pbtn").child("New Fabric").on_click(cx.listener(
+                move |this, _: &ClickEvent, _, cx| {
+                    let (fid, piece) = (fid.clone(), piece.clone());
+                    let mut created = None;
+                    this.session.edit("New Fabric", |p| {
+                        created = azam_doc::duplicate_fabric(p, &fid);
+                        if let (Some(new), Some(pc)) =
+                            (&created, piece.as_ref().and_then(|id| p.pieces.get_mut(id)))
+                        {
+                            pc.fabric = new.clone();
+                        }
+                    });
+                    if let Some(new) = created {
+                        let name = this.session.project.fabrics[&new].name.clone();
+                        this.status = format!("Added fabric {name}");
+                    }
+                    cx.notify();
+                },
+            )))
+    }
+
+    /// A button that adds a copy of the active colorway and makes it active.
+    fn new_colorway_button(&self, cx: &mut Context<Self>) -> Div {
+        div()
+            .class("pbuttons")
+            .child(div().class("pbtn").child("New Colorway").on_click(cx.listener(
+                |this, _: &ClickEvent, _, cx| {
+                    let mut created = None;
+                    this.session.edit("New Colorway", |p| {
+                        let active = p.active_colorway.clone();
+                        created = azam_doc::duplicate_colorway(p, &active);
+                        if let Some(id) = &created {
+                            p.active_colorway = id.clone();
+                        }
+                    });
+                    if let Some(id) = created {
+                        let name = this.session.project.colorways[&id].name.clone();
+                        this.status = format!("Added colorway {name}");
+                    }
+                    cx.notify();
+                },
+            )))
     }
 
     #[allow(clippy::too_many_lines, reason = "the panels of one tab, read top to bottom")]
@@ -594,7 +800,10 @@ impl AzamApp {
             ),
         ];
         vec![
-            self.panel("Fabric", vec![name_row, preset_row, color_row]),
+            self.panel(
+                "Fabric",
+                vec![name_row, preset_row, color_row, self.new_fabric_button(&fid, cx)],
+            ),
             self.panel("Stretch", stretch),
             self.panel("Bending", bending),
             self.panel("Physical Properties", other),

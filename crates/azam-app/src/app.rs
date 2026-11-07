@@ -120,6 +120,8 @@ pub struct AzamApp {
     workspace: Workspace,
     pub(crate) tool: Tool,
     shading: Shading,
+    /// What the fit map shading shows.
+    fit_mode: azam_sim::FitMode,
     pub(crate) playing: bool,
     pub(crate) viewport: Viewport,
     pub(crate) icons: IconCache,
@@ -224,6 +226,7 @@ impl AzamApp {
             workspace: Workspace::Design,
             tool: Tool::Select,
             shading: Shading::Solid,
+            fit_mode: azam_sim::FitMode::Fit,
             playing: false,
             viewport: Viewport::new(),
             icons: IconCache::default(),
@@ -475,6 +478,7 @@ impl AzamApp {
             | Operator::SwapSeamSides
             | Operator::FinishDraft => self.run_pattern_op(op),
             Operator::SetShading(shading) => self.shading = shading,
+            Operator::SetFitMap(mode) => self.set_fit_mode(mode),
             Operator::View(preset) => self.viewport.camera.set_preset(preset),
             Operator::ToggleOrtho => self.viewport.camera.orthographic = !self.viewport.camera.orthographic,
             Operator::ToggleGrid => self.viewport.overlays.grid = !self.viewport.overlays.grid,
@@ -547,15 +551,7 @@ impl AzamApp {
             Ok(pieces) => {
                 let count = pieces.len();
                 self.session.edit("Import DXF", |p| {
-                    for piece in &pieces {
-                        let points: Vec<(azam_geom::Vec2, bool)> =
-                            piece.points.iter().map(|q| (q.pos, q.curve)).collect();
-                        if let Some(id) = azam_doc::create_piece(p, &points)
-                            && let Some(created) = p.pieces.get_mut(&id)
-                        {
-                            created.name.clone_from(&piece.name);
-                        }
-                    }
+                    crate::import::add_imported_pieces(p, &pieces);
                 });
                 self.status = format!("Imported {count} piece(s) from {}", path.display());
             }
@@ -990,6 +986,87 @@ impl AzamApp {
         self.open_menu.is_some() || self.search.is_some() || self.file_prompt.is_some() || self.pie.is_some()
     }
 
+    /// Which fit map the fit map shading shows (Fit, Strain, Stress, Pressure).
+    fn fit_dropdown(&mut self, cx: &mut Context<Self>) -> Div {
+        let current = self.fit_mode;
+        if self.overlay_open() {
+            return div().class("hgroup").child(
+                div()
+                    .class("hbtn")
+                    .w(px(84.0))
+                    .child(crate::operators::fit_label(current)),
+            );
+        }
+        let mut select = Dropdown().css("width", "84px");
+        for m in crate::operators::FIT_MODES {
+            select = select.child(
+                option()
+                    .child(crate::operators::fit_label(m))
+                    .selected(m == current),
+            );
+        }
+        div()
+            .class("hgroup")
+            .child(select.on_change(cx.listener(|this, e: &ChangeEvent, _, cx| {
+                if let Some(&m) = crate::operators::FIT_MODES.get(e.number.max(0.0) as usize) {
+                    this.set_fit_mode(m);
+                }
+                cx.notify();
+            })))
+    }
+
+    /// The legend of the fit map being shown, in the corner of the 3D view.
+    fn fit_legend(&self) -> Div {
+        let (title, rows): (&str, Vec<(u32, &str)>) = match self.fit_mode {
+            azam_sim::FitMode::Fit => (
+                "Fit",
+                vec![
+                    (0xf2f2f2, "Comfortable"),
+                    (0xfacc33, "Tight (60% of limit)"),
+                    (0xd9262c, "Over the limit"),
+                ],
+            ),
+            azam_sim::FitMode::Strain => (
+                "Strain",
+                vec![(0x2b4bd9, "100% (relaxed)"), (0xd9262c, "120% or more")],
+            ),
+            azam_sim::FitMode::Stress => ("Stress", vec![(0x2b4bd9, "0 kPa"), (0xd9262c, "100 kPa or more")]),
+            azam_sim::FitMode::Pressure => (
+                "Pressure",
+                vec![(0xededed, "No contact"), (0xf2402f, "Touching the body")],
+            ),
+        };
+        let mut legend = div()
+            .class("fit-legend")
+            .child(div().class("fit-legend-title").child(title));
+        for (color, label) in rows {
+            legend = legend.child(
+                div()
+                    .class("fit-legend-row")
+                    .child(
+                        div()
+                            .class("fit-swatch")
+                            .css("background", format!("#{color:06x}")),
+                    )
+                    .child(label),
+            );
+        }
+        legend
+    }
+
+    /// Shows fit map `mode` in the fit map shading (switching to it).
+    pub fn set_fit_mode(&mut self, mode: azam_sim::FitMode) {
+        self.fit_mode = mode;
+        self.shading = Shading::FitMap;
+        self.status = format!("Fit map: {}", crate::operators::fit_label(mode));
+    }
+
+    /// The fit map the fit map shading shows.
+    #[must_use]
+    pub fn fit_mode(&self) -> azam_sim::FitMode {
+        self.fit_mode
+    }
+
     /// The avatar motion played with the simulation (None, Raise Arms, Walk, Sit, Turntable).
     fn motion_dropdown(&mut self, cx: &mut Context<Self>) -> Div {
         let current = self.scene3d.motion.motion();
@@ -1050,6 +1127,9 @@ impl AzamApp {
                         .class("last"),
                     ),
             )
+            .when(self.shading == Shading::FitMap, |el| {
+                el.child(self.fit_dropdown(cx))
+            })
             .child(div().class("header-sep"))
             .child(self.motion_dropdown(cx))
             .child(div().class("header-sep"))
@@ -1082,6 +1162,7 @@ impl AzamApp {
                     .on_any_mouse_down(cx.listener(Self::on_viewport_down))
                     .on_scroll_wheel(cx.listener(Self::on_viewport_wheel)),
             )
+            .when(self.shading == Shading::FitMap, |el| el.child(self.fit_legend()))
             .child(
                 div()
                     .class(if self.playing { "vp-badge live" } else { "vp-badge" })
@@ -1438,7 +1519,7 @@ impl AzamApp {
                 self.playing = false;
                 self.status = format!("Simulation stopped: {reason:?}");
             }
-            let fit = (self.shading == Shading::FitMap).then_some(azam_sim::FitMode::Fit);
+            let fit = (self.shading == Shading::FitMap).then_some(self.fit_mode);
             self.scene3d.update_fit(&self.session.project, fit, renderer);
         }
         pending |= self.playing;

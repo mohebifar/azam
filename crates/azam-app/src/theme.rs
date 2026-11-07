@@ -80,6 +80,12 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .vp-badge { position: absolute; right: 10px; bottom: 10px; padding: 3px 8px; border-radius: 4px;
             background: rgba(30,30,30,0.85); color: #d0d0d0; font-size: 11px; z-index: 4; }
 .vp-badge.live { color: #9fe07a; }
+.fit-legend { position: absolute; left: 56px; bottom: 10px; padding: 6px 9px; border-radius: 4px;
+              background: rgba(30,30,30,0.88); border: 1px solid #111111; display: flex; flex-direction: column;
+              gap: 3px; font-size: 11px; color: #d0d0d0; z-index: 4; }
+.fit-legend-title { color: #e6e6e6; font-weight: 600; }
+.fit-legend-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.fit-swatch { width: 12px; height: 12px; border-radius: 2px; border: 1px solid #111111; flex-shrink: 0; }
 
 /* -- outliner ------------------------------------------------------------------------------------ */
 .outliner { flex: 1; overflow-y: scroll; background: #282828; padding: 2px 0; }
@@ -153,6 +159,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .pie-ring { position: absolute; width: 36px; height: 36px; border-radius: 18px; border: 3px solid #4772b3;
             box-shadow: 0 0 0 1px #111111; }
 .empty { padding: 20px 10px; color: #8a8a8a; text-align: center; }
+.hint { padding: 4px 6px; color: #8a8a8a; font-size: 11px; }
 
 /* -- status bar ------------------------------------------------------------------------------------ */
 .statusbar { display: flex; align-items: center; gap: 14px; height: 22px; padding: 0 10px;

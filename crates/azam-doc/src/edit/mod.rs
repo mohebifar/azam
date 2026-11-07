@@ -1,11 +1,15 @@
 //! Pattern edits: the operations commands are built from.
 
+mod grading;
+mod library;
 mod pieces;
 mod refs;
 mod segment;
 mod shapes;
 mod transform;
 
+pub use grading::{grade_points_linear, grade_step, set_sizes};
+pub use library::{duplicate_colorway, duplicate_fabric};
 pub use pieces::{
     DeletePointsError, DuplicateMode, MIN_CORNERS, add_internal_line, create_piece, delete_pieces,
     delete_points, duplicate_piece,

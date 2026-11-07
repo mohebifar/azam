@@ -42,9 +42,9 @@ pub use edit::{
     DeletePointsError, DuplicateMode, ELLIPSE_KAPPA, FlipAxis, MIN_CORNERS, MIN_SHAPE_MM, PieceTransform,
     RigidMap, Shape, add_curve_point, add_internal_ellipse, add_internal_line, create_piece,
     create_shape_piece, de_casteljau_split, delete_internal_line, delete_pieces, delete_points,
-    duplicate_piece, flip_piece, internal_fold, remap_refs, rigid_map, rotate_piece_90, seg_bez_param,
-    set_curvature, set_internal_closed, set_internal_fold, set_point_curve, split_segment, transform_piece,
-    translate_internal_line,
+    duplicate_colorway, duplicate_fabric, duplicate_piece, flip_piece, grade_points_linear, grade_step,
+    internal_fold, remap_refs, rigid_map, rotate_piece_90, seg_bez_param, set_curvature, set_internal_closed,
+    set_internal_fold, set_point_curve, set_sizes, split_segment, transform_piece, translate_internal_line,
 };
 pub use fabric::{
     Fabric, FabricPhysics, FabricPreset, PhysKey, PresetSpec, e2d, limit_strain, make_fabric, r_bend,
@@ -87,7 +87,7 @@ pub use seams::{
     CoveredSide, EdgeCoverage, FreePart, edge_coverage, seam_numbers, seam_sa, set_all_sa, set_seam_sa,
     set_segment_sa, side_seg_ids,
 };
-pub use slots::{SlotKind, mirror_slot, slot_kind};
+pub use slots::{SlotKind, mirror_slot, slot_for_name, slot_kind};
 pub use templates::{
     AbaPieces, DraftOptions, Template, draft_aba, draft_dress, draft_labadeh, draft_skirt, draft_tee,
     from_template,

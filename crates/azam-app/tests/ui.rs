@@ -218,3 +218,29 @@ fn view_menu_opens_a_pie_in_the_middle_of_the_3d_view() {
         );
     });
 }
+
+#[test]
+fn operator_search_switches_the_fit_map() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        cx.simulate_click(win.id, 700.0, 850.0);
+        cx.draw(win.id);
+        cx.simulate_key(win.id, "", "F3");
+        cx.draw(win.id);
+        cx.draw(win.id);
+        for c in ["s", "t", "r", "a", "i", "n"] {
+            cx.simulate_key(win.id, c, c);
+        }
+        cx.draw(win.id);
+        cx.simulate_key(win.id, "", "Return");
+        cx.draw(win.id);
+        assert_eq!(
+            win.root().read(cx).fit_mode(),
+            azam_sim::FitMode::Strain,
+            "searching 'strain' and Enter shows the strain map"
+        );
+    });
+}

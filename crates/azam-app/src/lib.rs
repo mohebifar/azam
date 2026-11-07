@@ -9,6 +9,7 @@ mod avatar_motion;
 mod export;
 pub mod garment3d;
 mod icons;
+pub mod import;
 pub mod operators;
 mod outliner;
 pub mod pattern;
