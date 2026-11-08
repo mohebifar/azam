@@ -554,6 +554,7 @@ fn areas_split_freely_and_join() {
                 Editor::View3d,
                 Editor::Pattern,
                 Editor::Properties,
+                Editor::Timeline,
                 Editor::Outliner,
                 Editor::Properties
             ],
@@ -583,7 +584,13 @@ fn areas_split_freely_and_join() {
         let app = win.root().read(cx);
         assert_eq!(
             app.editors_shown(),
-            vec![Editor::View3d, Editor::Outliner, Editor::Properties]
+            vec![
+                Editor::View3d,
+                Editor::Timeline,
+                Editor::Outliner,
+                Editor::Properties
+            ],
+            "back to the Review layout"
         );
     });
 }
@@ -1011,6 +1018,50 @@ fn a_draped_piece_flattens_into_a_new_piece() {
         let area = |pc: &azam_doc::Piece| azam_geom::signed_area(&pc.outline().poly).abs();
         let ratio = area(flat) / area(&app.session().project.pieces[&front]);
         assert!((0.8..1.25).contains(&ratio), "close to the draft's area: {ratio}");
+    });
+}
+
+#[test]
+fn the_timeline_scrubs_and_plays_the_recording() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        win.root()
+            .update(cx, |app, _| app.set_workspace(azam_app::app::Workspace::Review));
+        wait_for_garment(cx, &win);
+        win.root().update(cx, |app, _| {
+            app.toggle_recording();
+            app.set_playing(true);
+        });
+        for _ in 0..24 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+        }
+        win.root().update(cx, |app, _| {
+            app.set_playing(false);
+            app.toggle_recording();
+        });
+        cx.draw(win.id);
+        win.root().update(cx, |app, _| {
+            let frames = app.recorded_frames().expect("a recording");
+            assert!(frames > 10, "{frames} frames");
+            // scrub: frame 5 is shown, and the simulation is paused
+            app.show_frame(4);
+            assert_eq!(app.timeline_frame(), 4);
+            assert!(!app.is_playing());
+            // the bar was drawn in the Review workspace's timeline
+            let x = app.timeline_x(frames - 1).expect("the bar was drawn");
+            assert!(x > 0.0);
+            // play back from the start once at the end
+            app.show_frame(frames - 1);
+            app.toggle_playback();
+            assert!(app.playback_running());
+            app.toggle_playback();
+            assert!(!app.playback_running(), "toggled off");
+            app.show_frame(frames + 50);
+            assert_eq!(app.timeline_frame(), frames - 1, "clamped");
+        });
     });
 }
 

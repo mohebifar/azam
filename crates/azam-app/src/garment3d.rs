@@ -495,6 +495,32 @@ impl Scene3d {
         }
     }
 
+    /// Frames in the recording.
+    #[must_use]
+    pub fn recorded_frames(&self) -> usize {
+        self.recording.as_ref().map_or(0, |r| r.pieces.len())
+    }
+
+    /// Shows recorded frame `frame` in the 3D view (the cloth, and the avatar when it moved),
+    /// leaving the simulation as it is: the next simulated frame draws its own state again.
+    /// `false` when there is no such frame or the recording no longer fits the meshes.
+    pub fn show_recorded_frame(&self, renderer: &mut Renderer, frame: usize) -> bool {
+        let Some(rec) = &self.recording else { return false };
+        let Some(pieces) = rec.pieces.get(frame) else {
+            return false;
+        };
+        if pieces.len() != self.piece_meshes.len() {
+            return false;
+        }
+        for (ri, (positions, normals)) in pieces.iter().enumerate() {
+            renderer.update_vertices(MeshId(FIRST_PIECE_MESH + ri as u32), positions, normals);
+        }
+        if let Some((positions, normals)) = rec.avatar.as_ref().and_then(|a| a.get(frame)) {
+            renderer.update_vertices(AVATAR_MESH, positions, normals);
+        }
+        true
+    }
+
     /// Moves piece record `ri` rigidly by `delta` mm, or turns it by `turn` radians around the
     /// body's vertical axis, between simulation frames (placing pieces before draping): the CPU
     /// state, the GPU solver's copy and the drawn mesh all follow.

@@ -38,6 +38,7 @@ mod share_view;
 mod sidebar;
 mod techpack;
 mod theme;
+pub mod timeline;
 mod tooltip;
 pub mod units;
 pub mod viewport;

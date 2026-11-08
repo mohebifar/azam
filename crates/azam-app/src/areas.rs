@@ -221,7 +221,14 @@ pub fn default_layout(workspace: Workspace, next: &mut AreaId) -> AreaNode {
             a: Box::new(leaf(Editor::View3d, fresh())),
             b: Box::new(leaf(Editor::Colorways, fresh())),
         },
-        Workspace::Review => leaf(Editor::View3d, fresh()),
+        // the drape above the timeline that plays its recording back
+        Workspace::Review => AreaNode::Split {
+            id: fresh(),
+            dir: Dir::Column,
+            ratio: 0.84,
+            a: Box::new(leaf(Editor::View3d, fresh())),
+            b: Box::new(leaf(Editor::Timeline, fresh())),
+        },
         Workspace::Grading => leaf(Editor::Pattern, fresh()),
         // the tables above the marker they cut from
         Workspace::TechPack => AreaNode::Split {
@@ -426,6 +433,18 @@ mod tests {
         let mut next = 0;
         let mut layout = default_layout(Workspace::Review, &mut next);
         let editors = |l: &AreaNode| l.leaves().into_iter().map(|(_, e)| e).collect::<Vec<_>>();
+        assert_eq!(
+            editors(&layout),
+            vec![
+                Editor::View3d,
+                Editor::Timeline,
+                Editor::Outliner,
+                Editor::Properties
+            ]
+        );
+        // the 3D view takes the timeline's room
+        let (view, _) = layout.leaves()[0];
+        assert!(layout.join(view));
         assert_eq!(
             editors(&layout),
             vec![Editor::View3d, Editor::Outliner, Editor::Properties]

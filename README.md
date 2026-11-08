@@ -75,8 +75,9 @@ point's offset in every size as an editable table.
 The 3D header's third shading button (or View ▸ Rendered Shading) path-traces the view in place,
 refining while nothing moves, as Blender's Rendered shading does. Garment ▸ Flatten Draped Piece lays
 the selected piece's drape flat as a new piece, each mesh edge at its length on the body, and reports
-how much larger or smaller it is than the draft. Simulation ▸ Record Animation records the frames
-while the simulation plays; File ▸ Export Animation (.glb) writes them (with a moving avatar) as an
+how much larger or smaller it is than the draft. Simulation ▸ Record Animation (or Record in the Timeline editor, below the 3D view in the Review
+workspace) records the frames while the simulation plays; the Timeline scrubs and plays them back
+in the 3D view; File ▸ Export Animation (.glb) writes them (with a moving avatar) as an
 animated glTF that Blender and web viewers play back (sampled at 30 fps, frame offsets stored as
 16-bit values with `KHR_mesh_quantization`). File ▸ Export FBX… writes the draped garment and the
 avatar as binary FBX 7.4 (centimetres, +Y up), as Blender, Maya and game engines import it. Alembic

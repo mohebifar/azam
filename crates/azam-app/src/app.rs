@@ -177,6 +177,10 @@ pub struct AzamApp {
     pub(crate) marker_frame: crate::marker_view::MarkerFrame,
     /// The undo history or Quick Favorites popup, while open.
     pub(crate) history_open: Option<crate::history_view::HistoryPopup>,
+    /// The Timeline editor's playback and frame.
+    pub(crate) timeline: crate::timeline::Timeline,
+    /// Where the Timeline editor last drew its frame bar.
+    pub(crate) timeline_bar_cell: Option<crate::timeline::BarCell>,
     /// Where the pointer last was over the window, logical pixels.
     pub(crate) pointer: (f32, f32),
     /// The workspace tab last clicked and when (two quick clicks rename it).
@@ -323,6 +327,8 @@ impl AzamApp {
             last_tab_click: None,
             history_open: None,
             pointer: (0.0, 0.0),
+            timeline: crate::timeline::Timeline::default(),
+            timeline_bar_cell: None,
             marker_cache: None,
             marker_drag: None,
             marker_frame: std::sync::Arc::default(),
@@ -390,6 +396,12 @@ impl AzamApp {
             Workspace::Colorway => self.prop_tab = PropTab::Fabric,
             Workspace::Design => {}
         }
+    }
+
+    /// Whether the simulation is running.
+    #[must_use]
+    pub fn is_playing(&self) -> bool {
+        self.playing
     }
 
     /// Starts or pauses the simulation.
@@ -2179,6 +2191,7 @@ impl AzamApp {
             .scene3d
             .draws(&self.session.project, &self.session.selection, self.shading);
         self.tint_collaborator_pieces(&mut draws);
+        pending |= self.advance_playback();
         self.viewport.render(&draws, window.scale_factor());
         pending |= self.update_live_render();
         self.update_colorway_thumbs(window.scale_factor());

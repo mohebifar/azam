@@ -25,16 +25,19 @@ pub enum Editor {
     Colorways,
     /// The pattern nested on the fabric.
     Marker,
+    /// The recorded simulation's frames, to scrub and play back.
+    Timeline,
 }
 
 impl Editor {
     /// Every editor, in the editor-type menu's order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::View3d,
         Self::Pattern,
         Self::Colorways,
         Self::TechPack,
         Self::Marker,
+        Self::Timeline,
         Self::Outliner,
         Self::Properties,
     ];
@@ -50,6 +53,7 @@ impl Editor {
             Self::Properties => "Properties",
             Self::Colorways => "Colorways",
             Self::Marker => "Marker",
+            Self::Timeline => "Timeline",
         }
     }
 
@@ -64,6 +68,7 @@ impl Editor {
             Self::Properties => "PROPERTIES",
             Self::Colorways => "COLOR",
             Self::Marker => "MOD_ARRAY",
+            Self::Timeline => "TIME",
         }
     }
 }
@@ -75,7 +80,7 @@ impl Editor {
     pub const fn duplicable(self) -> bool {
         matches!(
             self,
-            Self::TechPack | Self::Marker | Self::Outliner | Self::Properties
+            Self::TechPack | Self::Marker | Self::Timeline | Self::Outliner | Self::Properties
         )
     }
 }
@@ -196,6 +201,7 @@ impl AzamApp {
             Editor::TechPack => self.techpack_area(id, cx),
             Editor::Colorways => self.colorways_area(id, cx),
             Editor::Marker => self.marker_area(id, cx),
+            Editor::Timeline => self.timeline_area(id, cx),
             Editor::Outliner => self.outliner_area(id, cx),
             Editor::Properties => self.properties_area(id, cx),
         }
