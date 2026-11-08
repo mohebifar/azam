@@ -205,6 +205,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .marker-body { display: flex; flex-direction: column; min-height: 0; background: #262626; }
 .marker-controls { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 8px 10px 4px 10px; }
 .marker-controls .prow { width: 260px; }
+.pbtn.header-action { flex: none; padding: 0 10px; margin-right: 6px; }
 .marker-canvas { flex: 1; display: flex; flex-direction: column; min-height: 0; width: 100%; }
 .pbtn.marker-renest { flex: none; padding: 2px 14px; }
 .marker-figures { padding: 2px 10px 6px 10px; color: #d8d8d8; display: flex; align-items: center; gap: 8px; }

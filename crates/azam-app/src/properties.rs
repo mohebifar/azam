@@ -552,47 +552,47 @@ impl AzamApp {
         let layer_row = piece_num(field("Layer", -5.0, 5.0, 1.0), f64::from(layer), cx, |pc, v| {
             pc.layer = v.round() as i32;
         });
-        vec![
-            self.panel(
-                "Piece",
-                vec![
-                    name_row,
-                    Self::info_row("Area", format!("{area:.1} dm²")),
-                    Self::info_row("Points", points.to_string()),
-                ],
-            ),
+        let mut piece_rows = vec![
+            name_row,
+            Self::info_row("Area", format!("{area:.1} dm²")),
+            Self::info_row("Points", points.to_string()),
+        ];
+        let point = self.point_panel(&id, cx);
+        let grading = self.grading_panel(&id, cx);
+        if point.is_none() {
+            piece_rows.push(
+                div()
+                    .class("pnote")
+                    .child("Select points (Edit Points tool) to place and grade them."),
+            );
+        }
+        let mut panels = vec![
+            self.panel("Piece", piece_rows),
             self.panel("Material", vec![fabric_row, grain_row]),
             self.panel("Seam Allowance", vec![sa_row]),
             self.arrangement_panel(&id, cx),
-            self.point_panel(&id, cx),
-            self.grading_panel(&id, cx),
-            self.panel("Simulation", vec![state_row, pd_row, layer_row]),
-        ]
+        ];
+        panels.extend(point);
+        panels.extend(grading);
+        panels.push(self.panel("Simulation", vec![state_row, pd_row, layer_row]));
+        panels
     }
 
     /// The selected outline points of piece `id` as numbers (Blender's sidebar Median): where they
     /// are, and the length of the segment that starts at a single selected point. Editing X or Y
     /// moves the points together; editing a straight segment's length moves its far end along it.
-    fn point_panel(&mut self, id: &azam_doc::PieceId, cx: &mut Context<Self>) -> Div {
+    fn point_panel(&mut self, id: &azam_doc::PieceId, cx: &mut Context<Self>) -> Option<Div> {
         let project = &self.session.project;
         let sel = &self.session.selection;
-        let Some(pc) = project.pieces.get(id) else {
-            return div();
-        };
+        let pc = project.pieces.get(id)?;
         let points: Vec<usize> = if sel.active.as_ref() == Some(id) {
             sel.points.iter().copied().filter(|&i| i < pc.pts.len()).collect()
         } else {
             Vec::new()
         };
         if points.is_empty() {
-            return self.panel(
-                "Point",
-                vec![
-                    div()
-                        .class("pnote")
-                        .child("Select points (Edit Points tool) to place them by number."),
-                ],
-            );
+            // as Blender's panels poll: shown only when there is something to show
+            return None;
         }
         let median = points.iter().map(|&i| pc.pts[i].pos).sum::<azam_geom::Vec2>() / points.len() as f64;
         let axis = |label, value, cx: &mut Context<Self>, x_axis: bool| {
@@ -645,12 +645,12 @@ impl AzamApp {
                 ));
             }
         }
-        self.panel("Point", rows)
+        Some(self.panel("Point", rows))
     }
 
     /// Linear grading of the selected points of piece `id`: how far they move per size away from
     /// the base size, and what that gives in each size.
-    fn grading_panel(&mut self, id: &azam_doc::PieceId, cx: &mut Context<Self>) -> Div {
+    fn grading_panel(&mut self, id: &azam_doc::PieceId, cx: &mut Context<Self>) -> Option<Div> {
         let project = &self.session.project;
         let piece = &project.pieces[id];
         let points: Vec<azam_geom::PointId> = self
@@ -660,16 +660,7 @@ impl AzamApp {
             .iter()
             .filter_map(|&i| piece.pts.get(i).map(|q| q.id.clone()))
             .collect();
-        let Some(first) = points.first() else {
-            return self.panel(
-                "Grading",
-                vec![
-                    div()
-                        .class("hint")
-                        .child("Select points (Edit Points tool) to grade them."),
-                ],
-            );
-        };
+        let first = points.first()?;
         let step = azam_doc::grade_step(project, id, first);
         let per_size: Vec<String> = project
             .sizes
@@ -701,7 +692,7 @@ impl AzamApp {
             Self::info_row("Per Size", per_size.join(" · ")),
         ];
         rows.extend(self.grade_rule_rows(id, first, cx));
-        self.panel("Grading", rows)
+        Some(self.panel("Grading", rows))
     }
 
     /// The grade rules of `point` of piece `id` as a table to edit: for every size but the base,
@@ -808,12 +799,15 @@ impl AzamApp {
             |a, v| a.ang = Some(v),
         );
         let h_row = arr_num(
-            field("Height (mm, 0 = auto)", 0.0, 2200.0, 10.0),
+            field("Height (mm)", 0.0, 2200.0, 10.0),
             arr.h.unwrap_or(0.0),
             cx,
             |a, v| a.h = (v > 0.0).then_some(v),
         );
-        self.panel("Arrangement", vec![slot_row, off_row, ang_row, h_row])
+        let h_note = div()
+            .class("pnote")
+            .child("Height 0 places the piece at its slot's own height.");
+        self.panel("Arrangement", vec![slot_row, off_row, ang_row, h_row, h_note])
     }
 
     #[allow(clippy::too_many_lines, reason = "the panels of one tab, read top to bottom")]

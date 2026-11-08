@@ -71,6 +71,23 @@ impl AzamApp {
         self.colorway_thumbs = ColorwayThumbs { key, images };
     }
 
+    /// Adds a copy of the active colorway (its fabric colours to change from there) and makes it
+    /// active.
+    pub fn new_colorway(&mut self) {
+        let source = self.session.project.active_colorway.clone();
+        let mut made = None;
+        self.session.edit("New Colorway", |p| {
+            made = azam_doc::duplicate_colorway(p, &source);
+            if let Some(id) = &made {
+                p.active_colorway = id.clone();
+            }
+        });
+        self.status = match made {
+            Some(_) => "New colorway: change its fabric colours in the Fabric tab".into(),
+            None => "Could not copy the colorway".into(),
+        };
+    }
+
     /// The Colorways editor's body: a card per colorway, the active one marked.
     pub(crate) fn colorways_body(&mut self, cx: &mut Context<Self>) -> Div {
         let active = self.session.project.active_colorway.clone();

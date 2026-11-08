@@ -1851,7 +1851,18 @@ impl AzamApp {
             .class("area-header")
             .child(self.editor_type_button(area, cx))
             .child(div().class("mode-label").child("Colorways"))
-            .child(div().class("header-spacer"));
+            .child(div().class("header-spacer"))
+            .child(
+                div()
+                    .class("pbtn header-action")
+                    .id("cw-new")
+                    .child(self.icons.icon("ADD"))
+                    .child("New Colorway")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.new_colorway();
+                        cx.notify();
+                    })),
+            );
         div()
             .class("area")
             .flex_1()

@@ -1362,6 +1362,23 @@ fn a_marker_piece_can_be_dragged_and_clashes_show() {
 }
 
 #[test]
+fn new_colorway_copies_the_active_one_and_makes_it_active() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        win.root().update(cx, |app, _| {
+            let before = app.session().project.colorways.len();
+            let old = app.session().project.active_colorway.clone();
+            app.new_colorway();
+            let p = &app.session().project;
+            assert_eq!(p.colorways.len(), before + 1);
+            assert_ne!(p.active_colorway, old, "the copy is active");
+        });
+    });
+}
+
+#[test]
 fn the_colorways_editor_shows_every_colorway_and_picks_one() {
     Application::headless().run(|cx| {
         let win = cx
