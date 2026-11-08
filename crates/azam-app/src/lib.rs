@@ -8,6 +8,7 @@ pub mod app;
 pub mod areas;
 pub mod autosave;
 mod avatar_motion;
+mod colorway_view;
 mod context_menu;
 pub mod decals;
 pub mod editors;

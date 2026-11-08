@@ -200,6 +200,15 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
              border-radius: 4px; background: #232323; border: 1px solid #111111;
              box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
 
+/* -- colorways editor ---------------------------------------------------------------------------- */
+.cw-grid { flex: 1; display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; overflow-y: scroll; min-height: 0;
+           align-content: flex-start; }
+.cw-card { display: flex; flex-direction: column; border-radius: 6px; padding: 4px; background: #282828;
+           border: 2px solid #282828; }
+.cw-card:hover { border-color: #4a4a4a; }
+.cw-card.on { border-color: #e87d0d; }
+.cw-name { color: #e6e6e6; padding: 4px 2px 2px; text-align: center; }
+
 /* -- grade rule table --------------------------------------------------------------------------- */
 .grade-head, .grade-row { display: flex; align-items: center; gap: 4px; padding: 1px 0; }
 .grade-head { color: #9d9d9d; font-size: 11px; border-bottom: 1px solid #474747; margin-top: 4px; }

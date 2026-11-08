@@ -152,13 +152,28 @@ fn reference_substeps(preset: azam_sim::SimPreset) -> f64 {
     }
 }
 
-/// `r` as the reference engine resolves it: the preset's substeps as the reference has them,
-/// unless the project sets its own.
+/// Particle-distance scale of each preset in the reference engine (azam's Normal and Fine mesh
+/// finer).
+fn reference_pd_scale(preset: azam_sim::SimPreset) -> f64 {
+    match preset {
+        azam_sim::SimPreset::Draft => 1.3,
+        azam_sim::SimPreset::Normal | azam_sim::SimPreset::Layered => 1.0,
+        azam_sim::SimPreset::Fine => 0.8,
+        azam_sim::SimPreset::Final => 0.65,
+    }
+}
+
+/// `r` as the reference engine resolves it: the preset's substeps and mesh scale as the
+/// reference has them, unless the project sets its own.
 fn as_reference(mut r: azam_sim::ResolvedSettings) -> azam_sim::ResolvedSettings {
-    let substeps = reference_substeps(r.preset);
+    let (substeps, pd) = (reference_substeps(r.preset), reference_pd_scale(r.preset));
     r.base.substeps = substeps;
+    r.base.pd_scale = pd;
     if !r.overrides.contains_key("substeps") {
         r.values.substeps = substeps;
+    }
+    if !r.overrides.contains_key("pdScale") {
+        r.values.pd_scale = pd;
     }
     r
 }
@@ -892,7 +907,12 @@ fn untangler_marks_the_poked_through_region() {
         project_out: false,
         ..BuildOptions::default()
     };
-    let mut sim = Simulation::build_with(&project, av, None, &SimParams::default(), &options);
+    // The recording was made at the reference engine's Normal mesh.
+    let params = SimParams {
+        pd_scale: reference_pd_scale(azam_sim::SimPreset::Normal),
+        ..SimParams::default()
+    };
+    let mut sim = Simulation::build_with(&project, av, None, &params, &options);
     sim.set_positions(&f32s(&u["x"]));
     let setup = UntangleSetup::new(&sim);
     let s = &u["setup"];

@@ -199,6 +199,8 @@ pub struct AzamApp {
     pub(crate) render_view: Option<crate::render_view::RenderView>,
     /// The area maximized to fill the window (Ctrl Space), if any.
     pub(crate) maximized: Option<crate::areas::AreaId>,
+    /// Every colorway rendered, for the Colorways editor.
+    pub(crate) colorway_thumbs: crate::colorway_view::ColorwayThumbs,
     /// Operators run lately, newest first (F3 lists them first when nothing is typed).
     pub(crate) recent_ops: Vec<Operator>,
     /// The viewport's own path trace in Rendered shading.
@@ -325,6 +327,7 @@ impl AzamApp {
             render_view: None,
             live_render: None,
             recent_ops: Vec::new(),
+            colorway_thumbs: crate::colorway_view::ColorwayThumbs::default(),
             maximized: None,
             tooltip: None,
             open_submenu: None,
@@ -1752,6 +1755,19 @@ impl AzamApp {
             .child(self.properties_body(area, cx))
     }
 
+    pub(crate) fn colorways_area(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
+        let header = div()
+            .class("area-header")
+            .child(self.editor_type_button(area, cx))
+            .child(div().class("mode-label").child("Colorways"))
+            .child(div().class("header-spacer"));
+        div()
+            .class("area")
+            .flex_1()
+            .child(header)
+            .child(self.colorways_body(cx))
+    }
+
     pub(crate) fn techpack_area(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
         let header = div()
             .class("area-header")
@@ -2048,6 +2064,7 @@ impl AzamApp {
         self.tint_collaborator_pieces(&mut draws);
         self.viewport.render(&draws, window.scale_factor());
         pending |= self.update_live_render();
+        self.update_colorway_thumbs(window.scale_factor());
         if pending {
             window.request_animation_frame();
         }

@@ -1073,3 +1073,51 @@ fn layouts_are_saved_and_come_back() {
     });
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_colorways_editor_shows_every_colorway_and_picks_one() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        win.root().update(cx, |app, cx| {
+            app.open_template(azam_app::operators::Template::Labadeh);
+            app.set_workspace(azam_app::app::Workspace::Colorway);
+            cx.notify();
+        });
+        wait_for_garment(cx, &win);
+        for _ in 0..3 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+        }
+        let ids: Vec<String> = win
+            .root()
+            .read(cx)
+            .session()
+            .project
+            .colorways
+            .keys()
+            .map(|k| k.as_str().to_owned())
+            .collect();
+        assert!(ids.len() > 1, "the labadeh has several colorways");
+        for id in &ids {
+            assert!(
+                cx.element_bounds(win.id, &format!("cw-{id}")).is_some(),
+                "a card for {id}"
+            );
+        }
+        let other = ids
+            .iter()
+            .find(|i| **i != win.root().read(cx).session().project.active_colorway.as_str())
+            .expect("another")
+            .clone();
+        let b = cx.element_bounds(win.id, &format!("cw-{other}")).expect("card");
+        cx.simulate_click(win.id, b.origin.x + b.size.width / 2.0, b.origin.y + 40.0);
+        cx.draw(win.id);
+        assert_eq!(
+            win.root().read(cx).session().project.active_colorway.as_str(),
+            other
+        );
+    });
+}

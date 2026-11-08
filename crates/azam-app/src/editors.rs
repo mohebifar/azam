@@ -21,13 +21,16 @@ pub enum Editor {
     Outliner,
     /// The properties editor.
     Properties,
+    /// Every colorway rendered side by side.
+    Colorways,
 }
 
 impl Editor {
     /// Every editor, in the editor-type menu's order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::View3d,
         Self::Pattern,
+        Self::Colorways,
         Self::TechPack,
         Self::Outliner,
         Self::Properties,
@@ -42,6 +45,7 @@ impl Editor {
             Self::TechPack => "Tech Pack",
             Self::Outliner => "Outliner",
             Self::Properties => "Properties",
+            Self::Colorways => "Colorways",
         }
     }
 
@@ -54,6 +58,7 @@ impl Editor {
             Self::TechPack => "SPREADSHEET",
             Self::Outliner => "OUTLINER",
             Self::Properties => "PROPERTIES",
+            Self::Colorways => "COLOR",
         }
     }
 }
@@ -181,6 +186,7 @@ impl AzamApp {
             Editor::View3d => self.viewport_area(id, cx),
             Editor::Pattern => self.pattern_area(id, cx),
             Editor::TechPack => self.techpack_area(id, cx),
+            Editor::Colorways => self.colorways_area(id, cx),
             Editor::Outliner => self.outliner_area(id, cx),
             Editor::Properties => self.properties_area(id, cx),
         }

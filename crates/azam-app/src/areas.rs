@@ -206,12 +206,20 @@ pub fn default_layout(workspace: Workspace, next: &mut AreaId) -> AreaNode {
     };
     let leaf = |editor, id| AreaNode::Leaf { id, editor };
     let main = match workspace {
-        Workspace::Design | Workspace::Colorway => AreaNode::Split {
+        Workspace::Design => AreaNode::Split {
             id: fresh(),
             dir: Dir::Row,
             ratio: 0.5,
             a: Box::new(leaf(Editor::View3d, fresh())),
             b: Box::new(leaf(Editor::Pattern, fresh())),
+        },
+        // the garment beside every colorway of it
+        Workspace::Colorway => AreaNode::Split {
+            id: fresh(),
+            dir: Dir::Row,
+            ratio: 0.45,
+            a: Box::new(leaf(Editor::View3d, fresh())),
+            b: Box::new(leaf(Editor::Colorways, fresh())),
         },
         Workspace::Review => leaf(Editor::View3d, fresh()),
         Workspace::Grading => leaf(Editor::Pattern, fresh()),
