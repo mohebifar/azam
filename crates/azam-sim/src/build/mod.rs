@@ -151,7 +151,7 @@ impl Simulation {
             let tape = zipper::ZipperTape::of(project, piece, r);
             particles::fill(&mut particles, ri, r, &m, &tape.weight);
             if r.state != azam_doc::PieceState::Off {
-                constraints::add_piece(&mut stretch, &mut bend, piece, r, &m, &tape.band);
+                constraints::add_piece(&mut stretch, &mut bend, piece, r, &m, &tape);
             }
         }
         let sewing = sewing::sewing(project, &records);

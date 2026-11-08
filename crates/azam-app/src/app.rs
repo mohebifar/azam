@@ -625,6 +625,7 @@ impl AzamApp {
             Operator::TogglePlay | Operator::ResetSim | Operator::StepSim => self.run_simulation(op),
             Operator::ExportDxf
             | Operator::ExportDxfGraded
+            | Operator::ExportAstm
             | Operator::ExportSvg
             | Operator::ExportObj
             | Operator::ExportGltf

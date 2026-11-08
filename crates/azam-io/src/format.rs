@@ -370,10 +370,44 @@ pub fn utf16_prefix(s: &str, n: usize) -> String {
     out
 }
 
+/// The UTC date (`MM-DD-YYYY`) and time (`HH:MM:SS`) `secs` seconds after the Unix epoch, as file
+/// headers write them.
+#[must_use]
+pub fn utc_date_time(secs: u64) -> (String, String) {
+    let days = i64::try_from(secs / 86_400).unwrap_or(0);
+    let rem = secs % 86_400;
+    // days to a civil date (proleptic Gregorian), after Howard Hinnant's algorithm
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    (
+        format!("{month:02}-{day:02}-{year:04}"),
+        format!("{:02}:{:02}:{:02}", rem / 3_600, rem % 3_600 / 60, rem % 60),
+    )
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp, reason = "exact parse results")]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dates_from_the_epoch() {
+        assert_eq!(utc_date_time(0), ("01-01-1970".into(), "00:00:00".into()));
+        // 2026-11-07 13:05:09 UTC
+        assert_eq!(
+            utc_date_time(1_794_056_709),
+            ("11-07-2026".into(), "13:05:09".into())
+        );
+        // a leap day
+        assert_eq!(utc_date_time(951_782_400).0, "02-29-2000");
+    }
 
     #[test]
     fn fixed_rounds_ties_away_from_zero() {

@@ -436,29 +436,72 @@ fn drape_project(zipped: bool) -> Project {
     project
 }
 
-/// Mean relative stretch of the constraints along the first edge of the square after draping it
-/// over the head (with a zipper half on that edge or without), and how many there are.
-fn first_edge_strain(av: &Avatar, zipped: bool) -> (f64, usize) {
-    let mut sim = Simulation::build(&drape_project(zipped), av, None, &SimParams::default());
-    lay_flat(&mut sim, 0, av.height() + DROP_HEIGHT_MM);
-    for _ in 0..DRAPE_FRAMES {
+/// Frames a hanging strip is simulated for.
+const HANG_FRAMES: usize = 120;
+/// Where a hanging strip's top edge is held, mm: well clear of the body.
+const HANG_AT: [f64; 3] = [900.0, 1500.0, 0.0];
+
+/// A knit strip (it stretches under its own weight), 250 mm wide and 700 mm long, held by its top
+/// edge away from the body, with a zipper half along its right side if `zipped`; after it hangs a
+/// while, the mean stretch of the mesh edges along that side and how many there are.
+fn hanging_side_strain(av: &Avatar, zipped: bool, pd_scale: f64) -> (f64, usize) {
+    let (w, h) = (250.0, DRAPE_MM);
+    let pts = vec![
+        OutlinePoint::corner("a", 0.0, 0.0),
+        OutlinePoint::corner("b", w, 0.0),
+        OutlinePoint::corner("c", w, h),
+        OutlinePoint::corner("d", 0.0, h),
+    ];
+    let mut project = Project::new(None, Sex::Female, 0.0);
+    project.add_piece(Piece::new(PieceId::new("pc_st"), "pc_st", pts));
+    for f in project.fabrics.values_mut() {
+        f.phys.stretch_weft = 0.0;
+        f.phys.stretch_warp = 0.0;
+        f.phys.shear = 0.0;
+    }
+    if zipped {
+        azam_doc::add_zipper_half(
+            &mut project,
+            &PieceId::new("pc_st"),
+            &azam_geom::PointId::new("b"),
+        )
+        .expect("zipper on the right side");
+    }
+    let params = SimParams {
+        pd_scale,
+        ..SimParams::default()
+    };
+    let mut sim = Simulation::build(&project, av, None, &params);
+    let r = sim.records[0].clone();
+    let mut x = sim.particles.x.clone();
+    for i in 0..r.count {
+        let (u, v) = (r.mesh.xy[2 * i], r.mesh.xy[2 * i + 1]);
+        let k = (r.offset + i) * 3;
+        x[k] = (HANG_AT[0] + u) as f32;
+        x[k + 1] = (HANG_AT[1] - v) as f32;
+        x[k + 2] = HANG_AT[2] as f32;
+    }
+    sim.set_positions(&x);
+    for i in 0..r.count {
+        if r.mesh.xy[2 * i + 1] < 1e-6 {
+            sim.pin(r.offset + i);
+        }
+    }
+    for _ in 0..HANG_FRAMES {
         sim.step(av, 1.0 / 60.0);
     }
-    let r = &sim.records[0];
-    let on_edge = |v: u32| {
+    // the right side is the outline's second segment; boundary vertices come first in the mesh
+    let on_side = |v: u32| {
         let v = v as usize - r.offset;
-        v < r.mesh.boundary_count() && r.mesh.boundary_segment[v] == 0
+        v < r.mesh.boundary_count() && r.mesh.boundary_segment[v] == 1
     };
-    let x = &sim.particles.x;
-    let at = |v: u32| {
-        let v = v as usize * 3;
-        glam::DVec3::new(f64::from(x[v]), f64::from(x[v + 1]), f64::from(x[v + 2]))
-    };
+    let p = |v: u32| glam::Vec3::from_slice(&sim.particles.x[v as usize * 3..v as usize * 3 + 3]);
     let (mut sum, mut n) = (0.0, 0);
     for c in 0..sim.stretch.i.len() {
         let (i, j) = (sim.stretch.i[c], sim.stretch.j[c]);
-        if on_edge(i) && on_edge(j) {
-            sum += (at(i).distance(at(j)) / f64::from(sim.stretch.rest[c]) - 1.0).abs();
+        // mesh edges along the side, not the tape's long-range chords
+        if on_side(i) && on_side(j) && i.abs_diff(j) == 1 {
+            sum += f64::from(p(i).distance(p(j)) / sim.stretch.rest[c] - 1.0);
             n += 1;
         }
     }
@@ -468,16 +511,17 @@ fn first_edge_strain(av: &Avatar, zipped: bool) -> (f64, usize) {
 #[test]
 fn a_zipper_holds_its_edge_and_weighs_on_it() {
     let av = female_avatar();
-    let (plain, n) = first_edge_strain(&av, false);
-    let (zipped, m) = first_edge_strain(&av, true);
-    assert!(
-        n > 5 && n == m,
-        "the same edge constraints in both runs ({n}, {m})"
-    );
-    assert!(
-        zipped < plain * 0.8,
-        "the zipper's tape stretches less than plain cloth: {zipped:.5} vs {plain:.5}"
-    );
+    // at the default mesh and a much finer one: the tape holds whatever the spacing
+    for pd in [1.0, 0.65] {
+        let (plain, n) = hanging_side_strain(&av, false, pd);
+        let (zipped, m) = hanging_side_strain(&av, true, pd);
+        assert!(n > 5 && n == m, "the same side edges in both runs ({n}, {m})");
+        assert!(plain > 0.01, "the knit stretches under its weight: {plain:.5}");
+        assert!(
+            zipped.abs() < 0.002,
+            "the zipper's tape barely stretches at {pd}× spacing: {zipped:.5} vs {plain:.5}"
+        );
+    }
     // its weight: a half zipper's 11 g/m along the 700 mm edge
     let mass = |zipped: bool| {
         let sim = Simulation::build(&drape_project(zipped), &av, None, &SimParams::default());

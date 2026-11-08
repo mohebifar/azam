@@ -84,7 +84,10 @@ layouts are saved per workspace with the preferences and come back next time (Ed
 restores one). The Colorways editor (any area's editor menu, and beside the 3D view in the
 Colorway workspace) shows a rendered card per colorway side by side; click one to make it active.
 File ▸ Export DXF (All Sizes)… writes the graded nest: every piece in every size,
-the sizes laid over each other.
+the sizes laid over each other. File ▸ Export ASTM DXF + Rules… writes the base size as an ASTM
+D6673 DXF (turn points on layer 2, curve points on layer 3, each graded point tagged with its rule
+number) and the matching `.rul` grade-rule table next to it, which pattern CAD systems read back as
+a graded pattern.
 
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
 per size for the selected points); the templates come graded from the size chart, and the avatar
@@ -93,7 +96,7 @@ selected points by number and sets a straight segment's length. The 3D header's 
 View ▸ Wireframe Overlay) draws the cloth and body meshes' edges. View ▸ Fit Map (or the 3D header in fit map shading) switches
 between the Fit, Strain, Stress and Pressure maps. Graphics placed on pieces are printed on the cloth
 in the 3D view and in renders (F12), together with topstitches, buttons, buttonholes and zippers
-(the Zipper tool sews two edges and gives each a zipper half; in the simulation the cloth under its tape barely stretches or bends, and the zipper's weight hangs on the edge). Pins set with the 3D Pin tool are saved
+(the Zipper tool sews two edges and gives each a zipper half; in the simulation the cloth under its tape barely stretches or bends, and the zipper's weight hangs on the edge; long-range chords along the tape keep it from stretching at any mesh density). Pins set with the 3D Pin tool are saved
 with the project. In the 3D view, drag a piece to move it before draping, Ctrl-drag to turn it around
 the body (saved with the project and undoable), or show the arrangement points (header button or View menu) and click one to send the
 selected pieces there. The Dart tool's width and depth sit in the pattern editor's header while it

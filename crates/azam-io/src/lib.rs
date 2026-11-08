@@ -27,7 +27,9 @@ pub mod pdf;
 mod svg;
 mod techpack;
 
-pub use dxf::{DxfError, ImportedLine, ImportedPiece, export_dxf, export_dxf_graded, import_dxf};
+pub use dxf::{
+    AstmFiles, DxfError, ImportedLine, ImportedPiece, export_astm, export_dxf, export_dxf_graded, import_dxf,
+};
 pub use fbx::export_fbx;
 pub use gltf::{Animation, MeshFrame, export_glb, export_glb_animated};
 pub use model::Bounds;

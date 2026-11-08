@@ -686,6 +686,28 @@ fn the_draped_garment_exports_as_gltf() {
 }
 
 #[test]
+fn the_astm_export_writes_the_dxf_and_its_rule_table() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        let path = std::env::temp_dir().join(format!("azam-astm-{}.dxf", std::process::id()));
+        win.root()
+            .read(cx)
+            .export_to(azam_app::export::ExportKind::Astm, &path)
+            .expect("exported");
+        let dxf = std::fs::read_to_string(&path).expect("DXF written");
+        let rul = std::fs::read_to_string(path.with_extension("rul")).expect("rule table written");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("rul"));
+        assert!(rul.starts_with("ASTM/D13Proposal") && rul.contains("RULE: DELTA 1"));
+        assert!(dxf.contains("Rule Table:") && dxf.contains("# 1"));
+        let pieces = azam_io::import_dxf(&dxf).expect("azam reads its own ASTM DXF");
+        assert!(pieces.len() >= 2, "{} pieces", pieces.len());
+    });
+}
+
+#[test]
 fn a_shortcut_set_in_preferences_runs_its_command() {
     use azam_app::operators::{Operator, Tool};
     Application::headless().run(|cx| {

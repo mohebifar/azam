@@ -15,6 +15,8 @@ pub enum ExportKind {
     Dxf,
     /// AAMA-style DXF of every size (a graded nest).
     DxfGraded,
+    /// ASTM D6673 DXF of the base size with grade rules, and its rule table next to it.
+    Astm,
     /// SVG of the pattern.
     Svg,
     /// The draped garment as OBJ (with an MTL next to it).
@@ -38,6 +40,7 @@ impl ExportKind {
         match op {
             O::ExportSvg => Self::Svg,
             O::ExportDxfGraded => Self::DxfGraded,
+            O::ExportAstm => Self::Astm,
             O::ExportObj => Self::Obj,
             O::ExportGltf => Self::Gltf,
             O::ExportFbx => Self::Fbx,
@@ -49,7 +52,7 @@ impl ExportKind {
 
     const fn extension(self) -> &'static str {
         match self {
-            Self::Dxf | Self::DxfGraded => "dxf",
+            Self::Dxf | Self::DxfGraded | Self::Astm => "dxf",
             Self::Svg => "svg",
             Self::Obj => "obj",
             Self::Gltf | Self::Animation => "glb",
@@ -64,13 +67,14 @@ impl ExportKind {
             Self::TechPackPdf => "-techpack",
             Self::Dxf | Self::Svg | Self::Obj | Self::Gltf | Self::Fbx => "",
             Self::DxfGraded => "-graded",
+            Self::Astm => "-astm",
             Self::Animation => "-animation",
         }
     }
 
     const fn filter(self) -> &'static str {
         match self {
-            Self::Dxf | Self::DxfGraded => "DXF\t*.dxf",
+            Self::Dxf | Self::DxfGraded | Self::Astm => "DXF\t*.dxf",
             Self::Svg => "SVG\t*.svg",
             Self::Obj => "Wavefront OBJ\t*.obj",
             Self::Gltf | Self::Animation => "glTF Binary\t*.glb",
@@ -141,6 +145,16 @@ impl AzamApp {
         match kind {
             ExportKind::Dxf => write(path, azam_io::export_dxf(project).as_bytes()),
             ExportKind::DxfGraded => write(path, azam_io::export_dxf_graded(project).as_bytes()),
+            ExportKind::Astm => {
+                let table = azam_io::format::slug(&project.meta.name).to_uppercase();
+                let secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
+                let (date, time) = azam_io::format::utc_date_time(secs);
+                let files = azam_io::export_astm(project, &table, (&date, &time));
+                write(path, files.dxf.as_bytes())?;
+                write(&path.with_extension("rul"), files.rul.as_bytes())
+            }
             ExportKind::Svg => write(path, azam_io::export_svg(project).as_bytes()),
             ExportKind::PatternPdf => {
                 let pdf = azam_io::pattern_pdf(project, &PatternPdfOptions::default())

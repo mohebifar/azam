@@ -11,41 +11,41 @@ use crate::model::{
 };
 
 /// Decimals written for coordinates.
-const COORD_DIGITS: usize = 3;
+pub(super) const COORD_DIGITS: usize = 3;
 /// Half length of the grain line, as a fraction of the piece height.
-const GRAIN_HALF_LENGTH: f64 = 0.35;
+pub(super) const GRAIN_HALF_LENGTH: f64 = 0.35;
 /// Notches reach this far past the seam allowance, in mm.
-const NOTCH_OVERSHOOT_MM: f64 = 3.0;
+pub(super) const NOTCH_OVERSHOOT_MM: f64 = 3.0;
 /// Annotation text starts this far left of the piece centre, in mm.
-const TEXT_INSET_MM: f64 = 40.0;
+pub(super) const TEXT_INSET_MM: f64 = 40.0;
 /// Text height of the piece name, in mm.
-const NAME_TEXT_MM: f64 = 8.0;
+pub(super) const NAME_TEXT_MM: f64 = 8.0;
 /// Text height of the other annotations, in mm.
-const TEXT_MM: f64 = 6.0;
+pub(super) const TEXT_MM: f64 = 6.0;
 /// Header value of `$INSUNITS` for millimetres.
-const INSUNITS_MM: u32 = 4;
+pub(super) const INSUNITS_MM: u32 = 4;
 /// Header value of `$MEASUREMENT` for metric.
-const MEASUREMENT_METRIC: u32 = 1;
+pub(super) const MEASUREMENT_METRIC: u32 = 1;
 
 /// Group-code/value pairs, one per line each.
-struct Writer {
-    out: Vec<String>,
+pub(super) struct Writer {
+    pub(super) out: Vec<String>,
 }
 
 impl Writer {
-    fn pair(&mut self, code: u32, value: impl Into<String>) {
+    pub(super) fn pair(&mut self, code: u32, value: impl Into<String>) {
         self.out.push(code.to_string());
         self.out.push(value.into());
     }
 
-    fn xy(&mut self, code_x: u32, p: Vec2) {
+    pub(super) fn xy(&mut self, code_x: u32, p: Vec2) {
         // DXF y runs up; pattern y runs down.
         self.pair(code_x, fixed(p.x, COORD_DIGITS));
         self.pair(code_x + 10, fixed(-p.y, COORD_DIGITS));
         self.pair(code_x + 20, "0");
     }
 
-    fn polyline(&mut self, pts: &[Vec2], layer: &str, closed: bool) {
+    pub(super) fn polyline(&mut self, pts: &[Vec2], layer: &str, closed: bool) {
         if pts.len() < 2 {
             return;
         }
@@ -62,14 +62,20 @@ impl Writer {
         self.pair(8, layer);
     }
 
-    fn line(&mut self, a: Vec2, b: Vec2, layer: &str) {
+    pub(super) fn point(&mut self, p: Vec2, layer: &str) {
+        self.pair(0, "POINT");
+        self.pair(8, layer);
+        self.xy(10, p);
+    }
+
+    pub(super) fn line(&mut self, a: Vec2, b: Vec2, layer: &str) {
         self.pair(0, "LINE");
         self.pair(8, layer);
         self.xy(10, a);
         self.xy(11, b);
     }
 
-    fn text(&mut self, at: Vec2, text: &str, layer: &str, height: f64) {
+    pub(super) fn text(&mut self, at: Vec2, text: &str, layer: &str, height: f64) {
         self.pair(0, "TEXT");
         self.pair(8, layer);
         self.xy(10, at);
@@ -77,12 +83,12 @@ impl Writer {
         self.pair(1, text);
     }
 
-    fn section(&mut self, name: &str) {
+    pub(super) fn section(&mut self, name: &str) {
         self.pair(0, "SECTION");
         self.pair(2, name);
     }
 
-    fn end_section(&mut self) {
+    pub(super) fn end_section(&mut self) {
         self.pair(0, "ENDSEC");
     }
 }
@@ -151,6 +157,14 @@ fn write_dxf(project: &Project, sizes: &[azam_geom::SizeName], suffix: bool) -> 
 
 fn piece_block(w: &mut Writer, project: &Project, pc: &Piece, name: &str, size: &azam_geom::SizeName) {
     let ol = graded_outline(project, pc, Some(size));
+    begin_block(w, name);
+    w.polyline(&cut_line(pc, &ol), layer::CUT, true);
+    piece_details(w, project, pc, &ol, size);
+    end_block(w);
+}
+
+/// Opens the block `name`, based at the origin.
+pub(super) fn begin_block(w: &mut Writer, name: &str) {
     w.pair(0, "BLOCK");
     w.pair(8, "0");
     w.pair(2, name);
@@ -159,8 +173,22 @@ fn piece_block(w: &mut Writer, project: &Project, pc: &Piece, name: &str, size: 
     w.pair(20, "0");
     w.pair(30, "0");
     w.pair(3, name);
+}
 
-    w.polyline(&cut_line(pc, &ol), layer::CUT, true);
+pub(super) fn end_block(w: &mut Writer) {
+    w.pair(0, "ENDBLK");
+    w.pair(8, "0");
+}
+
+/// Everything of a piece's block but its cut line: the sewing line `ol`, internal lines, grain
+/// line, notches and the annotation text for `size`.
+pub(super) fn piece_details(
+    w: &mut Writer,
+    project: &Project,
+    pc: &Piece,
+    ol: &azam_geom::Outline,
+    size: &azam_geom::SizeName,
+) {
     w.polyline(&ol.poly, layer::SEW, true);
     for il in &pc.internals {
         w.polyline(
@@ -211,8 +239,6 @@ fn piece_block(w: &mut Writer, project: &Project, pc: &Piece, name: &str, size: 
         layer::CUT,
         TEXT_MM,
     );
-    w.pair(0, "ENDBLK");
-    w.pair(8, "0");
 }
 
 #[cfg(test)]

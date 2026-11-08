@@ -393,6 +393,8 @@ pub enum Operator {
     ExportDxf,
     /// Export every size of every piece as a graded nest (DXF).
     ExportDxfGraded,
+    /// Export the base size with grade rules: an ASTM D6673 DXF and its rule table (`.rul`).
+    ExportAstm,
     /// Export the pattern as SVG.
     ExportSvg,
     /// Export the draped garment as OBJ.
@@ -542,6 +544,7 @@ impl Operator {
             Self::UseBuiltinBody => "Use Built-in Body",
             Self::ExportDxf => "Export DXF…",
             Self::ExportDxfGraded => "Export DXF (All Sizes)…",
+            Self::ExportAstm => "Export ASTM DXF + Rules…",
             Self::ExportSvg => "Export SVG…",
             Self::ExportObj => "Export OBJ…",
             Self::ExportGltf => "Export glTF (.glb)…",
@@ -615,6 +618,7 @@ impl Operator {
             Self::UseBuiltinBody => "ARMATURE_DATA",
             Self::ExportDxf
             | Self::ExportDxfGraded
+            | Self::ExportAstm
             | Self::ExportSvg
             | Self::ExportObj
             | Self::ExportGltf
@@ -772,6 +776,7 @@ impl Operator {
             Self::UseBuiltinBody,
             Self::ExportDxf,
             Self::ExportDxfGraded,
+            Self::ExportAstm,
             Self::ExportSvg,
             Self::ExportObj,
             Self::ExportGltf,
@@ -1177,6 +1182,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::ImportAvatar),
         Item(O::ExportDxf),
         Item(O::ExportDxfGraded),
+        Item(O::ExportAstm),
         Item(O::ExportSvg),
         Item(O::ExportObj),
         Item(O::ExportGltf),

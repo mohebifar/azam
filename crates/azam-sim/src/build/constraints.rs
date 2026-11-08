@@ -2,7 +2,7 @@
 
 use azam_doc::Piece;
 
-use super::zipper::{ZIPPER_BEND_FACTOR, ZIPPER_STRETCH_FACTOR};
+use super::zipper::{CHORD_COMPRESSION, ZIPPER_BEND_FACTOR, ZIPPER_STRETCH_FACTOR, ZipperTape};
 use azam_geom::hypot;
 use serde_json::Value;
 
@@ -39,16 +39,18 @@ fn segment_elastic(piece: &Piece, record: &PieceRecord) -> Vec<f64> {
         .collect()
 }
 
-/// Adds the constraints of an active piece. Edges with both ends in `tape` (a zipper's band, see
-/// [`super::zipper`]) are held much more stiffly, as a zipper's tape holds the cloth it is sewn to.
+/// Adds the constraints of an active piece. Edges with both ends in a zipper's band (see
+/// [`super::zipper`]) are held much more stiffly, as a zipper's tape holds the cloth it is sewn to,
+/// and chords along the tape keep it from stretching.
 pub(crate) fn add_piece(
     stretch: &mut StretchConstraints,
     bend: &mut BendConstraints,
     piece: &Piece,
     record: &PieceRecord,
     m: &Material,
-    tape: &[bool],
+    zipper: &ZipperTape,
 ) {
+    let tape = &zipper.band;
     let mesh = &record.mesh;
     let xy = &mesh.xy;
     let off = record.offset as u32;
@@ -109,6 +111,46 @@ pub(crate) fn add_piece(
         }
     }
     add_folds(bend, record, &bend_of_edge);
+    add_tape_chords(stretch, record, m, &zipper.chains);
+}
+
+/// Stretch-only chords along each zipper chain, spanning 2, 4, 8… vertices, so the tape's
+/// stiffness reaches along it in a few solver passes whatever the mesh spacing.
+fn add_tape_chords(
+    stretch: &mut StretchConstraints,
+    record: &PieceRecord,
+    m: &Material,
+    chains: &[Vec<usize>],
+) {
+    let xy = &record.mesh.xy;
+    let off = record.offset as u32;
+    let (wx, wy) = m.grain;
+    for chain in chains {
+        let mut span = 2;
+        while span < chain.len() {
+            for w in 0..chain.len() - span {
+                let (a, b) = (chain[w], chain[w + span]);
+                let (dx, dy) = (xy[2 * b] - xy[2 * a], xy[2 * b + 1] - xy[2 * a + 1]);
+                let len = hypot(dx, dy);
+                if len == 0.0 || len.is_nan() {
+                    continue;
+                }
+                let c = (dx * wx + dy * wy).abs() / len;
+                let s = (-dx * wy + dy * wx).abs() / len;
+                let (c2, s2) = (c * c, s * s);
+                let compliance =
+                    (m.weft * c2 * c2 + m.warp * s2 * s2 + m.shear * 2.0 * c2 * s2) * ZIPPER_STRETCH_FACTOR;
+                stretch.i.push(off + a as u32);
+                stretch.j.push(off + b as u32);
+                stretch
+                    .rest
+                    .push((len * (m.shrink_weft * c2 + m.shrink_warp * s2)) as f32);
+                stretch.compliance.push(compliance as f32);
+                stretch.compression.push(CHORD_COMPRESSION as f32);
+            }
+            span *= 2;
+        }
+    }
 }
 
 /// Whether a segment length factor shortens the edge (exactly 1 means not elastic).
