@@ -210,6 +210,7 @@ const WAISTBAND_NAME: &str = "Waistband";
 ///   size's body and every point takes its offset from the base size (centred on the piece, so
 ///   the pieces grow about their middles rather than drift across the board);
 /// - the skirt's waistband is interfaced, so it holds the skirt at the waist;
+/// - the skirt's and dress's hems are trued, square to the side seams (see [`true_hems`]);
 /// - the dress front gets a side bust dart each side (see [`dress::add_bust_darts`]).
 pub fn refine(project: &mut Project, template: Template) {
     if template == Template::Skirt {
@@ -217,9 +218,41 @@ pub fn refine(project: &mut Project, template: Template) {
             pc.strengthen = Some(true);
         }
     }
+    if matches!(template, Template::Skirt | Template::Dress) {
+        true_hems(project);
+    }
     grade_from_chart(project, template);
     if template == Template::Dress {
         dress::add_bust_darts(project);
+    }
+}
+
+/// Trues the curved hems of flared panels (outline points `hipL`, `hemL`, `hemC`, `hemR`, `hipR`):
+/// the hem's middle control point moves to where the lines square off the side seams at the hem
+/// corners meet, so the hem leaves each corner at a right angle to the side seam. Two panels sewn
+/// at the side then meet in a straight hem; with the reference drafts' flatter hem each corner is
+/// a few degrees short of square and the sewn side seam ends in a downward point.
+fn true_hems(project: &mut Project) {
+    for pc in project.pieces.values_mut() {
+        let at = |id: &str| pc.pts.iter().position(|p| p.id.0 == id);
+        let (Some(hip_l), Some(hem_l), Some(hem_c), Some(hem_r)) =
+            (at("hipL"), at("hemL"), at("hemC"), at("hemR"))
+        else {
+            continue;
+        };
+        let (a, b, r) = (pc.pts[hip_l].pos, pc.pts[hem_l].pos, pc.pts[hem_r].pos);
+        let side = b - a;
+        // square to the side seam, turned towards the other corner
+        let mut n = azam_geom::Vec2::new(-side.y, side.x);
+        if n.x * (r.x - b.x) < 0.0 {
+            n *= -1.0;
+        }
+        let centre_x = f64::midpoint(b.x, r.x);
+        if n.x.abs() < 1e-9 {
+            continue;
+        }
+        let s = (centre_x - b.x) / n.x;
+        pc.pts[hem_c].pos = azam_geom::Vec2::new(centre_x, b.y + s * n.y);
     }
 }
 
@@ -514,6 +547,29 @@ mod tests {
         for size in ["XS", "XL"] {
             let ol = front.graded_outline(&azam_geom::SizeName::from(size), &p.base_size);
             assert!(!ol.poly.is_empty());
+        }
+    }
+
+    #[test]
+    fn trued_hems_leave_the_side_seams_square() {
+        for template in [Template::Skirt, Template::Dress] {
+            let p = from_template(template, Sex::Female, None, None, 0.0);
+            for pc in p
+                .pieces
+                .values()
+                .filter(|pc| pc.point_index(&azam_geom::PointId::new("hemC")).is_some())
+            {
+                let pos = |id: &str| pc.pts[pc.point_index(&azam_geom::PointId::new(id)).expect("point")].pos;
+                let (hip, hem, c) = (pos("hipL"), pos("hemL"), pos("hemC"));
+                let (side, hem_start) = (hip - hem, c - hem);
+                let cos =
+                    (side.x * hem_start.x + side.y * hem_start.y) / (side.length() * hem_start.length());
+                assert!(
+                    cos.abs() < 1e-9,
+                    "{template:?} {}: the hem leaves the corner square ({cos})",
+                    pc.name
+                );
+            }
         }
     }
 }

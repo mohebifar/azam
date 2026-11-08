@@ -108,7 +108,8 @@ the cut line as the outline and no added allowance.
 
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
 per size for the selected points); the templates come graded from the size chart (the dress front with a side bust dart each side, its
-side seams drafted to still match the back), and the avatar
+side seams drafted to still match the back; the skirt and dress hems trued square to the side seams,
+so the sewn hem runs straight through them), and the avatar
 takes the body of the size shown (Avatar tab ▸ Follows Size). The Piece tab's Point panel places the
 selected points by number and sets a straight segment's length. Length links keep two segments the same
 length, or one a set amount longer (Segment panel ▸ Match Length Of, closest lengths first): front
