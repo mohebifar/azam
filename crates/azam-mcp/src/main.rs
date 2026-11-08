@@ -37,7 +37,7 @@ fn options() -> Options {
                 eprintln!(
                     "azam-mcp: an MCP server (stdio) for designing garments in azam\n\n\
                      Usage: azam-mcp [--template NAME] [--size WxH] [PROJECT.azam.json]\n\n  \
-                     --template NAME  tee, dress (default), skirt, labadeh, aba or blank\n  \
+                     --template NAME  tee, dress (default), skirt or blank\n  \
                      --size WxH       window size for view=window screenshots (default 1480x900)\n\n\
                      Register it with Claude Code: claude mcp add azam -- {}",
                     std::env::current_exe().map_or_else(|_| "azam-mcp".into(), |p| p.display().to_string())

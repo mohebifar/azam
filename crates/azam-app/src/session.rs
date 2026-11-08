@@ -453,10 +453,10 @@ mod tests {
 
     #[test]
     fn save_then_load_round_trips() {
-        let mut session = Session::new(new_project(Template::Labadeh));
+        let mut session = Session::new(new_project(Template::Skirt));
         let dir = std::env::temp_dir().join(format!("azam-session-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("labadeh.azam.json");
+        let path = dir.join("skirt.azam.json");
         session.save(&path).unwrap();
         assert!(!session.is_dirty());
         let loaded = Session::load(&path).unwrap();

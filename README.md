@@ -19,7 +19,7 @@ Then:
 ```bash
 cargo run --release -p azam-app                      # the window
 cargo run --release -p azam-app -- shirt.azam.json   # the window, on a saved project
-cargo run --release -p azam-app -- --screenshot shot.png --workspace grading --template labadeh
+cargo run --release -p azam-app -- --screenshot shot.png --workspace grading --template tee
 cargo run --release -p azam-app -- --screenshot drape.png --template dress --frames 300   # simulate first
 cargo run --release -p azam-app -- --render render.png --template dress --frames 300      # path-traced
 cargo run --release -p azam-app -- --screenshot r.png --template dress --frames 300 --shading rendered
@@ -29,7 +29,7 @@ cargo run --release -p azam-app -- --join 192.168.1.20:41234            # the wi
 On macOS, `scripts/bundle-macos.sh` builds `target/release/azam.app` (with the MakeHuman pack inside).
 
 `--workspace` is one of `design`, `grading`, `colorway`, `review`, `techpack`; `--template` one of
-`tee`, `dress`, `skirt`, `labadeh`, `aba`, `blank`; `azam --help` lists every option.
+`tee`, `dress`, `skirt`, `blank`; `azam --help` lists every option.
 
 Blender's controls apply: middle drag orbits the 3D view (Shift pans), the wheel zooms, `Z` opens the
 shading pie, `` ` `` the view pie, `F3` the operator search, `Space` plays the simulation, `Ctrl Z`

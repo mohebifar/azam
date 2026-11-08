@@ -1,15 +1,13 @@
 //! Garment templates drafted from the avatar's measurements.
 
-mod aba;
 mod dress;
-mod labadeh;
 mod skirt;
 mod tee;
 
 use std::collections::BTreeMap;
 
-use azam_geom::{BBox, Outline, OutlinePoint, PointId, bbox};
-use serde_json::{Map, Value, json};
+use azam_geom::{Outline, OutlinePoint, PointId};
+use serde_json::{Map, json};
 
 use crate::avatar::Sex;
 use crate::ids::{PieceId, PomId, StitchId, prefix};
@@ -18,9 +16,7 @@ use crate::piece::Piece;
 use crate::project::{Pom, PomRef, Project, Stitch, UNTITLED};
 use crate::torso::{BodyProfile, TorsoProfile};
 
-pub use aba::{AbaPieces, draft_aba};
 pub use dress::draft_dress;
-pub use labadeh::draft_labadeh;
 pub use skirt::draft_skirt;
 pub use tee::draft_tee;
 
@@ -38,16 +34,6 @@ pub struct DraftOptions<'a> {
     pub neck_depth: Option<f64>,
     /// Sleeve length below the cap, in mm.
     pub sleeve: Option<f64>,
-    /// Back neck depth, in mm.
-    pub back_neck: Option<f64>,
-    /// Front neck depth of a cloak, in mm.
-    pub front_neck: Option<f64>,
-    /// Half width of a cloak, in mm.
-    pub half_width: Option<f64>,
-    /// Shoulder slope of a cloak, in degrees.
-    pub slope: Option<f64>,
-    /// Arm slit length, in mm.
-    pub slit: Option<f64>,
     /// Arrangement distance from the body, in mm.
     pub off: Option<f64>,
     /// Fabric id for the drafted pieces.
@@ -78,24 +64,13 @@ pub enum Template {
     Dress,
     /// Wool A-line skirt with waistband.
     Skirt,
-    /// Clerical over-robe: stand collar, long sleeves, ankle length.
-    Labadeh,
-    /// Sleeveless open clerical cloak with arm slits.
-    Aba,
     /// Empty board.
     Blank,
 }
 
 impl Template {
     /// Every template, in menu order.
-    pub const ALL: [Self; 6] = [
-        Self::Tee,
-        Self::Dress,
-        Self::Skirt,
-        Self::Labadeh,
-        Self::Aba,
-        Self::Blank,
-    ];
+    pub const ALL: [Self; 4] = [Self::Tee, Self::Dress, Self::Skirt, Self::Blank];
 
     /// Stored id of the template.
     #[must_use]
@@ -104,8 +79,6 @@ impl Template {
             Self::Tee => "tee",
             Self::Dress => "dress",
             Self::Skirt => "skirt",
-            Self::Labadeh => "labadeh",
-            Self::Aba => "aba",
             Self::Blank => "blank",
         }
     }
@@ -123,8 +96,6 @@ impl Template {
             Self::Tee => "Essential Tee",
             Self::Dress => "Shift Dress",
             Self::Skirt => "A-line Skirt",
-            Self::Labadeh => "Labadeh",
-            Self::Aba => "Aba",
             Self::Blank => "Blank",
         }
     }
@@ -136,18 +107,7 @@ impl Template {
             Self::Tee => "Set-in sleeve jersey tee with neck rib",
             Self::Dress => "Sleeveless A-line linen dress",
             Self::Skirt => "Wool skirt with waistband",
-            Self::Labadeh => "Shia clerical over-robe: stand collar, long sleeves, ankle length",
-            Self::Aba => "Sleeveless open clerical cloak with arm slits",
             Self::Blank => "Empty board — draft from scratch",
-        }
-    }
-
-    /// Body type the template is meant for, if any.
-    #[must_use]
-    pub fn sex(self) -> Option<Sex> {
-        match self {
-            Self::Labadeh | Self::Aba => Some(Sex::Male),
-            _ => None,
         }
     }
 
@@ -157,10 +117,6 @@ impl Template {
             Self::Tee => draft_tee(project, opts),
             Self::Dress => draft_dress(project, opts),
             Self::Skirt => draft_skirt(project, opts),
-            Self::Labadeh => draft_labadeh(project, opts),
-            Self::Aba => {
-                draft_aba(project, opts);
-            }
             Self::Blank => {}
         }
     }
@@ -367,14 +323,6 @@ pub(crate) fn seg_len(pts: &[OutlinePoint], id: &str) -> f64 {
         .map_or(0.0, |k| ol.segments[k].len)
 }
 
-/// Bounding box of the flattened outline through `pts`.
-pub(crate) fn outline_bbox(pts: &[OutlinePoint]) -> BBox {
-    bbox(Outline::new(pts).poly).unwrap_or(BBox {
-        min: azam_geom::Vec2::ZERO,
-        max: azam_geom::Vec2::ZERO,
-    })
-}
-
 /// Look of a topstitch.
 pub(crate) struct StitchStyle {
     pub off: f64,
@@ -456,11 +404,6 @@ pub(crate) fn assign_fabric(project: &mut Project, fabric: crate::fabric::Fabric
             project.fabrics.insert(id, fabric);
         }
     }
-}
-
-/// A JSON value for an arrangement field this version stores without interpreting.
-pub(crate) fn flag(v: bool) -> Value {
-    Value::Bool(v)
 }
 
 #[cfg(test)]

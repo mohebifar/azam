@@ -249,8 +249,6 @@ const fn doc_template(t: Template) -> DocTemplate {
         Template::Tee => DocTemplate::Tee,
         Template::Dress => DocTemplate::Dress,
         Template::Skirt => DocTemplate::Skirt,
-        Template::Labadeh => DocTemplate::Labadeh,
-        Template::Aba => DocTemplate::Aba,
         Template::Blank => DocTemplate::Blank,
     }
 }
@@ -259,7 +257,7 @@ const fn doc_template(t: Template) -> DocTemplate {
 #[must_use]
 pub fn new_project(template: Template) -> Project {
     let t = doc_template(template);
-    azam_doc::from_template(t, t.sex().unwrap_or(Sex::Female), Some(t.name()), None, now_ms())
+    azam_doc::from_template(t, Sex::Female, Some(t.name()), None, now_ms())
 }
 
 /// Where projects are saved by default.

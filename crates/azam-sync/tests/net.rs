@@ -282,7 +282,7 @@ fn file_log_merges_two_writers() {
 
 #[test]
 fn large_projects_sync_quickly_with_small_edits() {
-    let project = template(Template::Labadeh);
+    let project = template(Template::Tee);
     let full = SyncDoc::from_project(&project).encode_state();
     let start = Instant::now();
     let mut a = Node::host(project, "ana");
@@ -330,7 +330,7 @@ fn large_projects_sync_quickly_with_small_edits() {
         ("duplicate a piece", Command::DuplicatePiece { piece }),
     ];
     let mut report = format!(
-        "labadeh: {} pieces, full state {} bytes, joined and synced in {:?}\n",
+        "tee: {} pieces, full state {} bytes, joined and synced in {:?}\n",
         p.pieces.len(),
         full.len(),
         initial

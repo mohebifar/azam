@@ -405,7 +405,7 @@ impl SimPreset {
                 "Finer mesh and more solver work: smaller wrinkles, tighter seams. About 1.5× Normal's particles and nearly twice its time per frame."
             }
             Self::Layered => {
-                "More substeps and damping, and sliding friction between cloth, for garments worn over each other (robe + aba, coat over shirt): far fewer cloth pass-throughs."
+                "More substeps and damping, and sliding friction between cloth, for garments worn over each other (a coat over a shirt, a jacket over a dress): far fewer cloth pass-throughs."
             }
             Self::Final => {
                 "Finest mesh and most solver work, for presentation and fit sign-off. About 2.5× Normal's particles; stops by itself once settled."

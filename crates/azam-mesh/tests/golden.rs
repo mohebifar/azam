@@ -132,7 +132,7 @@ fn assert_num(actual: f64, expected: f64, what: &str) {
 #[test]
 fn golden_file_covers_every_template() {
     let g = golden();
-    for prefix in ["tee/", "dress/", "skirt/", "labadeh/", "aba/"] {
+    for prefix in ["tee/", "dress/", "skirt/"] {
         assert!(
             g.cases.iter().any(|c| c.name.starts_with(prefix)),
             "missing {prefix}"

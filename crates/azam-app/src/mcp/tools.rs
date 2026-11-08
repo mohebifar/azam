@@ -294,8 +294,8 @@ pub fn list(interactive: bool) -> Vec<Value> {
     let mut tools = vec![
         tool(
             "new_project",
-            "Start a new garment from a template drafted to the avatar's measurements: dress, tee, skirt, labadeh, aba or blank (empty). Replaces the open project (save it first if needed).",
-            &json!({"template": {"type": "string", "enum": ["dress", "tee", "skirt", "labadeh", "aba", "blank"]}, "name": {"type": "string"}}),
+            "Start a new garment from a template drafted to the avatar's measurements: dress, tee, skirt or blank (empty). Replaces the open project (save it first if needed).",
+            &json!({"template": {"type": "string", "enum": ["dress", "tee", "skirt", "blank"]}, "name": {"type": "string"}}),
             &["template"],
         ),
         tool(

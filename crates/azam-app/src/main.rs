@@ -42,7 +42,7 @@ Usage:
 
 Options:
   --workspace NAME     design, grading, colorway, review or techpack
-  --template NAME      tee, dress, skirt, labadeh, aba or blank
+  --template NAME      tee, dress, skirt or blank
   --frames N           simulate for N redraws first (300 is about 10 s of simulation)
   --shading NAME       3D view shading: solid, fitmap or rendered
   --size WxH           window size for --screenshot (default 1480x900)
@@ -128,9 +128,7 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
                 }
                 "--template" => {
                     if azam_app::operators::Template::from_key(&value).is_none() {
-                        return Err(format!(
-                            "no template {value:?} (tee, dress, skirt, labadeh, aba, blank)"
-                        ));
+                        return Err(format!("no template {value:?} (tee, dress, skirt, blank)"));
                     }
                     a.template = Some(value);
                 }

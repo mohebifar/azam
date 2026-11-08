@@ -14,26 +14,15 @@ pub enum Template {
     Dress,
     /// Skirt.
     Skirt,
-    /// Labadeh (long robe).
-    Labadeh,
-    /// Aba (cloak).
-    Aba,
     /// An empty board, to draft from scratch.
     Blank,
 }
 
 impl Template {
     /// Every template, in menu order.
-    pub const ALL: [Self; 6] = [
-        Self::Tee,
-        Self::Dress,
-        Self::Skirt,
-        Self::Labadeh,
-        Self::Aba,
-        Self::Blank,
-    ];
+    pub const ALL: [Self; 4] = [Self::Tee, Self::Dress, Self::Skirt, Self::Blank];
 
-    /// The template keyed `key` (`tee`, `dress`, `skirt`, `labadeh`, `aba`).
+    /// The template keyed `key` (`tee`, `dress`, `skirt`, `blank`).
     #[must_use]
     pub fn from_key(key: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|t| t.key() == key)
@@ -46,8 +35,6 @@ impl Template {
             Self::Tee => "T-Shirt",
             Self::Dress => "Dress",
             Self::Skirt => "Skirt",
-            Self::Labadeh => "Labadeh",
-            Self::Aba => "Aba",
             Self::Blank => "Blank",
         }
     }
@@ -59,8 +46,6 @@ impl Template {
             Self::Tee => "tee",
             Self::Dress => "dress",
             Self::Skirt => "skirt",
-            Self::Labadeh => "labadeh",
-            Self::Aba => "aba",
             Self::Blank => "blank",
         }
     }
@@ -939,8 +924,6 @@ pub const NEW_MENU: &[Operator] = &[
     Operator::New(Template::Tee),
     Operator::New(Template::Dress),
     Operator::New(Template::Skirt),
-    Operator::New(Template::Labadeh),
-    Operator::New(Template::Aba),
     Operator::New(Template::Blank),
 ];
 

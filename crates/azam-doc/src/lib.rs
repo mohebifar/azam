@@ -104,7 +104,6 @@ pub use symmetry::{
     SYMMETRY_KEY, SymmetrySnapshot, symmetry_axis, symmetry_snapshot, sync_symmetry, toggle_symmetry,
 };
 pub use templates::{
-    AbaPieces, DraftOptions, Template, draft_aba, draft_dress, draft_labadeh, draft_skirt, draft_tee,
-    from_template, reference_template, refine,
+    DraftOptions, Template, draft_dress, draft_skirt, draft_tee, from_template, reference_template, refine,
 };
 pub use torso::{BodyProfile, Landmarks, TorsoProfile, ellipse_axes};

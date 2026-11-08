@@ -1466,7 +1466,8 @@ fn the_colorways_editor_shows_every_colorway_and_picks_one() {
             .expect("window");
         wait_for_garment(cx, &win);
         win.root().update(cx, |app, cx| {
-            app.open_template(azam_app::operators::Template::Labadeh);
+            app.open_template(azam_app::operators::Template::Tee);
+            app.new_colorway();
             app.set_workspace(azam_app::app::Workspace::Colorway);
             cx.notify();
         });
@@ -1484,7 +1485,7 @@ fn the_colorways_editor_shows_every_colorway_and_picks_one() {
             .keys()
             .map(|k| k.as_str().to_owned())
             .collect();
-        assert!(ids.len() > 1, "the labadeh has several colorways");
+        assert!(ids.len() > 1, "the tee has a second colorway");
         for id in &ids {
             assert!(
                 cx.element_bounds(win.id, &format!("cw-{id}")).is_some(),

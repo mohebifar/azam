@@ -14,7 +14,7 @@ use azam_geom::Vec2;
 
 /// A project drafted from `template`, at a fixed time so runs are reproducible.
 pub fn template(template: Template) -> Project {
-    let sex = template.sex().unwrap_or(Sex::Female);
+    let sex = Sex::Female;
     from_template(template, sex, None, None, 1_700_000_000_000.0)
 }
 
