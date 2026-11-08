@@ -43,6 +43,8 @@ pub struct Viewport {
     pub frame_ms: f32,
     /// Collaborators' 3D cursors, painted over the frame.
     pub markers: Vec<CursorMarker>,
+    /// Extra room kept clear on the right (an open sidebar), so the gizmo sits beside it.
+    pub right_inset: f32,
 }
 
 /// A collaborator's 3D cursor.
@@ -75,6 +77,7 @@ impl Viewport {
             frame: None,
             frame_ms: 0.0,
             markers: Vec::new(),
+            right_inset: 0.0,
         }
     }
 
@@ -114,13 +117,14 @@ impl Viewport {
         let axes = self.gizmo_axes();
         let camera = self.camera;
         let markers = self.markers.clone();
+        let inset = GIZMO_INSET + self.right_inset;
         canvas(move |b, p| {
             p.fill(b, rgb(0x3d3d3d));
             if let Some(frame) = &frame {
                 p.image(b, frame);
             }
             paint_markers(p, b, &camera, &markers);
-            paint_gizmo(p, b, &axes);
+            paint_gizmo(p, b, &axes, inset);
         })
         .id(VIEWPORT_ID)
         .flex_1()
@@ -238,7 +242,10 @@ impl Viewport {
     #[must_use]
     pub fn gizmo_hit(&self, position: Point<Pixels>) -> Option<GizmoAxis> {
         let b = self.bounds?;
-        let centre = (b.origin.x + b.size.width - GIZMO_INSET, b.origin.y + GIZMO_INSET);
+        let centre = (
+            b.origin.x + b.size.width - GIZMO_INSET - self.right_inset,
+            b.origin.y + GIZMO_INSET,
+        );
         let (x, y) = (position.x.0 - centre.0, position.y.0 - centre.1);
         self.gizmo_axes()
             .into_iter()
@@ -281,8 +288,8 @@ fn paint_markers(p: &mut blenderui::Painter, b: Bounds<f32>, camera: &OrbitCamer
     }
 }
 
-fn paint_gizmo(p: &mut blenderui::Painter, b: Bounds<f32>, axes: &[GizmoAxis]) {
-    let (cx, cy) = (b.origin.x + b.size.width - GIZMO_INSET, b.origin.y + GIZMO_INSET);
+fn paint_gizmo(p: &mut blenderui::Painter, b: Bounds<f32>, axes: &[GizmoAxis], inset: f32) {
+    let (cx, cy) = (b.origin.x + b.size.width - inset, b.origin.y + GIZMO_INSET);
     for a in axes {
         let (x, y) = (cx + a.offset.0, cy + a.offset.1);
         let ball = Bounds {

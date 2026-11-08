@@ -91,35 +91,122 @@ pub const fn default_editor(workspace: Workspace, slot: Slot) -> Option<Editor> 
     })
 }
 
-/// The editor-type menus, one per slot in [`Slot::ALL`] order.
+impl Slot {
+    /// The slot that splits off from this one, or joins into it: the second large area for the
+    /// large ones, the other half of the side column for the side ones.
+    #[must_use]
+    pub const fn partner(self) -> Self {
+        match self {
+            Self::Main => Self::Second,
+            Self::Second => Self::Main,
+            Self::SideTop => Self::SideBottom,
+            Self::SideBottom => Self::SideTop,
+        }
+    }
+}
+
+/// The editor-type menus, one per slot in [`Slot::ALL`] order: the editors, then Split Area and
+/// Join Areas (Blender's View ▸ Area).
 #[must_use]
 pub fn editor_menus() -> Vec<Menu> {
     Slot::ALL
         .iter()
-        .map(|&slot| Menu {
-            title: "Editor Type",
-            entries: Editor::ALL
+        .map(|&slot| {
+            let mut entries: Vec<MenuEntry> = Editor::ALL
                 .iter()
                 .map(|&e| MenuEntry::Item(Operator::SetEditor(slot, e)))
-                .collect(),
+                .collect();
+            entries.extend([
+                MenuEntry::Separator,
+                MenuEntry::Item(Operator::SplitArea(slot)),
+                MenuEntry::Item(Operator::JoinArea(slot)),
+            ]);
+            Menu {
+                title: "Editor Type",
+                entries,
+            }
         })
         .collect()
 }
 
 /// Editors the user switched to, by workspace and slot.
 pub type EditorChoices = BTreeMap<(Workspace, Slot), Editor>;
+/// Areas the user split off or joined away, by workspace and slot: `true` open, `false` closed.
+pub type AreaChoices = BTreeMap<(Workspace, Slot), bool>;
 
 impl AzamApp {
-    /// The editor `slot` shows in the current workspace.
+    /// The editor `slot` shows in the current workspace; `None` when there is no such area.
     #[must_use]
     pub fn editor_at(&self, slot: Slot) -> Option<Editor> {
-        let fallback = default_editor(self.workspace(), slot)?;
-        Some(
-            self.editor_choices
-                .get(&(self.workspace(), slot))
-                .copied()
-                .unwrap_or(fallback),
-        )
+        let ws = self.workspace();
+        let open = self.area_choices.get(&(ws, slot)).copied();
+        if open == Some(false) {
+            return None;
+        }
+        let chosen = self.editor_choices.get(&(ws, slot)).copied();
+        match default_editor(ws, slot) {
+            Some(fallback) => Some(chosen.unwrap_or(fallback)),
+            // an area split off where the workspace has none: the chosen editor, else the first
+            // large editor no other area shows
+            None if open == Some(true) => chosen.or_else(|| {
+                [Editor::Pattern, Editor::View3d, Editor::TechPack]
+                    .into_iter()
+                    .find(|&e| {
+                        Slot::ALL
+                            .iter()
+                            .all(|&s| s == slot || self.editor_at_without(s, slot) != Some(e))
+                    })
+            }),
+            None => None,
+        }
+    }
+
+    /// The editor `slot` shows by its own settings, never asking about `skip` (so a split-off
+    /// area can pick an editor without asking itself).
+    fn editor_at_without(&self, slot: Slot, skip: Slot) -> Option<Editor> {
+        let ws = self.workspace();
+        if slot == skip || self.area_choices.get(&(ws, slot)) == Some(&false) {
+            return None;
+        }
+        self.editor_choices
+            .get(&(ws, slot))
+            .copied()
+            .or_else(|| default_editor(ws, slot))
+    }
+
+    /// Splits the area in `slot`: its partner area opens beside it (the large areas side by side,
+    /// the side column in two). Returns `false` if the partner is open already or has nothing
+    /// left to show.
+    pub fn split_area(&mut self, slot: Slot) -> bool {
+        let (ws, partner) = (self.workspace(), slot.partner());
+        if self.editor_at(partner).is_some() {
+            return false;
+        }
+        self.area_choices.insert((ws, partner), true);
+        if self.editor_at(partner).is_none() {
+            self.area_choices.remove(&(ws, partner));
+            return false;
+        }
+        self.framed = false;
+        true
+    }
+
+    /// Joins the area in `slot` with its partner: `slot`'s editor takes the whole room. Returns
+    /// `false` if there is no partner area to join.
+    pub fn join_area(&mut self, slot: Slot) -> bool {
+        let (ws, partner) = (self.workspace(), slot.partner());
+        let (Some(kept), Some(_)) = (self.editor_at(slot), self.editor_at(partner)) else {
+            return false;
+        };
+        // the main and bottom slots stay; joining into them keeps the editor that was clicked
+        if matches!(partner, Slot::Main | Slot::SideBottom) {
+            self.editor_choices.insert((ws, partner), kept);
+            self.area_choices.insert((ws, slot), false);
+        } else {
+            self.area_choices.insert((ws, partner), false);
+        }
+        self.framed = false;
+        true
     }
 
     /// Shows `editor` in `slot`; an area already showing it takes `slot`'s editor instead.

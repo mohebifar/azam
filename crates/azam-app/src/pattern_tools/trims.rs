@@ -69,6 +69,14 @@ impl AzamApp {
             Ok(_) => "Added a dart (its legs are sewn together)".into(),
             Err(e) => format!("No dart: {e}"),
         };
+        self.last_dart = result.is_ok().then(|| crate::redo_panel::LastDart {
+            piece: seg.piece.clone(),
+            segment: seg.segment.clone(),
+            t: seg.t,
+            width: dart.width,
+            depth: dart.depth,
+            revision: self.session.revision,
+        });
     }
 
     pub(super) fn stitch_press(&mut self, press: &Press) {

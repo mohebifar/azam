@@ -99,6 +99,30 @@ fn main() {
         cx.simulate_mouse_move(win.id, 860.0, 650.0);
         cx.simulate_key(win.id, "d", "d");
         shot(cx, "10b-dart-tool");
+        // Adjust Last Operation after cutting a dart into the back's hem
+        let hem = win
+            .root()
+            .read(cx)
+            .session()
+            .project
+            .pieces
+            .values()
+            .find(|p| p.name == "Back")
+            .map(|pc| {
+                let ol = pc.outline();
+                let longest = ol
+                    .segments
+                    .iter()
+                    .max_by(|a, b| a.len.total_cmp(&b.len))
+                    .expect("segments");
+                longest.point_at(0.5).pos
+            });
+        if let (Some(q), Some(canvas)) = (hem, cx.element_bounds(win.id, azam_app::pattern::PATTERN_ID)) {
+            let s = win.root().read(cx).pattern_view().to_screen(q);
+            cx.simulate_click(win.id, canvas.origin.x + s.x as f32, canvas.origin.y + s.y as f32);
+        }
+        shot(cx, "10c-adjust-last-operation");
+        cx.simulate_key_with(win.id, "z", "z", true, false);
         cx.simulate_key(win.id, "w", "w");
         // a logo printed on the front, draped, in the viewport and the path tracer
         let logo = concat!(
@@ -158,6 +182,11 @@ fn main() {
             win.root().update(cx, |app, _| app.set_show_arrangement(true));
             shot(cx, "12-arrangement-points");
             win.root().update(cx, |app, _| app.set_show_arrangement(false));
+            win.root().update(cx, |app, _| {
+                app.toggle_sidebar();
+                app.toggle_tool_labels();
+            });
+            shot(cx, "13-sidebar-and-tool-names");
             let rendered = win.root().read(cx).render_still(640, 400, 32);
             if let Ok((image, _)) = rendered {
                 let _ = image.write_png(&out.join("11b-graphic-render.png"));

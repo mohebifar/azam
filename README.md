@@ -34,7 +34,12 @@ shading pie, `` ` `` the view pie, `F3` the operator search, `Space` plays the s
 undoes. Right-click opens a context menu for what is under the pointer (a piece, empty pattern space,
 the 3D view); the editor-type button at the left of every area header switches the editor it shows
 (choosing one another area shows swaps them); F3 ranks matches and shows each command's menu and
-shortcut. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
+shortcut. The editor-type menu also splits an area or joins it with its neighbour. N over the 3D view
+opens its sidebar (the selected piece's placement as numbers); over the pattern editor it is the Sew
+tool, as each Blender editor has its own keys. With the Select tool and pieces selected, G and R over
+the pattern editor move and turn them modally (click or Enter keeps, Esc or right-click cancels).
+After a dart, an Adjust Last Operation panel changes its size. Pattern ▸ View ▸ Tool Names in Shelf
+shows the tool shelves with labels. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
 `P` add point, `H` polygon, `S` rectangle, `D` dart, `N` sew (`Shift N` free sew), `M` measure; hover a
 tool for its name and key. The Dart tool cuts a 20 × 80 mm dart into the clicked segment and sews its
 legs; reshape it with Edit Points.
@@ -51,7 +56,8 @@ the body (saved with the project and undoable), or show the arrangement points (
 selected pieces there. The Dart tool's width and depth sit in the pattern editor's header while it
 is active. Fabrics can be deleted, saved to a fabric library shared by all projects
 (`~/Library/Application Support/azam/fabrics` on macOS, or `$AZAM_LIBRARY/fabrics`) and added from
-it; DXF import also brings notches and grain lines.
+it; DXF import also brings notches and grain lines, and File ▸ Import SVG… makes pieces of a drawing's
+closed shapes (curves kept).
 
 ## Layout
 
@@ -63,7 +69,7 @@ it; DXF import also brings notches and grain lines.
 | `crates/azam-avatar` | The avatar: MakeHuman morph body fitted to measurements (default), parametric SDF mannequin, collision grid, arrangement slots, posing and motions (raise arms, walk, sit, turntable). |
 | `crates/azam-sim` | The XPBD cloth solver on the CPU: constraints, sewing, body and self collision, untangling, fit maps. |
 | `crates/azam-sim-gpu` | The same solver as wgpu compute shaders (23 passes), sharing the renderer's device; the app falls back to the CPU solver on any GPU error. |
-| `crates/azam-io` | DXF import (outlines and internal lines) and export; SVG and OBJ export; tech pack tables; pattern and tech-pack PDF with embedded fonts (shaped Persian/Arabic, Hebrew, Greek, and a bundled CJK subset). |
+| `crates/azam-io` | DXF import (outlines, internal lines, notches, grain) and export; SVG import and export; OBJ export; tech pack tables; pattern and tech-pack PDF with embedded fonts (shaped Persian/Arabic, Hebrew, Greek, and a bundled CJK subset). |
 | `crates/azam-trace` | Path tracer for presentation renders (Render ▸ Render Image, F12): BVH, cloth BSDF with sheen, studio lights, shadow-catcher floor, denoiser. |
 | `crates/azam-sync` | Live collaboration: a yrs CRDT of the project, peer-to-peer over TCP with mDNS discovery, or an update log next to the project file (File ▸ Share / Join Session). |
 | `crates/azam-render` | Offscreen wgpu renderer for the 3D viewport: studio lighting, key-light shadow map with a shadow-catching floor, procedural fabric weaves, Blender's floor grid. |

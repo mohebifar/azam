@@ -97,6 +97,18 @@ impl Session {
         self.revision += 1;
     }
 
+    /// How many edits can be undone.
+    #[must_use]
+    pub fn undo_depth(&self) -> usize {
+        self.undo.len()
+    }
+
+    /// Starts a new undo step with the next edit, even if it has the same label as the last one
+    /// (a modal transform that may be cancelled must not merge into an earlier edit).
+    pub fn seal(&mut self) {
+        self.last_edit = None;
+    }
+
     /// Undoes the last edit; returns its label.
     pub fn undo(&mut self) -> Option<String> {
         let snap = self.undo.pop()?;

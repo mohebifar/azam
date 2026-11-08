@@ -25,7 +25,9 @@ const POINT_PICK_PX: f64 = 7.0;
 const FRAME_MARGIN_PX: f64 = 40.0;
 /// Width of the tool shelf floating over the editor's left edge, in logical pixels: framing keeps
 /// the pattern clear of it.
-const TOOL_SHELF_PX: f64 = 42.0;
+pub const TOOL_SHELF_PX: f64 = 42.0;
+/// Width of the tool shelf with tool names shown.
+pub const LABELLED_SHELF_PX: f64 = 162.0;
 /// Blender's selected-object orange.
 const SELECTED: u32 = 0xf15800;
 /// Blender's active-object yellow-orange.
@@ -153,10 +155,11 @@ impl PatternView {
         self.offset = anchor - before * self.zoom;
     }
 
-    /// Fits `min`..`max` (pattern space) into a canvas of `size` logical pixels.
-    pub fn frame(&mut self, min: Vec2, max: Vec2, size: Vec2) {
+    /// Fits `min`..`max` (pattern space) into a canvas of `size` logical pixels, clear of a tool
+    /// shelf `shelf` pixels wide on the left.
+    pub fn frame(&mut self, min: Vec2, max: Vec2, size: Vec2, shelf: f64) {
         let extent = (max - min).max(Vec2::splat(1.0));
-        let shelf = Vec2::new(TOOL_SHELF_PX, 0.0);
+        let shelf = Vec2::new(shelf, 0.0);
         let room = (size - shelf - Vec2::splat(2.0 * FRAME_MARGIN_PX)).max(Vec2::splat(10.0));
         self.zoom = (room.x / extent.x)
             .min(room.y / extent.y)
@@ -500,6 +503,7 @@ mod tests {
             Vec2::new(0.0, 0.0),
             Vec2::new(1000.0, 500.0),
             Vec2::new(800.0, 600.0),
+            TOOL_SHELF_PX,
         );
         let centre = view.to_screen(Vec2::new(500.0, 250.0));
         assert!(centre.distance(Vec2::new(TOOL_SHELF_PX + (800.0 - TOOL_SHELF_PX) / 2.0, 300.0)) < 1e-9);

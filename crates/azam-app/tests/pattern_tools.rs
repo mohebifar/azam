@@ -532,7 +532,73 @@ fn dart_tool_cuts_a_sewn_dart() {
             seam.a[0].piece == back && seam.b[0].piece == back,
             "both legs are on the back"
         );
+        // Adjust Last Operation: a wider dart replaces it, still one dart
+        let points_after_cut = ui.app(cx).session().project.pieces[&back].pts.len();
+        assert!(ui.app(cx).last_dart().is_some(), "the panel offers the last dart");
+        ui.win.root().update(cx, |app, cx| {
+            app.redo_dart(Some(40.0), None);
+            cx.notify();
+        });
+        cx.draw(ui.win.id);
+        let app = ui.app(cx);
+        assert_eq!(
+            app.session().project.sewing.len(),
+            seams_before + 1,
+            "still one dart seam"
+        );
+        assert_eq!(app.session().project.pieces[&back].pts.len(), points_after_cut);
+        assert!((app.last_dart().expect("still adjustable").width - 40.0).abs() < 1e-9);
         ui.undo(cx);
         assert_eq!(ui.app(cx).session().project.sewing.len(), seams_before);
+    });
+}
+
+#[test]
+fn g_and_r_move_and_turn_pieces_modally() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        let centre = ui.centre(cx, &back);
+        ui.click(cx, centre);
+        assert!(ui.app(cx).session().selection.pieces.contains(&back));
+        let first = |cx: &App| ui.app(cx).session().project.pieces[&back].pts[0].pos;
+        let start = first(cx);
+        let zoom = ui.app(cx).pattern_view().zoom;
+        let (x, y) = ui.at(cx, centre);
+
+        // G, move 40 px, click: the piece follows and stays
+        cx.simulate_mouse_move(ui.win.id, x, y);
+        ui.key(cx, "g", "g");
+        assert_eq!(ui.app(cx).modal_kind(), Some(azam_app::modal::ModalKind::Move));
+        cx.simulate_mouse_move(ui.win.id, x + 40.0, y);
+        cx.draw(ui.win.id);
+        cx.simulate_click(ui.win.id, x + 40.0, y);
+        cx.draw(ui.win.id);
+        assert_eq!(ui.app(cx).modal_kind(), None);
+        let moved = first(cx);
+        assert!(
+            (moved.x - start.x - 40.0 / zoom).abs() < 1.0 / zoom,
+            "moved {} mm",
+            moved.x - start.x
+        );
+
+        // G, move, Esc: everything goes back
+        cx.simulate_mouse_move(ui.win.id, x + 40.0, y);
+        ui.key(cx, "g", "g");
+        cx.simulate_mouse_move(ui.win.id, x + 120.0, y + 30.0);
+        cx.draw(ui.win.id);
+        ui.key(cx, "", "Escape");
+        assert!(first(cx).distance(moved) < 1e-9, "Esc puts the piece back");
+
+        // R, sweep the pointer round the middle, Enter: the piece turns
+        let (cx0, cy0) = ui.at(cx, ui.centre(cx, &back));
+        cx.simulate_mouse_move(ui.win.id, cx0 + 60.0, cy0);
+        ui.key(cx, "r", "r");
+        assert_eq!(ui.app(cx).modal_kind(), Some(azam_app::modal::ModalKind::Rotate));
+        cx.simulate_mouse_move(ui.win.id, cx0, cy0 + 60.0);
+        cx.draw(ui.win.id);
+        ui.key(cx, "", "Return");
+        assert_eq!(ui.app(cx).modal_kind(), None);
+        assert!(first(cx).distance(moved) > 1.0, "R turned the piece");
     });
 }

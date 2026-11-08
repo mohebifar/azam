@@ -142,6 +142,15 @@ impl AzamApp {
             return;
         };
         let q = self.pattern_view.to_pattern(s);
+        if self.modal.is_some() {
+            match e.button {
+                MouseButton::Left => self.confirm_modal(),
+                MouseButton::Right => self.cancel_modal(),
+                _ => {}
+            }
+            cx.notify();
+            return;
+        }
         if e.button == MouseButton::Middle {
             self.pattern_drag = Some(PatternDrag::Pan { last: s });
             return;

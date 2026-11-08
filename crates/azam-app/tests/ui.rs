@@ -500,3 +500,84 @@ fn the_editor_type_menu_switches_an_area() {
         );
     });
 }
+
+#[test]
+fn areas_split_and_join() {
+    use azam_app::editors::{Editor, Slot};
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        win.root().update(cx, |app, cx| {
+            app.set_workspace(azam_app::app::Workspace::Review);
+            cx.notify();
+        });
+        cx.draw(win.id);
+        assert_eq!(
+            win.root().read(cx).editor_at(Slot::Second),
+            None,
+            "Review has one large area"
+        );
+        win.root().update(cx, |app, cx| {
+            assert!(app.split_area(Slot::Main));
+            cx.notify();
+        });
+        cx.draw(win.id);
+        cx.draw(win.id);
+        assert_eq!(
+            win.root().read(cx).editor_at(Slot::Second),
+            Some(Editor::Pattern),
+            "the new area shows the pattern"
+        );
+        assert!(
+            cx.element_bounds(win.id, PATTERN_ID).is_some(),
+            "and it is laid out"
+        );
+        win.root().update(cx, |app, cx| {
+            assert!(app.join_area(Slot::Second));
+            assert!(app.join_area(Slot::SideBottom), "the side column joins too");
+            cx.notify();
+        });
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let app = win.root().read(cx);
+        assert_eq!(
+            app.editor_at(Slot::Main),
+            Some(Editor::Pattern),
+            "the joined area keeps the editor that was kept"
+        );
+        assert_eq!(app.editor_at(Slot::Second), None);
+        assert_eq!(app.editor_at(Slot::SideTop), None);
+        assert_eq!(app.editor_at(Slot::SideBottom), Some(Editor::Properties));
+    });
+}
+
+#[test]
+fn n_over_the_3d_view_shows_the_sidebar_and_its_fields_place_the_piece() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        let vp = cx.element_bounds(win.id, VIEWPORT_ID).expect("3D view");
+        cx.simulate_mouse_move(win.id, vp.origin.x + 100.0, vp.origin.y + 300.0);
+        cx.simulate_key(win.id, "n", "n");
+        cx.draw(win.id);
+        assert!(
+            win.root().read(cx).sidebar_shown(),
+            "N over the 3D view opens the sidebar"
+        );
+        assert_ne!(
+            win.root().read(cx).current_tool(),
+            azam_app::operators::Tool::Sew,
+            "and does not pick the Sew tool"
+        );
+        // over the pattern editor N is still the Sew tool
+        let pat = cx.element_bounds(win.id, PATTERN_ID).expect("pattern editor");
+        cx.simulate_mouse_move(win.id, pat.origin.x + 300.0, pat.origin.y + 500.0);
+        cx.simulate_key(win.id, "n", "n");
+        cx.draw(win.id);
+        assert_eq!(win.root().read(cx).current_tool(), azam_app::operators::Tool::Sew);
+    });
+}

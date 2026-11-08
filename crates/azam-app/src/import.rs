@@ -1,9 +1,86 @@
-//! Bringing pattern pieces in from other software.
+//! Bringing pattern pieces in from other software: DXF (AAMA blocks) and SVG drawings.
+
+use std::path::PathBuf;
 
 use azam_doc::{LinePoint, PieceId, Project};
 use azam_io::ImportedPiece;
 
-/// Adds `pieces` (read from a DXF file) to `project` with their internal lines, and places each
+use crate::app::AzamApp;
+
+/// A file format pieces can be imported from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImportFormat {
+    /// AAMA-style DXF.
+    Dxf,
+    /// An SVG drawing.
+    Svg,
+}
+
+impl ImportFormat {
+    /// Name, as the file browser and the undo history show it.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Dxf => "DXF",
+            Self::Svg => "SVG",
+        }
+    }
+
+    /// The file browser's filter.
+    const fn filter(self) -> &'static str {
+        match self {
+            Self::Dxf => "DXF\t*.dxf",
+            Self::Svg => "SVG\t*.svg",
+        }
+    }
+
+    /// The pieces in `text`.
+    fn read(self, text: &str) -> Result<Vec<ImportedPiece>, String> {
+        match self {
+            Self::Dxf => azam_io::import_dxf(text).map_err(|e| e.to_string()),
+            Self::Svg => azam_io::import_svg(text).map_err(|e| e.to_string()),
+        }
+    }
+}
+
+impl AzamApp {
+    /// Asks for a file in `format` and adds its pieces to the project, as one undoable edit.
+    pub(crate) fn import_file(&mut self, format: ImportFormat) {
+        let dir = std::env::var_os("HOME").map(PathBuf::from);
+        let path = match blenderui::file_dialog(
+            &format!("Import {}", format.name()),
+            blenderui::FileDialogMode::Open,
+            dir.as_deref(),
+            None,
+            &[format.filter()],
+            false,
+        ) {
+            blenderui::FileDialogResult::Chosen(paths) => match paths.into_iter().next() {
+                Some(p) => p,
+                None => return,
+            },
+            blenderui::FileDialogResult::Cancelled => return,
+            blenderui::FileDialogResult::Unavailable => {
+                self.status = "Importing needs a window for the file browser".into();
+                return;
+            }
+        };
+        let imported = std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| format.read(&text));
+        match imported {
+            Ok(pieces) => {
+                let count = pieces.len();
+                self.session.edit(&format!("Import {}", format.name()), |p| {
+                    add_imported_pieces(p, &pieces);
+                });
+                self.status = format!("Imported {count} piece(s) from {}", path.display());
+            }
+            Err(e) => self.status = format!("Import failed: {e}"),
+        }
+    }
+}
+
+/// Adds `pieces` (read from a DXF or SVG file) to `project` with their internal lines, and places each
 /// around the avatar by its name ("Back", "Sleeve L", "Collar"…). A second piece that names no
 /// side and would land where an earlier one did goes on the other side ("Sleeve", "Sleeve" →
 /// left and right arm; "Front Leg", "Front Leg" → left and right leg). Returns the new pieces' ids.

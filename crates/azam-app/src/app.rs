@@ -112,6 +112,8 @@ pub struct AzamApp {
     pub(crate) editor_menu_start: usize,
     /// Editors the user switched areas to.
     pub(crate) editor_choices: crate::editors::EditorChoices,
+    /// Areas the user split off or joined away.
+    pub(crate) area_choices: crate::editors::AreaChoices,
     pub(crate) open_menu: Option<usize>,
     pub(crate) menu_anchor: (f32, f32),
     /// Where each menu title was laid out, while a menu is open: the scrim over the window routes
@@ -127,6 +129,14 @@ pub struct AzamApp {
     pub(crate) piece_drag: Option<crate::place3d::PieceDrag>,
     /// Whether the avatar's arrangement points are shown in the 3D view.
     pub(crate) show_arrangement: bool,
+    /// Whether the tool shelves show tool names beside the icons.
+    pub(crate) tool_labels: bool,
+    /// Whether the 3D view's sidebar (N) is shown.
+    pub(crate) show_sidebar: bool,
+    /// The last dart cut, for Adjust Last Operation.
+    pub(crate) last_dart: Option<crate::redo_panel::LastDart>,
+    /// A modal transform (G, R) in progress.
+    pub(crate) modal: Option<crate::modal::Modal>,
     /// The fabric library as last read (`None`: read it when next shown).
     pub(crate) fabric_library: Option<Vec<azam_doc::Fabric>>,
     /// Where the main, side and outliner borders were laid out last frame.
@@ -242,6 +252,7 @@ impl AzamApp {
             context_menu_start,
             editor_menu_start,
             editor_choices: crate::editors::EditorChoices::new(),
+            area_choices: crate::editors::AreaChoices::new(),
             open_menu: None,
             menu_title_bounds: Vec::new(),
             menu_at_press: None,
@@ -250,6 +261,10 @@ impl AzamApp {
             piece_drag: None,
             show_arrangement: false,
             fabric_library: None,
+            tool_labels: false,
+            show_sidebar: false,
+            last_dart: None,
+            modal: None,
             border_bounds: [None; 3],
             window_width: 0.0,
             menu_anchor: (0.0, 0.0),
@@ -520,10 +535,22 @@ impl AzamApp {
             Operator::SetShading(shading) => self.shading = shading,
             Operator::SetFitMap(mode) => self.set_fit_mode(mode),
             Operator::SetEditor(slot, editor) => self.set_editor(slot, editor),
+            Operator::SplitArea(slot) => {
+                if !self.split_area(slot) {
+                    self.status = "That area is split already".into();
+                }
+            }
+            Operator::JoinArea(slot) => {
+                if !self.join_area(slot) {
+                    self.status = "There is no area to join with".into();
+                }
+            }
             Operator::View(preset) => self.viewport.camera.set_preset(preset),
             Operator::ToggleOrtho => self.viewport.camera.orthographic = !self.viewport.camera.orthographic,
             Operator::ToggleGrid => self.viewport.overlays.grid = !self.viewport.overlays.grid,
             Operator::ToggleArrangementPoints => self.show_arrangement = !self.show_arrangement,
+            Operator::ToggleSidebar => self.toggle_sidebar(),
+            Operator::ToggleToolLabels => self.toggle_tool_labels(),
             Operator::ToggleAvatar => self
                 .session
                 .edit("Show Avatar", |p| p.avatar.show = !p.avatar.show),
@@ -535,7 +562,8 @@ impl AzamApp {
             | Operator::ExportObj
             | Operator::ExportPatternPdf
             | Operator::ExportTechPackPdf => self.export(ExportKind::for_operator(op)),
-            Operator::ImportDxf => self.import_dxf(),
+            Operator::ImportDxf => self.import_file(crate::import::ImportFormat::Dxf),
+            Operator::ImportSvg => self.import_file(crate::import::ImportFormat::Svg),
             Operator::Quit => std::process::exit(0),
             Operator::Shortcuts => {
                 self.status =
@@ -562,42 +590,6 @@ impl AzamApp {
                     self.scene3d.step(&self.session.project, renderer);
                 }
             }
-        }
-    }
-
-    /// Adds the pieces of a DXF file to the project.
-    fn import_dxf(&mut self) {
-        let dir = std::env::var_os("HOME").map(PathBuf::from);
-        let path = match blenderui::file_dialog(
-            "Import DXF",
-            blenderui::FileDialogMode::Open,
-            dir.as_deref(),
-            None,
-            &["DXF\t*.dxf"],
-            false,
-        ) {
-            blenderui::FileDialogResult::Chosen(paths) => match paths.into_iter().next() {
-                Some(p) => p,
-                None => return,
-            },
-            blenderui::FileDialogResult::Cancelled => return,
-            blenderui::FileDialogResult::Unavailable => {
-                self.status = "Importing needs a window for the file browser".into();
-                return;
-            }
-        };
-        let imported = std::fs::read_to_string(&path)
-            .map_err(|e| e.to_string())
-            .and_then(|text| azam_io::import_dxf(&text).map_err(|e| e.to_string()));
-        match imported {
-            Ok(pieces) => {
-                let count = pieces.len();
-                self.session.edit("Import DXF", |p| {
-                    crate::import::add_imported_pieces(p, &pieces);
-                });
-                self.status = format!("Imported {count} piece(s) from {}", path.display());
-            }
-            Err(e) => self.status = format!("Import failed: {e}"),
         }
     }
 
@@ -704,6 +696,11 @@ impl AzamApp {
 
     fn on_key(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let key = &e.keystroke;
+        if key.key == "Escape" && self.modal.is_some() {
+            self.cancel_modal();
+            cx.notify();
+            return;
+        }
         if key.key == "Escape" {
             self.render_view = None;
             self.search = None;
@@ -740,6 +737,42 @@ impl AzamApp {
             }
             return;
         }
+        // a modal transform takes Enter and Esc; G and R start one over the pattern editor
+        if self.modal.is_some() {
+            match key.key.as_str() {
+                "Escape" => self.cancel_modal(),
+                "Return" | "KP_Enter" => self.confirm_modal(),
+                _ => {}
+            }
+            cx.notify();
+            return;
+        }
+        if !key.modifiers.control && !key.modifiers.alt && !key.modifiers.shift {
+            let kind = match key.key.to_ascii_lowercase().as_str() {
+                "g" => Some(crate::modal::ModalKind::Move),
+                "r" => Some(crate::modal::ModalKind::Rotate),
+                _ => None,
+            };
+            if let Some(kind) = kind
+                && self.begin_modal(kind, window.mouse_position())
+            {
+                cx.notify();
+                return;
+            }
+        }
+        // N over the 3D view toggles its sidebar (Blender's per-editor keymap); elsewhere it is
+        // the Sew tool
+        let over_3d = self.viewport.bounds.is_some_and(|b| {
+            let p = window.mouse_position();
+            p.x.0 >= b.origin.x
+                && p.x.0 < b.origin.x + b.size.width
+                && p.y.0 >= b.origin.y
+                && p.y.0 < b.origin.y + b.size.height
+        });
+        if over_3d && key.key.eq_ignore_ascii_case("n") && !key.modifiers.shift && !key.modifiers.control {
+            self.run(Operator::ToggleSidebar, window, cx);
+            return;
+        }
         if let Some(op) = Operator::from_key(key) {
             self.run(op, window, cx);
         }
@@ -758,7 +791,12 @@ impl AzamApp {
     pub(crate) fn frame_pattern(&mut self) {
         if let (Some((lo, hi)), Some(b)) = (self.pattern_scene.bounds(), self.pattern_bounds) {
             let size = azam_geom::Vec2::new(f64::from(b.size.width), f64::from(b.size.height));
-            self.pattern_view.frame(lo, hi, size);
+            let shelf = if self.tool_labels {
+                crate::pattern::LABELLED_SHELF_PX
+            } else {
+                crate::pattern::TOOL_SHELF_PX
+            };
+            self.pattern_view.frame(lo, hi, size, shelf);
             self.framed_size = Some((b.size.width, b.size.height));
         }
     }
@@ -1319,6 +1357,7 @@ impl AzamApp {
             )
             .when(self.shading == Shading::FitMap, |el| el.child(self.fit_legend()))
             .children(self.arrangement_overlay(cx))
+            .children(self.sidebar(cx))
             .child(
                 div()
                     .class(if self.playing { "vp-badge live" } else { "vp-badge" })
@@ -1332,7 +1371,11 @@ impl AzamApp {
 
     /// A tool shelf: groups of tools with separators between them, as in Blender's toolbar.
     fn toolbar(&mut self, groups: &[&[Tool]], cx: &mut Context<Self>) -> Div {
-        let mut shelf = div().class("toolbar");
+        let mut shelf = div().class(if self.tool_labels {
+            "toolbar labelled"
+        } else {
+            "toolbar"
+        });
         for (i, &tool) in groups
             .iter()
             .enumerate()
@@ -1349,6 +1392,9 @@ impl AzamApp {
             let button = div()
                 .class(class)
                 .child(self.icons.sized(tool.icon(), 18.0, None))
+                .when(self.tool_labels, |el| {
+                    el.child(div().class("tool-label").child(tool.label()))
+                })
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.run(Operator::SetTool(tool), window, cx);
                 }));
@@ -1385,7 +1431,8 @@ impl AzamApp {
             .class("area-body")
             .child(self.toolbar(&Tool::PATTERN_GROUPS, cx))
             .child(canvas)
-            .child(div().class("vp-badge").child(hint));
+            .child(div().class("vp-badge").child(hint))
+            .children(self.redo_panel(cx));
         // Blender's tool settings: a bar under the header with the active tool's options
         let tool_bar = (self.tool == Tool::Dart).then(|| {
             div()
@@ -1447,15 +1494,21 @@ impl AzamApp {
     fn side_column(&mut self, cx: &mut Context<Self>) -> Div {
         use crate::editors::Slot;
         let mut column = div().class("area-col").w(px(self.layout.side_px)).flex_shrink_0();
-        if let Some(top) = self.editor_at(Slot::SideTop) {
-            column = column.child(
-                self.editor_area(Slot::SideTop, top, cx)
-                    .css("flex", "0 0 auto")
-                    .h(px(self.layout.outliner_px)),
-            );
+        let top = self.editor_at(Slot::SideTop);
+        let bottom = self.editor_at(Slot::SideBottom);
+        if let Some(top) = top {
+            let area = self.editor_area(Slot::SideTop, top, cx);
+            // with the column split, the top area has the height the layout says
+            column = column.child(if bottom.is_some() {
+                area.css("flex", "0 0 auto").h(px(self.layout.outliner_px))
+            } else {
+                area
+            });
         }
-        column = column.child(Self::area_border(crate::areas::Border::Outliner, cx));
-        if let Some(bottom) = self.editor_at(Slot::SideBottom) {
+        if let Some(bottom) = bottom {
+            if top.is_some() {
+                column = column.child(Self::area_border(crate::areas::Border::Outliner, cx));
+            }
             column = column.child(self.editor_area(Slot::SideBottom, bottom, cx));
         }
         column

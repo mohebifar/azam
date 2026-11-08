@@ -80,6 +80,9 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .tool:hover { background: #454545; }
 .tool.active { background: #4772b3; }
 .tool-sep { height: 1px; margin: 3px 2px; background: #474747; }
+.toolbar.labelled .tool { width: 150px; justify-content: flex-start; gap: 6px; padding: 0 6px; }
+.tool-label { white-space: nowrap; color: #e0e0e0; }
+.tool.active .tool-label { color: #ffffff; }
 
 /* -- viewport overlays ----------------------------------------------------------------------------- */
 .vp-text { position: absolute; left: 50px; top: 8px; color: #e6e6e6; font-size: 12px; z-index: 4; }
@@ -88,6 +91,10 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .vp-badge { position: absolute; right: 10px; bottom: 10px; padding: 3px 8px; border-radius: 4px;
             background: rgba(30,30,30,0.85); color: #d0d0d0; font-size: 11px; z-index: 4; }
 .vp-badge.live { color: #9fe07a; }
+.redo-panel { position: absolute; left: 52px; bottom: 40px; width: 210px; border-radius: 5px;
+              background: rgba(56,56,56,0.97); border: 1px solid #222222; z-index: 6; overflow: hidden; }
+.sidebar { position: absolute; right: 4px; top: 4px; width: 230px; display: flex; flex-direction: column;
+           gap: 4px; z-index: 6; padding: 4px; border-radius: 6px; background: rgba(40,40,40,0.95); }
 .arr-point { position: absolute; z-index: 3; width: 12px; height: 12px; border-radius: 6px; background: #4772b3;
              border: 2px solid #dfe8f7; box-shadow: 0 0 0 1px #111111; }
 .arr-point:hover { background: #f1a33c; }

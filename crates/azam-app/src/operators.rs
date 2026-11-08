@@ -340,6 +340,8 @@ pub enum Operator {
     StopSharing,
     /// Import pieces from a DXF file.
     ImportDxf,
+    /// Import pattern pieces from an SVG drawing.
+    ImportSvg,
     /// Export the pattern as DXF.
     ExportDxf,
     /// Export the pattern as SVG.
@@ -404,6 +406,10 @@ pub enum Operator {
     ToggleGrid,
     /// Show or hide the avatar's arrangement points (click one to arrange the selected pieces).
     ToggleArrangementPoints,
+    /// Show the tool shelves' tool names beside their icons (Blender's wide toolbar).
+    ToggleToolLabels,
+    /// Show or hide the 3D view's sidebar (Blender's N panel).
+    ToggleSidebar,
     /// Open the shading pie menu.
     ShadingPie,
     /// Open the view pie menu.
@@ -418,6 +424,10 @@ pub enum Operator {
     SetFitMap(azam_sim::FitMode),
     /// Show an editor in an area (the editor-type menu).
     SetEditor(crate::editors::Slot, crate::editors::Editor),
+    /// Split an area: its partner area opens beside it.
+    SplitArea(crate::editors::Slot),
+    /// Join an area with its partner, keeping its editor.
+    JoinArea(crate::editors::Slot),
 }
 
 impl Operator {
@@ -453,6 +463,7 @@ impl Operator {
             Self::Join => "Join Session…",
             Self::StopSharing => "Stop Sharing",
             Self::ImportDxf => "Import DXF…",
+            Self::ImportSvg => "Import SVG…",
             Self::ExportDxf => "Export DXF…",
             Self::ExportSvg => "Export SVG…",
             Self::ExportObj => "Export OBJ…",
@@ -482,6 +493,8 @@ impl Operator {
             Self::ToggleAvatar => "Show Avatar",
             Self::ToggleGrid => "Show Floor Grid",
             Self::ToggleArrangementPoints => "Show Arrangement Points",
+            Self::ToggleToolLabels => "Tool Names in Shelf",
+            Self::ToggleSidebar => "Sidebar",
             Self::ShadingPie => "Shading Pie",
             Self::ViewPie => "View Pie",
             Self::Shortcuts => "Keyboard Shortcuts",
@@ -493,6 +506,8 @@ impl Operator {
             | Self::SetFitMap(_)
             | Self::SetEditor(..)
             | Self::View(_) => "",
+            Self::SplitArea(_) => "Split Area",
+            Self::JoinArea(_) => "Join Areas",
         }
     }
 
@@ -506,7 +521,7 @@ impl Operator {
             Self::Share | Self::ShareFile => "COMMUNITY",
             Self::Join => "LINKED",
             Self::StopSharing => "UNLINKED",
-            Self::ImportDxf => "IMPORT",
+            Self::ImportDxf | Self::ImportSvg => "IMPORT",
             Self::ExportDxf
             | Self::ExportSvg
             | Self::ExportObj
@@ -539,10 +554,14 @@ impl Operator {
             Self::ToggleAvatar => "USER",
             Self::ToggleGrid => "GRID",
             Self::ToggleArrangementPoints => "PIVOT_CURSOR",
+            Self::ToggleToolLabels => "ALIGN_LEFT",
+            Self::ToggleSidebar => "MENU_PANEL",
             Self::Shortcuts => "KEY_COMMAND",
             Self::About => "INFO",
             Self::RenderImage => "RENDER_STILL",
             Self::SetEditor(_, e) => e.icon(),
+            Self::SplitArea(_) => "SPLIT_VERTICAL",
+            Self::JoinArea(_) => "AREA_JOIN",
             Self::SelectAll | Self::DetectHems | Self::ShadingPie | Self::ViewPie => return None,
         })
     }
@@ -579,6 +598,7 @@ impl Operator {
                 Self::FrameAll => "Home",
                 Self::FramePattern => "Shift Home",
                 Self::ShadingPie => "Z",
+                Self::ToggleSidebar => "N",
                 Self::ViewPie => "`",
                 _ => return None,
             }
@@ -638,6 +658,7 @@ impl Operator {
             Self::Join,
             Self::StopSharing,
             Self::ImportDxf,
+            Self::ImportSvg,
             Self::ExportDxf,
             Self::ExportSvg,
             Self::ExportObj,
@@ -675,6 +696,8 @@ impl Operator {
             Self::ToggleAvatar,
             Self::ToggleGrid,
             Self::ToggleArrangementPoints,
+            Self::ToggleToolLabels,
+            Self::ToggleSidebar,
             Self::Shortcuts,
             Self::About,
             Self::RenderImage,
@@ -796,6 +819,7 @@ pub fn context_menus() -> Vec<Menu> {
                 Item(O::SetTool(Tool::Sew)),
                 Separator,
                 Item(O::ImportDxf),
+                Item(O::ImportSvg),
             ],
         },
         Menu {
@@ -839,6 +863,7 @@ pub fn editor_menus() -> Vec<Menu> {
                 Item(O::ToggleAvatar),
                 Item(O::ToggleGrid),
                 Item(O::ToggleArrangementPoints),
+                Item(O::ToggleSidebar),
                 Separator,
                 MenuEntry::Sub("Pie Menus", "MENU_PANEL", PIE_MENU),
             ],
@@ -856,7 +881,7 @@ pub fn editor_menus() -> Vec<Menu> {
         },
         Menu {
             title: "View",
-            entries: vec![Item(O::FramePattern)],
+            entries: vec![Item(O::FramePattern), Separator, Item(O::ToggleToolLabels)],
         },
         Menu {
             title: "Select",
@@ -932,6 +957,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::StopSharing),
         Separator,
         Item(O::ImportDxf),
+        Item(O::ImportSvg),
         Item(O::ExportDxf),
         Item(O::ExportSvg),
         Item(O::ExportObj),

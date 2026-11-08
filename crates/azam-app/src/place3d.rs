@@ -161,7 +161,8 @@ impl AzamApp {
     /// the selected pieces to its slot.
     pub(crate) fn arrangement_overlay(&self, cx: &mut Context<Self>) -> Vec<Div> {
         let mut dots = Vec::new();
-        if !self.show_arrangement {
+        // the points sit on the resting avatar: hidden while a motion moves it
+        if !self.show_arrangement || self.scene3d.motion.motion() != azam_avatar::Motion::None {
             return dots;
         }
         let (Some(avatar), Some(b)) = (self.scene3d.avatar.as_ref(), self.viewport.bounds) else {

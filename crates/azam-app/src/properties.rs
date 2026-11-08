@@ -63,7 +63,7 @@ impl PropTab {
 
 /// A number field: its label, range and step.
 #[derive(Clone, Copy)]
-struct NumSpec {
+pub(crate) struct NumSpec {
     label: &'static str,
     min: f64,
     max: f64,
@@ -72,7 +72,7 @@ struct NumSpec {
     slider: bool,
 }
 
-const fn field(label: &'static str, min: f64, max: f64, step: f64) -> NumSpec {
+pub(crate) const fn field(label: &'static str, min: f64, max: f64, step: f64) -> NumSpec {
     NumSpec {
         label,
         min,
@@ -232,7 +232,7 @@ impl AzamApp {
             .child(table().child(thead().child(head)).child(tbody().children(rows)))
     }
 
-    fn panel(&mut self, title: &'static str, rows: Vec<Div>) -> Div {
+    pub(crate) fn panel(&mut self, title: &'static str, rows: Vec<Div>) -> Div {
         div()
             .class("panel")
             .child(
@@ -245,7 +245,7 @@ impl AzamApp {
     }
 
     /// A number field that applies `apply` to the project as an undoable edit when it changes.
-    fn number(
+    pub(crate) fn number(
         spec: NumSpec,
         value: f64,
         cx: &mut Context<Self>,
@@ -273,7 +273,7 @@ impl AzamApp {
     }
 
     /// A labelled dropdown of `items`; `apply` gets the chosen index.
-    fn choice(
+    pub(crate) fn choice(
         label: &'static str,
         items: &[&str],
         selected: usize,
@@ -294,7 +294,7 @@ impl AzamApp {
             })))
     }
 
-    fn text_row(
+    pub(crate) fn text_row(
         label: &'static str,
         value: String,
         cx: &mut Context<Self>,
@@ -312,7 +312,7 @@ impl AzamApp {
             )))
     }
 
-    fn info_row(label: &'static str, value: String) -> Div {
+    pub(crate) fn info_row(label: &'static str, value: String) -> Div {
         div()
             .class("prow")
             .child(div().class("plabel").child(label))
