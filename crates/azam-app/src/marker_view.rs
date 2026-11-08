@@ -26,6 +26,10 @@ const CLASH_FILL: u32 = 0xe57373;
 const CLASH_EDGE: u32 = 0xb71c1c;
 /// Edge of the piece being dragged.
 const SELECTED_EDGE: u32 = 0xffa040;
+/// Width of a label character at the marker's text size, in logical pixels.
+const LABEL_CHAR_PX: f32 = 6.0;
+/// Height a piece needs to carry its label, in logical pixels.
+const LABEL_HEIGHT_PX: f32 = 16.0;
 /// Space around the drawn marker, in logical pixels.
 const MARGIN_PX: f32 = 16.0;
 
@@ -433,12 +437,16 @@ fn paint_marker(
             .iter()
             .fold((0.0, 0.0), |(x, y), q| (x + q.0 / n, y + q.1 / n));
         let label = format!("{} {}", pl.name, pl.size.0);
-        p.text(
-            cx - label.len() as f32 * 3.0,
-            cy - 6.0,
-            &label,
-            11.0,
-            rgb(0x1a1a1a),
-        );
+        // only where it fits inside the piece, so small pieces' names do not spill over others
+        let (x0, x1) = pts
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(a, b), q| (a.min(q.0), b.max(q.0)));
+        let (y0, y1) = pts
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(a, b), q| (a.min(q.1), b.max(q.1)));
+        let text_w = label.chars().count() as f32 * LABEL_CHAR_PX;
+        if text_w < (x1 - x0) * 0.9 && y1 - y0 > LABEL_HEIGHT_PX {
+            p.text(cx - text_w / 2.0, cy - 6.0, &label, 11.0, rgb(0x1a1a1a));
+        }
     }
 }

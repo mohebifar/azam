@@ -45,15 +45,18 @@ fn header(cells: &[&str]) -> Div {
 fn pieces_table(project: &Project) -> Div {
     let mut pieces: Vec<_> = project.pieces.values().collect();
     pieces.sort_by_key(|p| p.order);
+    let units = project.units;
+    let per = crate::units::per_mm(units);
+    let unit = crate::units::name(units);
     let rows = pieces.iter().map(|piece| {
         let fabric = project
             .fabrics
             .get(&piece.fabric)
             .map_or("—", |f| f.name.as_str())
             .to_owned();
-        let net = azam_doc::piece_area(project, piece, None, false) / 100.0;
-        let cut = azam_doc::piece_area(project, piece, None, true) / 100.0;
-        let perimeter = piece.outline().total / 10.0;
+        let net = azam_doc::piece_area(project, piece, None, false) * per * per;
+        let cut = azam_doc::piece_area(project, piece, None, true) * per * per;
+        let perimeter = piece.outline().total;
         let state = match piece.state {
             PieceState::Active => "Active",
             PieceState::Frozen => "Frozen",
@@ -63,8 +66,8 @@ fn pieces_table(project: &Project) -> Div {
             .child(td().child(fabric))
             .child(td().child(format!("{net:.0}")))
             .child(td().child(format!("{cut:.0}")))
-            .child(td().child(format!("{perimeter:.1}")))
-            .child(td().child(format!("{:.0}", piece.sa)))
+            .child(td().child(crate::units::number(units, perimeter)))
+            .child(td().child(crate::units::number(units, piece.sa)))
             .child(td().child(state))
     });
     div().class("tp-table").child(
@@ -72,10 +75,10 @@ fn pieces_table(project: &Project) -> Div {
             .child(header(&[
                 "Piece",
                 "Fabric",
-                "Net cm²",
-                "Cut cm²",
-                "Perimeter cm",
-                "SA mm",
+                &format!("Net {unit}²"),
+                &format!("Cut {unit}²"),
+                &format!("Perimeter {unit}"),
+                &format!("SA {unit}"),
                 "Sim",
             ]))
             .child(tbody().children(rows)),
