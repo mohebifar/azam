@@ -927,6 +927,9 @@ impl AzamApp {
             cx.notify();
             return;
         }
+        if self.tooltip_left_behind(e.position) {
+            cx.notify();
+        }
         self.publish_cursor(e.position);
         if self.piece_drag_move(e.position) {
             cx.notify();
@@ -1434,12 +1437,14 @@ impl AzamApp {
             .child(div().class("vp-badge").child(hint))
             .children(self.redo_panel(cx));
         // Blender's tool settings: a bar under the header with the active tool's options
-        let tool_bar = (self.tool == Tool::Dart).then(|| {
+        // always there, so the canvas does not jump when a tool with settings is picked
+        let tool_bar = Some(
             div()
                 .class("area-header tool-header")
+                .child(self.icons.sized(self.tool.icon(), 14.0, None))
                 .child(div().class("mode-label").child(self.tool.label()))
-                .child(self.dart_settings(cx))
-        });
+                .when(self.tool == Tool::Dart, |el| el.child(self.dart_settings(cx))),
+        );
         div()
             .class("area")
             .flex_1()
@@ -1888,6 +1893,7 @@ impl Render for AzamApp {
             .relative()
             .on_key_down(cx.listener(Self::on_key))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .on_any_mouse_down(cx.listener(|this, _: &MouseDownEvent, _, _| this.tooltip = None))
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_mouse_up))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .child(self.topbar(cx))

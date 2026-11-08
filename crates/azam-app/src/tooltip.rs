@@ -9,6 +9,9 @@ use crate::app::AzamApp;
 
 /// How long the pointer rests on an element before its tooltip shows (Blender: about half a second).
 const TOOLTIP_DELAY: Duration = Duration::from_millis(450);
+/// A tooltip hides once the pointer is this far from where it showed, in logical pixels (a jump
+/// of the pointer may skip the element's hover-out).
+const TOOLTIP_REACH: f32 = 32.0;
 /// Offset of the tooltip from the pointer, in logical pixels.
 const TOOLTIP_OFFSET: (f32, f32) = (14.0, 20.0);
 
@@ -40,6 +43,19 @@ impl AzamApp {
             }
             cx.notify();
         }))
+    }
+
+    /// Drops the tooltip if the pointer at `at` has moved away from where it showed; returns
+    /// `true` if it did.
+    pub(crate) fn tooltip_left_behind(&mut self, at: Point<Pixels>) -> bool {
+        let far = self
+            .tooltip
+            .as_ref()
+            .is_some_and(|t| (at.x.0 - t.at.0).hypot(at.y.0 - t.at.1) > TOOLTIP_REACH);
+        if far {
+            self.tooltip = None;
+        }
+        far
     }
 
     /// The tooltip to draw over the window, once its delay has passed (until then, asks for

@@ -183,9 +183,30 @@ impl AzamApp {
             return false;
         }
         self.area_choices.insert((ws, partner), true);
-        if self.editor_at(partner).is_none() {
-            self.area_choices.remove(&(ws, partner));
-            return false;
+        // the new area shows an editor no other area shows (its default may be on screen
+        // already, after a join)
+        let shown: Vec<Editor> = Slot::ALL
+            .into_iter()
+            .filter(|&s| s != partner)
+            .filter_map(|s| self.editor_at(s))
+            .collect();
+        let fresh = if matches!(partner, Slot::Main | Slot::Second) {
+            [Editor::Pattern, Editor::View3d, Editor::TechPack]
+                .into_iter()
+                .find(|e| !shown.contains(e))
+        } else {
+            [Editor::Outliner, Editor::Properties]
+                .into_iter()
+                .find(|e| !shown.contains(e))
+        };
+        match fresh {
+            Some(editor) => {
+                self.editor_choices.insert((ws, partner), editor);
+            }
+            None => {
+                self.area_choices.remove(&(ws, partner));
+                return false;
+            }
         }
         self.framed = false;
         true

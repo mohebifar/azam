@@ -550,6 +550,18 @@ fn areas_split_and_join() {
         assert_eq!(app.editor_at(Slot::Second), None);
         assert_eq!(app.editor_at(Slot::SideTop), None);
         assert_eq!(app.editor_at(Slot::SideBottom), Some(Editor::Properties));
+        // splitting again opens an editor that is not on screen yet
+        win.root().update(cx, |app, cx| {
+            assert!(app.split_area(Slot::Main));
+            cx.notify();
+        });
+        let app = win.root().read(cx);
+        assert_eq!(app.editor_at(Slot::Main), Some(Editor::Pattern));
+        assert_eq!(
+            app.editor_at(Slot::Second),
+            Some(Editor::View3d),
+            "no second pattern editor"
+        );
     });
 }
 
