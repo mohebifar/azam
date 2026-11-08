@@ -1,13 +1,14 @@
 diff --git a/bindings/rust/blenderui-sys/src/lib.rs b/bindings/rust/blenderui-sys/src/lib.rs
-index 4a4c43e..ec0d2ac 100644
+index 4a4c43e..199c69a 100644
 --- a/bindings/rust/blenderui-sys/src/lib.rs
 +++ b/bindings/rust/blenderui-sys/src/lib.rs
-@@ -246,6 +246,21 @@ unsafe extern "C" {
+@@ -246,6 +246,22 @@ unsafe extern "C" {
      pub fn BK_imbuf_load(path: *const c_char, max_w: c_int, max_h: c_int) -> *mut BKImBuf;
      pub fn BK_imbuf_from_rgba(rgba: *const c_uchar, w: c_int, h: c_int, stride: c_int) -> *mut BKImBuf;
      pub fn BK_imbuf_free(ib: *mut BKImBuf);
 +    pub fn BK_icon_imbuf(name: *const c_char, size: c_int, rgba: *const f32) -> *mut BKImBuf;
 +    pub fn BK_icon_id(name: *const c_char) -> c_int;
++    pub fn BK_set_text_display(display: Option<unsafe extern "C" fn(*const c_char) -> *const c_char>);
 +    pub fn BK_file_dialog(
 +        title: *const c_char,
 +        mode: c_int,
@@ -383,10 +384,10 @@ index 03b6e4c..b144bde 100644
  
      pub(crate) fn styled_text(&mut self, x: f32, y: f32, text: &str, size: f32, flags: i32, color: Rgba) {
 diff --git a/bindings/rust/blenderui/src/text.rs b/bindings/rust/blenderui/src/text.rs
-index 99d673e..13d961c 100644
+index 99d673e..271c46d 100644
 --- a/bindings/rust/blenderui/src/text.rs
 +++ b/bindings/rust/blenderui/src/text.rs
-@@ -273,18 +273,37 @@ fn class(c: char) -> Class {
+@@ -273,18 +273,61 @@ fn class(c: char) -> Class {
      }
  }
  
@@ -397,6 +398,30 @@ index 99d673e..13d961c 100644
 +        return std::borrow::Cow::Borrowed(s);
 +    }
 +    bidi_visual(s, false, false).map_or(std::borrow::Cow::Borrowed(s), std::borrow::Cow::Owned)
++}
++
++/// The kit's hook for a text field's value while it is not being edited: shaped and in visual
++/// order, or NULL (draw it as stored) when nothing changes. The returned string lives until the
++/// next call on this thread.
++pub(crate) unsafe extern "C" fn field_display(s: *const std::ffi::c_char) -> *const std::ffi::c_char {
++    thread_local! {
++        static SHOWN: std::cell::RefCell<std::ffi::CString> = std::cell::RefCell::default();
++    }
++    if s.is_null() {
++        return std::ptr::null();
++    }
++    // SAFETY: the kit passes a NUL-terminated string that outlives this call.
++    let text = unsafe { std::ffi::CStr::from_ptr(s) }.to_string_lossy();
++    match display(&text) {
++        std::borrow::Cow::Borrowed(_) => std::ptr::null(),
++        std::borrow::Cow::Owned(shown) => match std::ffi::CString::new(shown) {
++            Ok(c) => SHOWN.with(|cell| {
++                *cell.borrow_mut() = c;
++                cell.borrow().as_ptr()
++            }),
++            Err(_) => std::ptr::null(),
++        },
++    }
 +}
 +
  /// `s` in visual (left-to-right display) order. `rtl`: the paragraph's
@@ -427,7 +452,7 @@ index 99d673e..13d961c 100644
      }
      let base: u8 = rtl as u8;
      // resolved levels: R odd, L even (W/I rules simplified: digits take the
-@@ -369,7 +388,7 @@ pub(crate) fn bidi_visual(s: &str, rtl: bool, override_: bool) -> Option<String>
+@@ -369,7 +412,7 @@ pub(crate) fn bidi_visual(s: &str, rtl: bool, override_: bool) -> Option<String>
          c => c,
      };
      let out: String = order.iter().map(|&k| if levels[k] % 2 == 1 { mirror(chars[k]) } else { chars[k] }).collect();
@@ -521,10 +546,19 @@ index ae613f8..879be90 100644
              let ptrs: Vec<*const std::ffi::c_char> = cs.iter().map(|c| c.as_ptr()).collect();
              sys::BK_set_strs(n, c"items".as_ptr(), ptrs.as_ptr(), ptrs.len() as i32);
 diff --git a/bindings/rust/blenderui/src/window.rs b/bindings/rust/blenderui/src/window.rs
-index a59814b..4ede124 100644
+index a59814b..a2922f0 100644
 --- a/bindings/rust/blenderui/src/window.rs
 +++ b/bindings/rust/blenderui/src/window.rs
-@@ -544,7 +544,13 @@ impl App {
+@@ -294,6 +294,8 @@ impl Application {
+         if let Some(t) = &self.theme {
+             crate::set_theme(t);
+         }
++        // text fields show Arabic-script and right-to-left values as laid-out text does
++        unsafe { sys::BK_set_text_display(Some(crate::text::field_display)) };
+         if headless {
+             // off-screen windows have no monitor DPI: BUI_UI_SCALE (e.g. 2 for
+             // retina-sharp screenshots) sets the resolution scale
+@@ -544,7 +546,13 @@ impl App {
  
      fn with_window<R>(&mut self, id: usize, f: impl FnOnce(&mut Window, &mut App) -> R) -> Option<R> {
          let mut w = self.windows.get_mut(id)?.take()?;
@@ -538,7 +572,7 @@ index a59814b..4ede124 100644
          self.windows[id] = Some(w);
          Some(r)
      }
-@@ -797,7 +803,7 @@ unsafe extern "C" fn on_frame(data: *mut c_void, _win: *mut sys::BKWindow) {
+@@ -797,7 +805,7 @@ unsafe extern "C" fn on_frame(data: *mut c_void, _win: *mut sys::BKWindow) {
          }
      }
      let id = data as usize;
@@ -547,7 +581,7 @@ index a59814b..4ede124 100644
          app.drain();
          app.with_window(id, |w, app| {
              w.frame_pending = false;
-@@ -807,6 +813,11 @@ unsafe extern "C" fn on_frame(data: *mut c_void, _win: *mut sys::BKWindow) {
+@@ -807,6 +815,11 @@ unsafe extern "C" fn on_frame(data: *mut c_void, _win: *mut sys::BKWindow) {
          });
          app.flush();
      });
@@ -841,10 +875,10 @@ index e2e3eb7..14aa1ef 100644
      return;
    }
 diff --git a/kit/include/BUI_kit.h b/kit/include/BUI_kit.h
-index 1e6e215..482cfd9 100644
+index 1e6e215..48640a7 100644
 --- a/kit/include/BUI_kit.h
 +++ b/kit/include/BUI_kit.h
-@@ -324,6 +324,11 @@ BKImBuf *BK_imbuf_load(const char *path, int max_w, int max_h);
+@@ -324,6 +324,14 @@ BKImBuf *BK_imbuf_load(const char *path, int max_w, int max_h);
  BKImBuf *BK_imbuf_from_rgba(const unsigned char *rgba, int w, int h, int stride); /* straight RGBA */
  BKImBuf *BK_imbuf_from_argb(const uint32_t *argb, int w, int h); /* premultiplied */
  void BK_imbuf_free(BKImBuf *ib);
@@ -853,6 +887,9 @@ index 1e6e215..482cfd9 100644
 + * icon's theme tint, else the theme text color); colored icons keep their colors. NULL for an
 + * unknown name or a size <= 0. */
 +BKImBuf *BK_icon_imbuf(const char *name, int size, const float rgba[4]);
++/* How text fields show their value while not being edited: `display` returns the text to draw
++ * (valid until its next call), or NULL to draw the value as stored. NULL resets. */
++void BK_set_text_display(const char *(*display)(const char *));
  int BK_imbuf_size(const BKImBuf *ib, int *r_w, int *r_h); /* returns the frame count */
  int BK_imbuf_format(const BKImBuf *ib);
  const uint32_t *BK_imbuf_pixels(const BKImBuf *ib, int frame); /* premultiplied 0xAARRGGBB */
@@ -908,3 +945,36 @@ index 210b80b..58aa1d8 100644
  int BK_icon_count(void)
  {
    return bk_icon_def_count - 1;
+diff --git a/kit/intern/kit_widgets.c b/kit/intern/kit_widgets.c
+index 441d478..d456700 100644
+--- a/kit/intern/kit_widgets.c
++++ b/kit/intern/kit_widgets.c
+@@ -2461,6 +2461,15 @@ static void text_measure(BKNode *n, int *rw, int *rh)
+   *rh = u();
+ }
+ 
++/* How a text field shows its value while it is not being edited (shaping, bidi reordering);
++ * NULL draws it as stored. Set by BK_set_text_display. */
++static const char *(*g_text_display)(const char *) = NULL;
++
++void BK_set_text_display(const char *(*display)(const char *))
++{
++  g_text_display = display;
++}
++
+ static void text_draw(BKNode *n)
+ {
+   BKRect r = bk_node_rect(n);
+@@ -2499,6 +2508,12 @@ static void text_draw(BKNode *n)
+     bk_mask_text(n->text, (int)strlen(n->text), n->mask, masked, sizeof(masked));
+     shown = masked;
+   }
++  else if (g_text_display && shown[0]) {
++    const char *d = g_text_display(shown);
++    if (d) {
++      shown = d;
++    }
++  }
+   if (n->label && n->label[0]) {
+     snprintf(buf, sizeof(buf), "%s: %s", n->label, shown);
+     shown = buf;
