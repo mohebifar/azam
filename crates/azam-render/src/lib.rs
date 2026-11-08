@@ -9,7 +9,9 @@
 mod camera;
 mod mesh;
 mod renderer;
+mod surface;
 
 pub use camera::{OrbitCamera, ViewPreset};
 pub use mesh::{MeshData, MeshId};
-pub use renderer::{DecalId, Draw, Overlays, RenderError, Renderer, Weave, srgb_to_linear};
+pub use renderer::{DecalId, Draw, Overlays, RenderError, Renderer, SurfaceId, Weave, srgb_to_linear};
+pub use surface::SurfaceMap;

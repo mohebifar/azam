@@ -430,6 +430,33 @@ pub const FABRIC_TEXTURE_KEY: &str = "texture";
 pub const FABRIC_TEXTURE_MM_KEY: &str = "textureMm";
 /// Tile width of a texture when the fabric gives none, mm.
 pub const DEFAULT_TEXTURE_MM: f64 = 100.0;
+/// [`Fabric::extra`] key: path of a tangent-space normal map tiled over the fabric (OpenGL
+/// convention: green points up the image).
+pub const FABRIC_NORMAL_MAP_KEY: &str = "normalMap";
+/// [`Fabric::extra`] key: path of a roughness map tiled over the fabric (white is matte).
+pub const FABRIC_ROUGHNESS_MAP_KEY: &str = "roughnessMap";
+/// [`Fabric::extra`] key: strength of the normal map, 0 (flat) .. 2.
+pub const FABRIC_NORMAL_STRENGTH_KEY: &str = "normalStrength";
+/// [`Fabric::extra`] key: width of one tile of the normal and roughness maps on the cloth, mm.
+pub const FABRIC_MAP_MM_KEY: &str = "mapMm";
+/// Normal map strength when the fabric gives none.
+pub const DEFAULT_NORMAL_STRENGTH: f64 = 1.0;
+/// Strongest normal map a fabric may ask for.
+pub const MAX_NORMAL_STRENGTH: f64 = 2.0;
+
+/// The surface relief of a fabric: images tiled over the cloth that bend its shading normal and
+/// set its roughness texel by texel.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SurfaceMaps<'a> {
+    /// Path of the normal map, if any.
+    pub normal: Option<&'a str>,
+    /// Path of the roughness map, if any.
+    pub roughness: Option<&'a str>,
+    /// Width of one tile on the cloth, mm.
+    pub tile_mm: f64,
+    /// Normal map strength, 0..=[`MAX_NORMAL_STRENGTH`].
+    pub strength: f64,
+}
 
 /// A fabric of the project.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -484,6 +511,36 @@ impl Fabric {
             .filter(|v| *v > 0.0)
             .unwrap_or(DEFAULT_TEXTURE_MM);
         Some((path, mm))
+    }
+
+    /// The fabric's normal and roughness maps, if it has either. Their tile width is their own,
+    /// else the texture's, else [`DEFAULT_TEXTURE_MM`].
+    #[must_use]
+    pub fn surface_maps(&self) -> Option<SurfaceMaps<'_>> {
+        let path = |key: &str| self.extra.get(key)?.as_str().filter(|p| !p.is_empty());
+        let (normal, roughness) = (path(FABRIC_NORMAL_MAP_KEY), path(FABRIC_ROUGHNESS_MAP_KEY));
+        if normal.is_none() && roughness.is_none() {
+            return None;
+        }
+        let num = |key: &str| {
+            self.extra
+                .get(key)
+                .and_then(Value::as_f64)
+                .filter(|v| v.is_finite())
+        };
+        let tile_mm = num(FABRIC_MAP_MM_KEY)
+            .filter(|v| *v > 0.0)
+            .or_else(|| self.texture().map(|(_, mm)| mm))
+            .unwrap_or(DEFAULT_TEXTURE_MM);
+        let strength = num(FABRIC_NORMAL_STRENGTH_KEY)
+            .unwrap_or(DEFAULT_NORMAL_STRENGTH)
+            .clamp(0.0, MAX_NORMAL_STRENGTH);
+        Some(SurfaceMaps {
+            normal,
+            roughness,
+            tile_mm,
+            strength,
+        })
     }
 
     /// A fabric with the appearance and physics of `preset` and the default colours.
@@ -553,6 +610,29 @@ pub fn limit_strain(k: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn surface_maps_fall_back_to_the_texture_tile_and_clamp_their_strength() {
+        let mut f = Fabric::default();
+        assert!(f.surface_maps().is_none());
+        f.extra
+            .insert(FABRIC_ROUGHNESS_MAP_KEY.into(), "rough.png".into());
+        let m = f.surface_maps().expect("a roughness map is enough");
+        assert_eq!((m.normal, m.roughness), (None, Some("rough.png")));
+        assert!((m.tile_mm - DEFAULT_TEXTURE_MM).abs() < 1e-12);
+        assert!((m.strength - DEFAULT_NORMAL_STRENGTH).abs() < 1e-12);
+        f.extra.insert(FABRIC_TEXTURE_KEY.into(), "print.png".into());
+        f.extra.insert(FABRIC_TEXTURE_MM_KEY.into(), 30.0.into());
+        f.extra.insert(FABRIC_NORMAL_STRENGTH_KEY.into(), 9.0.into());
+        let m = f.surface_maps().expect("maps");
+        assert!((m.tile_mm - 30.0).abs() < 1e-12, "the texture's tile");
+        assert!((m.strength - MAX_NORMAL_STRENGTH).abs() < 1e-12);
+        f.extra.insert(FABRIC_MAP_MM_KEY.into(), 12.0.into());
+        assert!(
+            (f.surface_maps().expect("maps").tile_mm - 12.0).abs() < 1e-12,
+            "their own tile"
+        );
+    }
 
     #[test]
     fn scales_are_clamped() {

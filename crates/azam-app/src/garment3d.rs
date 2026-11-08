@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, channel};
 
 use azam_avatar::{Avatar, AvatarKind, AvatarParams, MEASUREMENTS, Motion};
 use azam_doc::{PieceId, Project};
-use azam_render::{DecalId, Draw, MeshData, MeshId, Renderer, Weave, srgb_to_linear};
+use azam_render::{DecalId, Draw, MeshData, MeshId, Renderer, SurfaceId, SurfaceMap, Weave, srgb_to_linear};
 use azam_sim::{AutoStop, FitMode, FitSummary, SimParams, Simulation, StopReason, resolve_settings};
 use azam_sim_gpu::{GpuSim, GpuSolver};
 use glam::Vec3;
@@ -90,6 +90,10 @@ pub struct Scene3d {
     decals: std::collections::HashMap<PieceId, (String, DecalId, Arc<crate::decals::PieceDecal>)>,
     decal_images: crate::decals::ImageCache,
     next_decal: u32,
+    /// Each fabric's normal and roughness maps: the paths they came from, the renderer's id, the
+    /// packed map.
+    surfaces: std::collections::HashMap<azam_doc::FabricId, (String, SurfaceId, Arc<SurfaceMap>)>,
+    next_surface: u32,
     /// Use the parametric mannequin even when the morph-target pack is available.
     pub mannequin: bool,
 }
@@ -226,6 +230,7 @@ impl Scene3d {
             self.attach_gpu(renderer);
             self.upload_pieces(renderer);
             self.sync_decals(project, renderer);
+            self.sync_surfaces(project, renderer);
             self.fit_frame = 0;
             // the new simulation starts on the resting avatar
             self.motion.stop();
@@ -271,6 +276,51 @@ impl Scene3d {
             );
             renderer.set_decal(decal, image.image.width, image.image.height, &image.image.data);
             self.decals.insert(id.clone(), (key, decal, Arc::new(image)));
+        }
+    }
+
+    /// Loads and uploads the normal and roughness maps of each fabric whose maps changed; forgets
+    /// those of fabrics that are gone or have none any more. A map that cannot be read is
+    /// skipped (the fabric shades flat).
+    fn sync_surfaces(&mut self, project: &Project, renderer: &mut Renderer) {
+        let wanted: std::collections::HashMap<azam_doc::FabricId, (Option<String>, Option<String>)> = project
+            .fabrics
+            .keys()
+            .filter_map(|id| {
+                let fabric = project.effective_fabric(id)?;
+                let maps = fabric.surface_maps()?;
+                Some((
+                    id.clone(),
+                    (maps.normal.map(str::to_owned), maps.roughness.map(str::to_owned)),
+                ))
+            })
+            .collect();
+        self.surfaces.retain(|id, (key, surface, _)| {
+            let keep = wanted
+                .get(id)
+                .is_some_and(|(n, r)| *key == format!("{n:?}|{r:?}"));
+            if !keep {
+                renderer.remove_surface(*surface);
+            }
+            keep
+        });
+        for (id, (normal, rough)) in wanted {
+            if self.surfaces.contains_key(&id) {
+                continue;
+            }
+            let mut image = |path: &Option<String>| path.as_deref().and_then(|p| self.decal_images.get(p));
+            let (n, r) = (image(&normal), image(&rough));
+            let Some(map) = SurfaceMap::pack(
+                n.as_ref().map(|i| (i.width, i.height, i.data.as_slice())),
+                r.as_ref().map(|i| (i.width, i.height, i.data.as_slice())),
+            ) else {
+                continue;
+            };
+            self.next_surface += 1;
+            let surface = SurfaceId(self.next_surface);
+            renderer.set_surface(surface, &map);
+            self.surfaces
+                .insert(id, (format!("{normal:?}|{rough:?}"), surface, Arc::new(map)));
         }
     }
 
@@ -614,6 +664,14 @@ impl Scene3d {
                 };
                 draw.weave_mm = (fabric.scale as f32).clamp(0.2, 20.0) * WEAVE_REPEAT_MM;
                 draw.color[3] = (fabric.opacity as f32).clamp(0.2, 1.0);
+                if !fit
+                    && let (Some(maps), Some((_, surface, _))) =
+                        (fabric.surface_maps(), self.surfaces.get(&record.fabric))
+                {
+                    draw.surface = Some(*surface);
+                    draw.surface_mm = maps.tile_mm as f32;
+                    draw.normal_strength = maps.strength as f32;
+                }
             } else {
                 draw.specular = 0.08;
             }
@@ -650,6 +708,7 @@ impl Scene3d {
                 indices: avatar.mesh.indices.clone(),
                 material: azam_trace::Material::skin(linear(skin)),
                 decal: None,
+                relief: None,
             });
         }
         let Some(sim) = &self.sim else { return meshes };
@@ -663,6 +722,15 @@ impl Scene3d {
                 material.opacity = (fabric.opacity as f32).clamp(0.2, 1.0);
             }
             material.inside = 0.7;
+            let relief = project
+                .effective_fabric(&view.record.fabric)
+                .and_then(|f| f.surface_maps().map(|m| (m.tile_mm, m.strength)))
+                .zip(self.surfaces.get(&view.record.fabric))
+                .map(|((tile_mm, strength), (_, _, map))| azam_trace::Relief {
+                    map: Arc::clone(map),
+                    tile_mm: tile_mm as f32,
+                    strength: strength as f32,
+                });
             meshes.push(azam_trace::Mesh {
                 positions: triples(view.positions),
                 normals: triples(view.normals),
@@ -678,6 +746,7 @@ impl Scene3d {
                         size: [d.size.x as f32, d.size.y as f32],
                     })
                 }),
+                relief,
             });
         }
         meshes

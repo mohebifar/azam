@@ -21,6 +21,9 @@ struct Draw {
     material: vec4<f32>,
     // Decal placement in UV (pattern mm) space: xy the image's min corner, zw 1 / its size.
     decal: vec4<f32>,
+    // x: 1 / surface map tile (mm), y: normal map strength (0: none), z: 1 when the map holds a
+    // roughness map.
+    surface: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -29,6 +32,9 @@ struct Draw {
 @group(1) @binding(0) var<uniform> draw: Draw;
 @group(2) @binding(0) var decal_image: texture_2d<f32>;
 @group(2) @binding(1) var decal_sampler: sampler;
+// The fabric's surface map: tangent-space normal in rgb, roughness in a; it repeats.
+@group(3) @binding(0) var surface_image: texture_2d<f32>;
+@group(3) @binding(1) var surface_sampler: sampler;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -146,15 +152,42 @@ fn weave(uv: vec2<f32>, kind: u32, repeat_mm: f32) -> f32 {
     }
 }
 
+/// `n` bent by the tangent-space normal `tn`, in the frame the pattern coordinates `uv` make on
+/// the surface at `world` (from screen-space derivatives, so meshes need no tangents). Pattern y
+/// runs down the image while a normal map's green points up it, hence the flipped bitangent.
+fn perturb(n: vec3<f32>, world: vec3<f32>, uv: vec2<f32>, tn: vec3<f32>) -> vec3<f32> {
+    let dp1 = dpdx(world);
+    let dp2 = dpdy(world);
+    let duv1 = dpdx(uv);
+    let duv2 = dpdy(uv);
+    let dp2perp = cross(dp2, n);
+    let dp1perp = cross(n, dp1);
+    let t = dp2perp * duv1.x + dp1perp * duv2.x;
+    let b = dp2perp * duv1.y + dp1perp * duv2.y;
+    let scale = max(dot(t, t), dot(b, b));
+    if scale <= 0.0 {
+        return n;
+    }
+    let inv = inverseSqrt(scale);
+    return normalize(t * inv * tn.x - b * inv * tn.y + n * tn.z);
+}
+
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     var n = normalize(in.normal);
     let v = normalize(frame.eye.xyz - in.world);
+    let relief = textureSample(surface_image, surface_sampler, in.uv * draw.surface.x);
     var inside = 1.0;
     if dot(n, v) < 0.0 {
         n = -n;
         inside = draw.params.z;
     }
+    if draw.surface.y > 0.0 {
+        var tn = relief.xyz * 2.0 - 1.0;
+        tn = vec3<f32>(tn.xy * draw.surface.y, max(tn.z, 0.05));
+        n = perturb(n, in.world, in.uv, normalize(tn));
+    }
+    let roughness = mix(draw.material.z, relief.a, draw.surface.z);
     let kind = u32(draw.material.x + 0.5);
     let pattern = weave(in.uv, kind, draw.material.y);
     let cloth = draw.color.rgb * mix(vec3<f32>(1.0), in.color.rgb, draw.params.y) * pattern;
@@ -171,7 +204,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         + vec3<f32>(0.24) * max(dot(n, normalize(FILL_DIR)), 0.0)
         + vec3<f32>(0.18) * max(dot(n, normalize(BACK_DIR)), 0.0);
     let half_dir = normalize(key + v);
-    let shininess = mix(80.0, 8.0, clamp(draw.material.z, 0.0, 1.0));
+    let shininess = mix(80.0, 8.0, clamp(roughness, 0.0, 1.0));
     let specular = pow(max(dot(n, half_dir), 0.0), shininess) * draw.params.w * shadow;
     let rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.12;
     var color = base * diffuse * inside + vec3<f32>(specular + rim);

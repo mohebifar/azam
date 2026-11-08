@@ -459,6 +459,7 @@ mod tests {
             indices: vec![0, 1, 2],
             material: azam_trace::Material::cloth([0.5; 3]),
             decal: None,
+            relief: None,
         }
     }
 

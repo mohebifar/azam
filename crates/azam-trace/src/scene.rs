@@ -118,6 +118,19 @@ pub struct Mesh {
     pub material: Material,
     /// An image printed on the surface (a piece's graphics), placed by the texture coordinates.
     pub decal: Option<Arc<Decal>>,
+    /// The fabric's normal and roughness maps, tiled over the texture coordinates.
+    pub relief: Option<Relief>,
+}
+
+/// A surface map tiled over a mesh's texture coordinates.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Relief {
+    /// The packed normal and roughness maps.
+    pub map: Arc<azam_render::SurfaceMap>,
+    /// Width of one tile in texture coordinates (mm).
+    pub tile_mm: f32,
+    /// Strength of the normal map, 0 (flat) .. 2.
+    pub strength: f32,
 }
 
 /// An image printed on a mesh, placed in its texture coordinates (pattern mm).

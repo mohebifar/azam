@@ -50,8 +50,10 @@ pub use edit::{
     spread_piece, transform_piece, translate_internal_line,
 };
 pub use fabric::{
-    DEFAULT_TEXTURE_MM, FABRIC_TEXTURE_KEY, FABRIC_TEXTURE_MM_KEY, Fabric, FabricPhysics, FabricPreset,
-    PhysKey, PresetSpec, e2d, limit_strain, make_fabric, r_bend, r_stretch, stress_kpa,
+    DEFAULT_NORMAL_STRENGTH, DEFAULT_TEXTURE_MM, FABRIC_MAP_MM_KEY, FABRIC_NORMAL_MAP_KEY,
+    FABRIC_NORMAL_STRENGTH_KEY, FABRIC_ROUGHNESS_MAP_KEY, FABRIC_TEXTURE_KEY, FABRIC_TEXTURE_MM_KEY, Fabric,
+    FabricPhysics, FabricPreset, MAX_NORMAL_STRENGTH, PhysKey, PresetSpec, SurfaceMaps, e2d, limit_strain,
+    make_fabric, r_bend, r_stretch, stress_kpa,
 };
 pub use hems::{default_hem, detect_hems, mark_hems, set_hem};
 pub use history::{DEFAULT_HISTORY_LIMIT, History};

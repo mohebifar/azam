@@ -63,7 +63,9 @@ legs; reshape it with Edit Points.
 Over the 3D view, G and R move or turn the piece under the pointer (or the selected one) without
 holding a button: X, Y or Z locks the axis, a typed number sets mm or degrees, click or Enter keeps,
 Esc or right-click puts it back. A fabric can carry an image texture (Fabric tab ▸ Texture), tiled
-along each piece's grain in the 3D view and in renders. The Grading panel lists the selected
+along each piece's grain in the 3D view and in renders, and a normal map and a roughness map
+(Fabric tab ▸ Surface: tile width, normal strength) that bend its shading and set its gloss texel by
+texel, in solid shading and in the path tracer alike. The Grading panel lists the selected
 point's offset in every size as an editable table.
 
 The 3D header's third shading button (or View ▸ Rendered Shading) path-traces the view in place,

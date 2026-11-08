@@ -68,6 +68,7 @@ fn draped_tee(frames: usize, look: Option<&str>) -> Vec<Mesh> {
         indices: avatar.mesh.indices.clone(),
         material: Material::skin(hex_linear(&project.avatar.skin).unwrap_or([0.45; 3])),
         decal: None,
+        relief: None,
     }];
     for view in sim.piece_views() {
         let mut material = Material::cloth([0.27, 0.32, 0.45]);
@@ -94,6 +95,7 @@ fn draped_tee(frames: usize, look: Option<&str>) -> Vec<Mesh> {
             indices: view.triangles.to_vec(),
             material,
             decal: None,
+            relief: None,
         });
     }
     meshes

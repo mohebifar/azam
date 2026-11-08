@@ -1,5 +1,6 @@
 //! The wgpu device, pipelines and offscreen targets.
 
+use crate::surface::SurfaceMap;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -146,11 +147,21 @@ pub struct Draw {
     /// An image printed on the mesh (graphics on a piece), and where it lies in the mesh's UV
     /// space (pattern mm): `[min u, min v, 1 / width, 1 / height]`.
     pub decal: Option<(DecalId, [f32; 4])>,
+    /// The fabric's normal and roughness maps, tiled over the mesh's UV space.
+    pub surface: Option<SurfaceId>,
+    /// Width of one tile of the surface maps, in UV units (pattern mm).
+    pub surface_mm: f32,
+    /// Strength of the normal map, 0 (flat) .. 2.
+    pub normal_strength: f32,
 }
 
 /// Identifies a decal image uploaded to a [`Renderer`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DecalId(pub u32);
+
+/// Identifies a surface map (normal and roughness) uploaded to a [`Renderer`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SurfaceId(pub u32);
 
 impl Draw {
     /// A plain opaque draw of `mesh` in `color` (sRGB).
@@ -168,6 +179,9 @@ impl Draw {
             weave_mm: 1.2,
             casts_shadow: true,
             decal: None,
+            surface: None,
+            surface_mm: 100.0,
+            normal_strength: 1.0,
         }
     }
 }
@@ -209,6 +223,7 @@ struct DrawUniform {
     params: [f32; 4],
     material: [f32; 4],
     decal: [f32; 4],
+    surface: [f32; 4],
 }
 
 /// `rgba` (`width` × `height`, sRGB, straight alpha) and its mip levels down to 1 × 1, each half
@@ -350,6 +365,10 @@ pub struct Renderer {
     decals: BTreeMap<DecalId, wgpu::BindGroup>,
     no_decal: wgpu::BindGroup,
     decal_sampler: wgpu::Sampler,
+    /// Uploaded surface maps and whether each holds a normal and a roughness map.
+    surfaces: BTreeMap<SurfaceId, (wgpu::BindGroup, bool, bool)>,
+    no_surface: wgpu::BindGroup,
+    surface_sampler: wgpu::Sampler,
     targets: Option<Targets>,
     pixels: Vec<u8>,
 }
@@ -468,6 +487,7 @@ impl Renderer {
             1,
             &[0; 4],
         );
+        let (surface_sampler, no_surface) = Self::surface_defaults(&device, &queue, &pipelines.decal_layout);
         Self {
             device,
             queue,
@@ -484,6 +504,9 @@ impl Renderer {
             decals: BTreeMap::new(),
             no_decal,
             decal_sampler,
+            surfaces: BTreeMap::new(),
+            no_surface,
+            surface_sampler,
             targets: None,
             pixels: Vec::new(),
         }
@@ -613,6 +636,112 @@ impl Renderer {
     /// Forgets decal `id`.
     pub fn remove_decal(&mut self, id: DecalId) {
         self.decals.remove(&id);
+    }
+
+    /// A bind group holding surface map `map` (linear RGBA, with mips), tiled by `sampler`.
+    fn surface_group(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+        map: &SurfaceMap,
+    ) -> wgpu::BindGroup {
+        let levels = map.mips();
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("surface"),
+            size: wgpu::Extent3d {
+                width: map.width,
+                height: map.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: levels.len() as u32,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (level, (w, h, data)) in levels.iter().enumerate() {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: level as u32,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w * 4),
+                    rows_per_image: Some(*h),
+                },
+                wgpu::Extent3d {
+                    width: *w,
+                    height: *h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("surface"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        })
+    }
+
+    /// The repeating sampler of surface maps, and the flat map drawn when a mesh has none.
+    fn surface_defaults(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        layout: &wgpu::BindGroupLayout,
+    ) -> (wgpu::Sampler, wgpu::BindGroup) {
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("surface"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            anisotropy_clamp: 8,
+            ..Default::default()
+        });
+        let flat = SurfaceMap {
+            width: 1,
+            height: 1,
+            texels: vec![128, 128, 255, 255],
+            has_normal: false,
+            has_roughness: false,
+        };
+        let group = Self::surface_group(device, queue, layout, &sampler, &flat);
+        (sampler, group)
+    }
+
+    /// Uploads or replaces surface map `id`.
+    pub fn set_surface(&mut self, id: SurfaceId, map: &SurfaceMap) {
+        let group = Self::surface_group(
+            &self.device,
+            &self.queue,
+            &self.pipelines.decal_layout,
+            &self.surface_sampler,
+            map,
+        );
+        self.surfaces
+            .insert(id, (group, map.has_normal, map.has_roughness));
+    }
+
+    /// Forgets surface map `id`.
+    pub fn remove_surface(&mut self, id: SurfaceId) {
+        self.surfaces.remove(&id);
     }
 
     /// Uploads or replaces mesh `id`.
@@ -814,6 +943,19 @@ impl Renderer {
                     if self.has_decal(d) { 1.0 } else { 0.0 },
                 ],
                 decal: d.decal.map_or([0.0; 4], |(_, rect)| rect),
+                surface: match d.surface.and_then(|id| self.surfaces.get(&id)) {
+                    Some(&(_, normal, rough)) => [
+                        1.0 / d.surface_mm.max(0.1),
+                        if normal {
+                            d.normal_strength.clamp(0.0, 2.0)
+                        } else {
+                            0.0
+                        },
+                        if rough { 1.0 } else { 0.0 },
+                        0.0,
+                    ],
+                    None => [0.0; 4],
+                },
             };
             let at = i * self.draw_stride as usize;
             bytes[at..at + DRAW_UNIFORM_SIZE as usize].copy_from_slice(bytemuck::bytes_of(&uniform));
@@ -901,6 +1043,11 @@ impl Renderer {
                 .and_then(|(id, _)| self.decals.get(&id))
                 .unwrap_or(&self.no_decal);
             pass.set_bind_group(2, decal, &[]);
+            let surface = d
+                .surface
+                .and_then(|id| self.surfaces.get(&id))
+                .map_or(&self.no_surface, |(g, _, _)| g);
+            pass.set_bind_group(3, surface, &[]);
             pass.set_vertex_buffer(0, mesh.positions.slice(..));
             pass.set_vertex_buffer(1, mesh.normals.slice(..));
             pass.set_vertex_buffer(2, mesh.colors.slice(..));
@@ -1049,7 +1196,7 @@ impl Pipelines {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/mesh.wgsl"));
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("mesh"),
-            bind_group_layouts: &[frame_layout, draw_layout, decal_layout],
+            bind_group_layouts: &[frame_layout, draw_layout, decal_layout, decal_layout],
             push_constant_ranges: &[],
         });
         let attribute = |location, format| wgpu::VertexAttribute {

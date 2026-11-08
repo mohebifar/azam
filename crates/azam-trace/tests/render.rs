@@ -22,6 +22,7 @@ fn plane(y: f32, half: f32, material: Material) -> Mesh {
         indices: vec![0, 2, 1, 0, 3, 2],
         material,
         decal: None,
+        relief: None,
     }
 }
 
@@ -59,6 +60,7 @@ fn sphere(center: Vec3, radius: f32, material: Material) -> Mesh {
         indices,
         material,
         decal: None,
+        relief: None,
     }
 }
 
@@ -332,4 +334,50 @@ fn renders_are_deterministic_and_finite_with_awkward_input() {
     assert!(diff <= 1, "progressive and one-shot renders differ by {diff}");
     let other = Renderer::new(&scene, camera, Settings { seed: 9, ..s }).render();
     assert_ne!(b, other, "a different seed gives different noise");
+}
+
+/// The standard deviation of the green radiance over a square of pixels, relative to its mean.
+fn spread(r: &Renderer, x0: u32, y0: u32, n: u32) -> f32 {
+    let m = mean(r, x0, y0, n);
+    let mut sum = 0.0;
+    for y in y0..y0 + n {
+        for x in x0..x0 + n {
+            sum += (r.radiance(x, y)[1] - m).powi(2);
+        }
+    }
+    (sum / (n * n) as f32).sqrt() / m.max(1e-6)
+}
+
+#[test]
+fn a_normal_map_shades_its_relief() {
+    // stripes leaning towards +x and -x, under a light low on the +x side
+    let stripes = [218, 128, 218, 255, 38, 128, 218, 255];
+    let map =
+        std::sync::Arc::new(azam_render::SurfaceMap::pack(Some((2, 1, &stripes)), None).expect("packed"));
+    let lit = |relief: bool| {
+        let mut quad = plane(0.0, 300.0, Material::diffuse([0.6; 3]));
+        quad.uvs = quad.positions.iter().map(|p| [p[0], p[2]]).collect();
+        if relief {
+            quad.relief = Some(azam_trace::Relief {
+                map: map.clone(),
+                tile_mm: 150.0,
+                strength: 1.0,
+            });
+        }
+        let light = AreaLight {
+            center: Vec3::new(3000.0, 1200.0, 0.0),
+            half_u: Vec3::new(0.0, 0.0, 300.0),
+            half_v: Vec3::new(-110.0, 280.0, 0.0),
+            radiance: [40.0; 3],
+        };
+        let scene = Scene {
+            meshes: vec![quad],
+            lighting: dark_lighting(vec![light]),
+        };
+        let mut r = Renderer::new(&scene, top_camera(1400.0), settings(48, 64));
+        r.step(64);
+        spread(&r, 16, 16, 16)
+    };
+    let (flat, bumped) = (lit(false), lit(true));
+    assert!(bumped > 3.0 * flat + 0.05, "relief {bumped:.3} vs flat {flat:.3}");
 }

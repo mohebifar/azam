@@ -82,11 +82,15 @@ pub(crate) struct Prepared {
     tri_material: Vec<u32>,
     /// Unit geometric normal of each triangle (along `(b − a) × (c − a)`).
     tri_normal: Vec<Vec3>,
+    /// Vertex positions (for texture-space frames).
+    positions: Vec<Vec3>,
     normals: Vec<Vec3>,
     uvs: Vec<Vec2>,
     materials: Vec<Material>,
     /// Printed image of each material's mesh, if any.
     decals: Vec<Option<std::sync::Arc<crate::Decal>>>,
+    /// Normal and roughness maps of each material's mesh, if any.
+    reliefs: Vec<Option<crate::Relief>>,
     lights: Vec<Light>,
     sky: Sky,
     floor: Option<Floor>,
@@ -158,6 +162,7 @@ impl Prepared {
         let mut corners = Vec::new();
         let mut materials = Vec::new();
         let mut decals = Vec::new();
+        let mut reliefs = Vec::new();
         for (mi, mesh) in scene.meshes.iter().enumerate() {
             let mut material = mesh.material;
             if mesh.uvs.len() != mesh.positions.len() {
@@ -168,6 +173,11 @@ impl Prepared {
                 mesh.decal
                     .clone()
                     .filter(|_| mesh.uvs.len() == mesh.positions.len()),
+            );
+            reliefs.push(
+                mesh.relief
+                    .clone()
+                    .filter(|r| mesh.uvs.len() == mesh.positions.len() && r.tile_mm > 0.0),
             );
             let base = positions.len() as u32;
             let n = mesh.positions.len();
@@ -208,10 +218,12 @@ impl Prepared {
             tris,
             tri_material,
             tri_normal,
+            positions,
             normals,
             uvs,
             materials,
             decals,
+            reliefs,
             lights,
             sky: scene.lighting.sky,
             floor: scene.lighting.floor,
@@ -333,13 +345,56 @@ impl Prepared {
         if let Some((print, alpha)) = self.decals[mi].as_ref().and_then(|d| d.sample(uv)) {
             albedo = albedo.lerp(print * brightness, alpha);
         }
+        let mut shaded = *material;
+        if let Some(relief) = &self.reliefs[mi] {
+            let (tn, rough) = relief.map.sample(uv.x / relief.tile_mm, uv.y / relief.tile_mm);
+            if relief.map.has_roughness {
+                shaded.roughness = rough.clamp(0.02, 1.0);
+            }
+            if relief.map.has_normal && relief.strength > 0.0 {
+                let bent = self.bend(prim, ns, tn, relief.strength);
+                // a bump never turns the surface away from the viewer
+                if bent.dot(wo) > 1e-3 {
+                    ns = bent;
+                }
+            }
+        }
         Surface {
             p,
             ng,
             ns,
             albedo,
-            bsdf: Bsdf::new(material, albedo, brightness),
+            bsdf: Bsdf::new(&shaded, albedo, brightness),
         }
+    }
+
+    /// `ns` bent by the tangent-space normal `tn` (scaled by `strength`) in the frame triangle
+    /// `prim`'s texture coordinates make. Pattern y runs down the image while a normal map's green
+    /// points up it, hence the flipped bitangent.
+    fn bend(&self, prim: usize, ns: Vec3, tn: [f32; 3], strength: f32) -> Vec3 {
+        let [i0, i1, i2] = self.tris[prim].map(|i| i as usize);
+        let (e1, e2) = (
+            self.positions[i1] - self.positions[i0],
+            self.positions[i2] - self.positions[i0],
+        );
+        let (d1, d2) = (self.uvs[i1] - self.uvs[i0], self.uvs[i2] - self.uvs[i0]);
+        let det = d1.x * d2.y - d2.x * d1.y;
+        if det.abs() < 1e-12 {
+            return ns;
+        }
+        let t = (e1 * d2.y - e2 * d1.y) / det;
+        // Gram-Schmidt against the shading normal; the bitangent follows the normal's side
+        let t = (t - ns * ns.dot(t)).normalize_or_zero();
+        if t == Vec3::ZERO {
+            return ns;
+        }
+        let mut b = ns.cross(t);
+        let uv_b = (e2 * d1.x - e1 * d2.x) / det;
+        if b.dot(uv_b) < 0.0 {
+            b = -b;
+        }
+        let tn = Vec3::new(tn[0] * strength, tn[1] * strength, tn[2].max(0.05)).normalize();
+        (t * tn.x - b * tn.y + ns * tn.z).normalize_or_zero()
     }
 
     /// The floor as a surface (for rays that bounce off it).

@@ -207,6 +207,122 @@ impl AzamApp {
         self.panel("Texture", rows)
     }
 
+    /// Fabric `fid`'s surface relief: a normal map and a roughness map tiled over the cloth (they
+    /// bend its shading and set its gloss texel by texel, in the 3D view and in renders), their
+    /// tile width and the normal map's strength.
+    pub(super) fn surface_panel(&mut self, fid: &FabricId, cx: &mut Context<Self>) -> Div {
+        let fabric = self.session.project.effective_fabric(fid);
+        let maps = fabric.as_ref().and_then(azam_doc::Fabric::surface_maps).map(|m| {
+            (
+                m.normal.map(str::to_owned),
+                m.roughness.map(str::to_owned),
+                m.tile_mm,
+                m.strength,
+            )
+        });
+        let file_name = |p: &Option<String>| {
+            p.as_ref().map_or_else(
+                || "None".to_owned(),
+                |p| {
+                    std::path::Path::new(p)
+                        .file_name()
+                        .map_or_else(|| p.clone(), |n| n.to_string_lossy().into_owned())
+                },
+            )
+        };
+        let mut rows = Vec::new();
+        for (label, key, current) in [
+            (
+                "Normal Map",
+                azam_doc::FABRIC_NORMAL_MAP_KEY,
+                maps.as_ref().and_then(|m| m.0.clone()),
+            ),
+            (
+                "Roughness Map",
+                azam_doc::FABRIC_ROUGHNESS_MAP_KEY,
+                maps.as_ref().and_then(|m| m.1.clone()),
+            ),
+        ] {
+            let choose = {
+                let fid = fid.clone();
+                Self::action("Choose…", cx, move |this| {
+                    let picked = blenderui::file_dialog(
+                        label,
+                        blenderui::FileDialogMode::Open,
+                        None,
+                        None,
+                        &["Images\t*.png *.jpg *.jpeg *.bmp *.tga"],
+                        false,
+                    );
+                    if let blenderui::FileDialogResult::Chosen(paths) = picked
+                        && let Some(path) = paths.into_iter().next()
+                    {
+                        this.set_fabric_map(&fid, key, label, Some(&path.to_string_lossy()));
+                    }
+                })
+            };
+            let clear = {
+                let fid = fid.clone();
+                Self::action("Clear", cx, move |this| {
+                    this.set_fabric_map(&fid, key, label, None);
+                })
+            };
+            rows.push(Self::info_row(label, file_name(&current)));
+            rows.push(div().class("pbuttons").child(choose).child(clear));
+        }
+        if let Some((_, _, tile_mm, strength)) = maps {
+            let at = fid.clone();
+            rows.push(Self::number(
+                super::field("Map Tile Width (mm)", 5.0, 2000.0, 5.0),
+                tile_mm,
+                cx,
+                move |p, v| {
+                    if let Some(f) = p.fabrics.get_mut(&at) {
+                        f.extra
+                            .insert(azam_doc::FABRIC_MAP_MM_KEY.to_owned(), serde_json::Value::from(v));
+                    }
+                },
+            ));
+            let at = fid.clone();
+            rows.push(Self::number(
+                super::field("Normal Strength", 0.0, azam_doc::MAX_NORMAL_STRENGTH, 0.05),
+                strength,
+                cx,
+                move |p, v| {
+                    if let Some(f) = p.fabrics.get_mut(&at) {
+                        f.extra.insert(
+                            azam_doc::FABRIC_NORMAL_STRENGTH_KEY.to_owned(),
+                            serde_json::Value::from(v),
+                        );
+                    }
+                },
+            ));
+        }
+        self.panel("Surface", rows)
+    }
+
+    /// Sets fabric `fid`'s map under `key` (named `label` in the undo history) to the image at
+    /// `path`, or clears it.
+    pub fn set_fabric_map(&mut self, fid: &FabricId, key: &str, label: &str, path: Option<&str>) {
+        let value = path.map(str::to_owned);
+        self.session.edit(label, |p| {
+            if let Some(f) = p.fabrics.get_mut(fid) {
+                match &value {
+                    Some(v) => {
+                        f.extra.insert(key.to_owned(), serde_json::Value::from(v.clone()));
+                    }
+                    None => {
+                        f.extra.remove(key);
+                    }
+                }
+            }
+        });
+        self.status = match path {
+            Some(p) => format!("{label}: {p}"),
+            None => format!("{label} cleared"),
+        };
+    }
+
     /// Gives fabric `fid` the texture image at `path`, or none.
     pub fn set_fabric_texture(&mut self, fid: &FabricId, path: Option<&str>) {
         let value = path.map(str::to_owned);

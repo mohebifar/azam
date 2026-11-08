@@ -939,6 +939,7 @@ impl AzamApp {
                 rows
             }),
             self.texture_panel(&fid, cx),
+            self.surface_panel(&fid, cx),
             self.panel("Stretch", stretch),
             self.panel("Bending", bending),
             self.panel("Physical Properties", other),
