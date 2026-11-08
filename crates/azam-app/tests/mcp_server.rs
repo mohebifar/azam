@@ -1,4 +1,4 @@
-//! The Claude Code server runs only on demand: started from the 3D view's sidebar, it answers MCP
+//! The MCP server runs only on demand: started from the 3D view's sidebar, it answers MCP
 //! over HTTP and edits the window's project; stopped, it lets go of its port.
 
 use std::io::{Read, Write};
@@ -96,8 +96,8 @@ fn the_server_starts_from_the_sidebar_serves_tools_and_stops() {
 
         // the sidebar's Start Server button
         let b = cx
-            .element_bounds(win.id, "claude-server")
-            .expect("the Claude Code panel's button");
+            .element_bounds(win.id, "mcp-server")
+            .expect("the MCP panel's button");
         cx.simulate_click(
             win.id,
             b.origin.x + b.size.width / 2.0,
@@ -117,7 +117,7 @@ fn the_server_starts_from_the_sidebar_serves_tools_and_stops() {
             let call = post(
                 port,
                 &json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                        "params": {"name": "apply_command", "arguments": {"command": {"Rename": {"name": "From Claude"}}}}}),
+                        "params": {"name": "apply_command", "arguments": {"command": {"Rename": {"name": "From MCP"}}}}}),
             )
             .expect("tools/call");
             (init, call)
@@ -126,14 +126,14 @@ fn the_server_starts_from_the_sidebar_serves_tools_and_stops() {
         assert_eq!(init.1["result"]["serverInfo"]["name"], "azam");
         assert_eq!(renamed.1["result"]["isError"], false);
         let app = win.root().read(cx);
-        assert_eq!(app.session().project.meta.name, "From Claude");
-        assert!(app.status().contains("Claude Code"), "the status bar says what the agent did");
+        assert_eq!(app.session().project.meta.name, "From MCP");
+        assert!(app.status().contains("MCP: "), "the status bar says what the agent did");
         assert_eq!(http::activity().0.as_deref(), Some("test-client"));
 
         // the button stops it again, and the port is let go
         cx.draw(win.id);
         let b = cx
-            .element_bounds(win.id, "claude-server")
+            .element_bounds(win.id, "mcp-server")
             .expect("the button");
         cx.simulate_click(
             win.id,

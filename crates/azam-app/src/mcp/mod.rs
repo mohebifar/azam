@@ -1,4 +1,4 @@
-//! The Model Context Protocol: an AI agent (Claude Code and others) designs garments through
+//! The Model Context Protocol: an AI agent (an MCP client) designs garments through
 //! tools that read and edit the project, drape it and take screenshots.
 //!
 //! The app serves it over HTTP on the loopback interface ([`http`]), acting on the window the

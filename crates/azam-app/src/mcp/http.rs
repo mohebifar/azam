@@ -1,8 +1,8 @@
 //! The app's MCP endpoint: Streamable HTTP (plain JSON responses, no event stream) at
-//! `http://127.0.0.1:7465/mcp`, so an agent drives the window the person has open.
+//! `http://127.0.0.1:7465/mcp`, so an MCP client drives the window the person has open.
 //!
-//! It runs only on demand: the person starts it (the Claude Code panel in the 3D view's sidebar,
-//! File ▸ Claude Code Server, or Preferences to start it on launch) and can stop it any time.
+//! It runs only on demand: the person starts it (the MCP panel in the 3D view's sidebar,
+//! File ▸ MCP Server, or Preferences to start it on launch) and can stop it any time.
 //! While it runs, a background thread accepts connections on the loopback interface only; each
 //! request's tool call runs on the UI thread (through a [`UiSender`]) against the window's
 //! [`Server`], so edits land between frames like the person's own. Requests from web pages (an
@@ -64,12 +64,6 @@ thread_local! {
 #[must_use]
 pub fn url(port: u16) -> String {
     format!("http://127.0.0.1:{port}/mcp")
-}
-
-/// The command that connects Claude Code to the endpoint on `port`.
-#[must_use]
-pub fn claude_command(port: u16) -> String {
-    format!("claude mcp add --transport http azam {}", url(port))
 }
 
 /// Lets the endpoint act on `window` once it is started. Call once, on the UI thread; nothing
@@ -353,7 +347,7 @@ fn is_loopback(host: &str) -> bool {
 /// Answers one request.
 fn handle(request: &Request, port: u16, ui: &UiSender) -> Response {
     if !is_running() {
-        return Response::text(503, "azam's Claude Code server was stopped");
+        return Response::text(503, "azam's MCP server was stopped");
     }
     // DNS rebinding: a page on another name must not reach the port through this address
     if request.header("host").is_some_and(|h| !is_loopback(h)) {

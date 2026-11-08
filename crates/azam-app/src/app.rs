@@ -147,7 +147,7 @@ pub struct AzamApp {
     pub(crate) tool_labels: bool,
     /// Whether the 3D view's sidebar (N) is shown.
     pub(crate) show_sidebar: bool,
-    /// Port the Claude Code server listens on when started.
+    /// Port the MCP server listens on when started.
     pub(crate) mcp_port: u16,
     /// The last dart cut, for Adjust Last Operation.
     pub(crate) last_op: Option<crate::redo_panel::LastOp>,
@@ -665,7 +665,7 @@ impl AzamApp {
             }
             Operator::ToggleArrangementPoints => self.show_arrangement = !self.show_arrangement,
             Operator::ToggleSidebar => self.toggle_sidebar(),
-            Operator::ClaudeServer => self.toggle_claude_server(cx),
+            Operator::McpServer => self.toggle_mcp_server(cx),
             Operator::ToggleCurvePoint => self.toggle_curve_points(),
             Operator::ToggleToolLabels => {
                 self.toggle_tool_labels();

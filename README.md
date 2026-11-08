@@ -138,15 +138,15 @@ closed shapes (curves kept).
 
 ## Designing with an AI agent (MCP)
 
-azam can serve the [Model Context Protocol](https://modelcontextprotocol.io) so an agent such as
-Claude Code designs in the window you have open: it reads and edits the pattern with CAD tools,
-drapes the garment and takes screenshots, and you watch every edit land (the status bar says what
-it just did) and can keep working alongside it.
+azam can serve the [Model Context Protocol](https://modelcontextprotocol.io) so an agent (an MCP
+client such as Claude Code) designs in the window you have open: it reads and edits the pattern
+with CAD tools, drapes the garment and takes screenshots, and you watch every edit land (the status
+bar says what it just did) and can keep working alongside it.
 
-The server runs only when you start it: press N over the 3D view and click Start Server in the
-sidebar's Claude Code panel (or File ▸ Claude Code Server, also in F3). The panel shows whether it
-runs, which client is connected and what it did last, and Copy Setup Command puts the command that
-connects Claude Code on the clipboard:
+The MCP server runs only when you start it: press N over the 3D view and click Start Server in the
+sidebar's MCP panel (or File ▸ MCP Server, also in F3). The panel shows whether it runs, which
+client is connected and what it did last; Copy URL copies its address,
+`http://127.0.0.1:7465/mcp`. To connect Claude Code:
 
 ```bash
 claude mcp add --transport http azam http://127.0.0.1:7465/mcp

@@ -648,7 +648,7 @@ impl Server {
         if self.interactive && out.is_ok() && !READ_ONLY.contains(&name) {
             // the person sees what the agent just did in the status bar
             self.with(cx, |app, _| {
-                app.status = format!("Claude Code: {}", name.replace('_', " "));
+                app.status = format!("MCP: {}", name.replace('_', " "));
             });
         }
         out
@@ -1673,7 +1673,7 @@ impl Server {
             return Ok((status.code.clone(), status.listen));
         }
         let config = azam_sync::Config {
-            presence: azam_sync::Presence::named("Claude", azam_sync::random_client_id()),
+            presence: azam_sync::Presence::named("MCP", azam_sync::random_client_id()),
             listen: Some(listen),
             discovery,
             wake: None,

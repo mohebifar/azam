@@ -1,6 +1,5 @@
-//! Starting and stopping the Claude Code server from the app, and its panel in the 3D view's
-//! sidebar (N): whether it runs, where, the command that connects Claude Code, and what the
-//! agent did last.
+//! Starting and stopping the MCP server from the app, and its panel in the 3D view's
+//! sidebar (N): whether it runs, its address, which client is connected and what it did last.
 
 use blenderui::prelude::*;
 
@@ -9,53 +8,49 @@ use crate::app::AzamApp;
 use crate::operators::Operator;
 
 impl AzamApp {
-    /// Sets the port the Claude Code server listens on when started.
+    /// Sets the port the MCP server listens on when started.
     pub fn set_mcp_port(&mut self, port: u16) {
         self.mcp_port = port;
     }
 
-    /// Whether the Claude Code server is running.
+    /// Whether the MCP server is running.
     #[must_use]
-    pub fn claude_server_running(&self) -> bool {
+    pub fn mcp_server_running(&self) -> bool {
         http::is_running()
     }
 
-    /// Starts the Claude Code server (the status bar says where, or why it could not).
-    pub fn start_claude_server(&mut self, cx: &mut App) {
+    /// Starts the MCP server (the status bar says where, or why it could not).
+    pub fn start_mcp_server(&mut self, cx: &mut App) {
         self.status = match http::start(cx.ui_sender(), self.mcp_port) {
-            Ok(()) => format!(
-                "Claude Code server on {}: connect with `{}`",
-                http::url(self.mcp_port),
-                http::claude_command(self.mcp_port)
-            ),
-            Err(e) => format!("Could not start the Claude Code server: {e}"),
+            Ok(()) => format!("MCP server running on {}", http::url(self.mcp_port)),
+            Err(e) => format!("Could not start the MCP server: {e}"),
         };
     }
 
-    /// Stops the Claude Code server.
-    pub fn stop_claude_server(&mut self) {
+    /// Stops the MCP server.
+    pub fn stop_mcp_server(&mut self) {
         http::stop();
-        self.status = "Claude Code server stopped".into();
+        self.status = "MCP server stopped".into();
     }
 
-    /// Starts the Claude Code server, or stops it when it runs.
-    pub fn toggle_claude_server(&mut self, cx: &mut App) {
+    /// Starts the MCP server, or stops it when it runs.
+    pub fn toggle_mcp_server(&mut self, cx: &mut App) {
         if http::is_running() {
-            self.stop_claude_server();
+            self.stop_mcp_server();
         } else {
-            self.start_claude_server(cx);
+            self.start_mcp_server(cx);
         }
     }
 
-    /// The rows of the sidebar's Claude Code panel.
-    pub(crate) fn claude_panel_rows(&mut self, cx: &mut Context<Self>) -> Vec<Div> {
+    /// The rows of the sidebar's MCP panel.
+    pub(crate) fn mcp_panel_rows(&mut self, cx: &mut Context<Self>) -> Vec<Div> {
         let running = http::is_running();
         let button = div()
             .class(if running { "pbtn primary" } else { "pbtn" })
-            .id("claude-server")
+            .id("mcp-server")
             .child(if running { "Stop Server" } else { "Start Server" })
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                this.run(Operator::ClaudeServer, window, cx);
+                this.run(Operator::McpServer, window, cx);
             }));
         let mut rows = vec![
             Self::info_row("Server", if running { "Running" } else { "Off" }.to_owned()),
@@ -65,25 +60,27 @@ impl AzamApp {
             rows.push(
                 div()
                     .class("hint")
-                    .child("Start the server to let Claude Code design in this window."),
+                    .child("Start the server so MCP clients can design in this window."),
             );
             return rows;
         }
         let port = self.mcp_port;
-        // the full URL is too wide for the sidebar; the copied command carries it
+        // the full URL is too wide for the sidebar; Copy URL carries it
         rows.push(Self::info_row("Address", format!("127.0.0.1:{port}")));
         rows.push(
-            div().class("pbuttons").child(
-                div()
-                    .class("pbtn")
-                    .id("claude-copy")
-                    .child("Copy Setup Command")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        window.write_clipboard(&http::claude_command(port));
-                        this.status = "Copied: paste it in a terminal to connect Claude Code".into();
-                        cx.notify();
-                    })),
-            ),
+            div()
+                .class("pbuttons")
+                .child(
+                    div()
+                        .class("pbtn")
+                        .id("mcp-copy")
+                        .child("Copy URL")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            window.write_clipboard(&http::url(port));
+                            this.status = format!("Copied {}", http::url(port));
+                            cx.notify();
+                        })),
+                ),
         );
         let (client, last) = http::activity();
         rows.push(Self::info_row(

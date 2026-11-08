@@ -381,8 +381,8 @@ pub enum Operator {
     Join,
     /// Stop sharing.
     StopSharing,
-    /// Start (or stop) the server Claude Code designs in this window through (MCP over HTTP).
-    ClaudeServer,
+    /// Start (or stop) the MCP server (HTTP) agents design in this window through.
+    McpServer,
     /// Import pieces from a DXF file.
     ImportDxf,
     /// Import pattern pieces from an SVG drawing.
@@ -583,7 +583,7 @@ impl Operator {
             Self::ShareFile => "Share via File Log",
             Self::Join => "Join Session…",
             Self::StopSharing => "Stop Sharing",
-            Self::ClaudeServer => "Claude Code Server",
+            Self::McpServer => "MCP Server",
             Self::ImportDxf => "Import DXF…",
             Self::ImportSvg => "Import SVG…",
             Self::ImportAvatar => "Import Avatar OBJ…",
@@ -676,7 +676,7 @@ impl Operator {
             Self::Share | Self::ShareFile => "COMMUNITY",
             Self::Join => "LINKED",
             Self::StopSharing => "UNLINKED",
-            Self::ClaudeServer => "CONSOLE",
+            Self::McpServer => "CONSOLE",
             Self::ImportDxf | Self::ImportSvg => "IMPORT",
             Self::ImportAvatar => "OUTLINER_OB_ARMATURE",
             Self::ImportU3m => "MATERIAL",
@@ -843,7 +843,7 @@ impl Operator {
             Self::ShareFile,
             Self::Join,
             Self::StopSharing,
-            Self::ClaudeServer,
+            Self::McpServer,
             Self::ImportDxf,
             Self::ImportSvg,
             Self::ImportAvatar,
@@ -1287,7 +1287,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::ShareFile),
         Item(O::Join),
         Item(O::StopSharing),
-        Item(O::ClaudeServer),
+        Item(O::McpServer),
         Separator,
         Item(O::ImportDxf),
         Item(O::ImportSvg),

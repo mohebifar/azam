@@ -24,9 +24,9 @@ struct Args {
     open: Option<String>,
     /// A live session to join (`host:port` or a share code).
     join: Option<String>,
-    /// Port of the Claude Code server.
+    /// Port of the MCP server.
     mcp_port: Option<u16>,
-    /// Start the Claude Code server on opening.
+    /// Start the MCP server on opening.
     mcp: bool,
     frames: usize,
     size: (f32, f32),
@@ -49,7 +49,7 @@ Options:
   --render-size WxH    image size for --render (default 1280x800)
   --samples N          samples per pixel for --render
   --join TARGET        join a live session (host:port or a share code) on opening
-  --mcp                start the Claude Code server (MCP over HTTP) on opening
+  --mcp                start the MCP server (HTTP) on opening
   --mcp-port N         its port (default 7465, or AZAM_MCP_PORT)
   -h, --help           show this help
 ";
@@ -235,7 +235,7 @@ fn write_render(app: &AzamApp, path: &str, size: (u32, u32), samples: u32) {
     }
 }
 
-/// Opens the window's links to the outside: the Claude Code server (started now only with `--mcp`
+/// Opens the window's links to the outside: the MCP server (started now only with `--mcp`
 /// or when Preferences ask for it), and the live session `--join` names.
 fn connect(window: &WindowHandle<AzamApp>, cx: &mut App, args: &Args) {
     let port = args
@@ -247,7 +247,7 @@ fn connect(window: &WindowHandle<AzamApp>, cx: &mut App, args: &Args) {
     window.root().update(cx, |app, cx| {
         app.set_mcp_port(port);
         if start {
-            app.start_claude_server(cx);
+            app.start_mcp_server(cx);
         }
     });
     if let Some(target) = args.join.clone() {

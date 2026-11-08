@@ -12,17 +12,14 @@ use serde::{Deserialize, Serialize};
 use crate::app::AzamApp;
 use crate::operators::Operator;
 
-/// What the Preferences window says about the Claude Code server on `port`.
+/// What the Preferences window says about the MCP server on `port`.
 fn mcp_note(port: u16) -> String {
     let state = if crate::mcp::http::is_running() {
         format!("Running on {}", crate::mcp::http::url(port))
     } else {
-        "Off: start it from the 3D view's sidebar (N) or File ▸ Claude Code Server".to_owned()
+        "Off: start it from the 3D view's sidebar (N) or File ▸ MCP Server".to_owned()
     };
-    format!(
-        "{state}. Connect Claude Code with: {}",
-        crate::mcp::http::claude_command(port)
-    )
+    format!("{state}. MCP clients connect to {}", crate::mcp::http::url(port))
 }
 
 /// File name of the preferences in the data folder.
@@ -49,7 +46,7 @@ pub struct Prefs {
     pub workspaces: Vec<crate::workspaces::WorkspaceTab>,
     /// Quick Favorites (Q): operators by label, in order.
     pub favorites: Vec<String>,
-    /// Start the Claude Code server (MCP over HTTP, loopback only) when azam opens.
+    /// Start the MCP server (MCP over HTTP, loopback only) when azam opens.
     pub mcp_autostart: bool,
 }
 
@@ -378,7 +375,7 @@ impl AzamApp {
                 ),
             )
             .child(check(
-                "Start Claude Code Server on Launch",
+                "Start MCP Server on Launch",
                 self.prefs.mcp_autostart,
                 |a, v| a.prefs.mcp_autostart = v,
                 cx,
