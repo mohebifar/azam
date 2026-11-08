@@ -380,6 +380,9 @@ impl AzamApp {
     /// The hint shown in the pattern editor for the current tool.
     pub(crate) fn tool_hint(&self) -> String {
         let sewing = self.tools.sew.as_ref();
+        if self.session.project.pieces.is_empty() && matches!(self.tool, Tool::Select | Tool::EditPoints) {
+            return "Empty board: draw a piece with Polygon (H) or Rectangle (S), import a DXF or SVG, or File ▸ New for a template".into();
+        }
         match self.tool {
             Tool::Select | Tool::Grab | Tool::Pin => {
                 "Click to select · drag to move · drag the handle to rotate (Shift snaps)".into()
@@ -547,6 +550,9 @@ impl AzamApp {
                 }
             },
         );
+        if result.is_ok() {
+            self.remember_last(crate::redo_panel::LastKind::Spread(id.clone(), from, to, how));
+        }
         self.status = match (result, how) {
             (Ok(()), azam_doc::Spread::Pleat { depth }) => format!("Added a {depth:.0} mm knife pleat"),
             (Ok(()), azam_doc::Spread::Fan { amount }) => format!("Spread the piece {amount:.0} mm"),
@@ -572,6 +578,13 @@ impl AzamApp {
                 azam_doc::sync_mirrors(p);
             }
         });
+        if done {
+            self.remember_last(crate::redo_panel::LastKind::Fillet(
+                pt.piece.clone(),
+                pt.index,
+                radius,
+            ));
+        }
         self.status = if done {
             format!("Rounded the corner ({radius:.0} mm)")
         } else {

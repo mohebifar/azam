@@ -956,9 +956,6 @@ impl AzamApp {
             Self::number(spec, value, cx, move |p, v| set(&mut p.avatar.body, v))
         };
         let girths = vec![
-            m(field("Height", 1200.0, 2200.0, 5.0), body.height, cx, |b, v| {
-                b.height = v;
-            }),
             m(
                 field("Bust / Chest", 600.0, 1600.0, 5.0),
                 body.bust,
@@ -987,6 +984,9 @@ impl AzamApp {
             ),
         ];
         let lengths = vec![
+            m(field("Height", 1200.0, 2200.0, 5.0), body.height, cx, |b, v| {
+                b.height = v;
+            }),
             m(
                 field("Shoulder Width", 280.0, 560.0, 5.0),
                 body.shoulder,

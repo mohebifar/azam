@@ -79,6 +79,8 @@ pub fn editor_menu(id: AreaId) -> Menu {
         MenuEntry::Item(Operator::SplitArea(id, Dir::Row)),
         MenuEntry::Item(Operator::SplitArea(id, Dir::Column)),
         MenuEntry::Item(Operator::JoinArea(id)),
+        MenuEntry::Separator,
+        MenuEntry::Item(Operator::MaximizeArea(id)),
     ]);
     Menu {
         title: "Editor Type",

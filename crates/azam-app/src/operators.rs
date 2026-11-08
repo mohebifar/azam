@@ -18,11 +18,20 @@ pub enum Template {
     Labadeh,
     /// Aba (cloak).
     Aba,
+    /// An empty board, to draft from scratch.
+    Blank,
 }
 
 impl Template {
     /// Every template, in menu order.
-    pub const ALL: [Self; 5] = [Self::Tee, Self::Dress, Self::Skirt, Self::Labadeh, Self::Aba];
+    pub const ALL: [Self; 6] = [
+        Self::Tee,
+        Self::Dress,
+        Self::Skirt,
+        Self::Labadeh,
+        Self::Aba,
+        Self::Blank,
+    ];
 
     /// The template keyed `key` (`tee`, `dress`, `skirt`, `labadeh`, `aba`).
     #[must_use]
@@ -39,6 +48,7 @@ impl Template {
             Self::Skirt => "Skirt",
             Self::Labadeh => "Labadeh",
             Self::Aba => "Aba",
+            Self::Blank => "Blank",
         }
     }
 
@@ -51,6 +61,7 @@ impl Template {
             Self::Skirt => "skirt",
             Self::Labadeh => "labadeh",
             Self::Aba => "aba",
+            Self::Blank => "blank",
         }
     }
 }
@@ -466,6 +477,8 @@ pub enum Operator {
     Preferences,
     /// Lay the selected piece's drape flat as a new piece (CLO's 3D to 2D).
     FlattenPiece,
+    /// Open the last auto save as an unsaved project.
+    RecoverAutoSave,
     /// Start or stop recording the simulation's frames for animation export.
     RecordAnimation,
     /// Export the recorded frames as an animated glTF.
@@ -480,6 +493,10 @@ pub enum Operator {
     SplitArea(crate::areas::AreaId, crate::areas::Dir),
     /// Join an area with its neighbour, keeping its editor.
     JoinArea(crate::areas::AreaId),
+    /// Show only this area, filling the window, or bring the others back (Ctrl Space).
+    MaximizeArea(crate::areas::AreaId),
+    /// Ctrl Space: maximize the area under the pointer, or bring the others back.
+    MaximizeHovered,
 }
 
 impl Operator {
@@ -561,6 +578,7 @@ impl Operator {
             Self::Preferences => "Preferences…",
             Self::FlattenPiece => "Flatten Draped Piece",
             Self::RecordAnimation => "Record Animation",
+            Self::RecoverAutoSave => "Recover Auto Save",
             Self::ExportAnimation => "Export Animation (.glb)…",
             Self::RenderImage => "Render Image",
             Self::New(_)
@@ -572,6 +590,7 @@ impl Operator {
             Self::SplitArea(_, crate::areas::Dir::Row) => "Vertical Split",
             Self::SplitArea(_, crate::areas::Dir::Column) => "Horizontal Split",
             Self::JoinArea(_) => "Join with Neighbour",
+            Self::MaximizeArea(_) | Self::MaximizeHovered => "Toggle Maximize Area",
         }
     }
 
@@ -633,11 +652,13 @@ impl Operator {
             Self::Preferences => "PREFERENCES",
             Self::FlattenPiece => "UV_DATA",
             Self::RecordAnimation => "REC",
+            Self::RecoverAutoSave => "RECOVER_LAST",
             Self::RenderImage => "RENDER_STILL",
             Self::SetEditor(_, e) => e.icon(),
             Self::SplitArea(_, crate::areas::Dir::Row) => "SPLIT_VERTICAL",
             Self::SplitArea(_, crate::areas::Dir::Column) => "SPLIT_HORIZONTAL",
             Self::JoinArea(_) => "AREA_JOIN",
+            Self::MaximizeArea(_) | Self::MaximizeHovered => "FULLSCREEN_ENTER",
             Self::SelectAll | Self::DetectHems | Self::ShadingPie | Self::ViewPie => return None,
         })
     }
@@ -653,6 +674,7 @@ impl Operator {
                 Self::SaveAs => "Shift Ctrl S",
                 Self::Quit => "Ctrl Q",
                 Self::Preferences => "Ctrl Comma",
+                Self::MaximizeArea(_) | Self::MaximizeHovered => "Ctrl Space",
                 Self::Undo => "Ctrl Z",
                 Self::Redo => "Shift Ctrl Z",
                 Self::SelectAll => "A",
@@ -705,6 +727,7 @@ impl Operator {
             ("m", true, false, _) => Self::Mirror,
             ("f3", ..) => Self::Search,
             ("f12", ..) => Self::RenderImage,
+            ("space", true, false, _) => Self::MaximizeHovered,
             ("space", ..) => Self::TogglePlay,
             ("r", false, false, true) => Self::ResetSim,
             ("right", false, false, false) => Self::StepSim,
@@ -788,6 +811,7 @@ impl Operator {
             Self::FlattenPiece,
             Self::RecordAnimation,
             Self::ExportAnimation,
+            Self::RecoverAutoSave,
             Self::RenderImage,
         ]);
         all.extend(
@@ -817,6 +841,7 @@ pub const NEW_MENU: &[Operator] = &[
     Operator::New(Template::Skirt),
     Operator::New(Template::Labadeh),
     Operator::New(Template::Aba),
+    Operator::New(Template::Blank),
 ];
 
 /// The 3D view's View ▸ Pie Menus submenu: the pies Z and the backquote key open, for finding
@@ -1034,15 +1059,70 @@ pub fn editor_menus() -> Vec<Menu> {
 
 /// The pattern tools grouped as on the shelf, for menus.
 fn tool_entries() -> Vec<MenuEntry> {
-    let mut entries = Vec::new();
-    for (i, group) in Tool::PATTERN_GROUPS.iter().enumerate() {
-        if i > 0 {
-            entries.push(MenuEntry::Separator);
-        }
-        entries.extend(group.iter().map(|&t| MenuEntry::Item(Operator::SetTool(t))));
-    }
-    entries
+    TOOL_MENUS
+        .iter()
+        .map(|&(title, icon, tools)| MenuEntry::Sub(title, icon, tools))
+        .collect()
 }
+
+/// The Garment menu's tool submenus, one per group of the tool shelf ([`Tool::PATTERN_GROUPS`]).
+pub const TOOL_MENUS: [(&str, &str, &[Operator]); 5] = [
+    (
+        "Edit",
+        "VERTEXSEL",
+        &[
+            Operator::SetTool(Tool::Select),
+            Operator::SetTool(Tool::EditPoints),
+            Operator::SetTool(Tool::Curvature),
+            Operator::SetTool(Tool::CurvePoint),
+            Operator::SetTool(Tool::AddPoint),
+            Operator::SetTool(Tool::Fillet),
+        ],
+    ),
+    (
+        "Draft",
+        "MESH_DATA",
+        &[
+            Operator::SetTool(Tool::Polygon),
+            Operator::SetTool(Tool::Rectangle),
+            Operator::SetTool(Tool::Ellipse),
+            Operator::SetTool(Tool::InternalLine),
+            Operator::SetTool(Tool::InternalEllipse),
+            Operator::SetTool(Tool::Notch),
+            Operator::SetTool(Tool::Dart),
+            Operator::SetTool(Tool::Cut),
+            Operator::SetTool(Tool::Spread),
+            Operator::SetTool(Tool::Pleat),
+        ],
+    ),
+    (
+        "Sewing",
+        "AUTOMERGE_ON",
+        &[
+            Operator::SetTool(Tool::Sew),
+            Operator::SetTool(Tool::FreeSew),
+            Operator::SetTool(Tool::EditSew),
+        ],
+    ),
+    (
+        "Trims",
+        "MOD_DASH",
+        &[
+            Operator::SetTool(Tool::Topstitch),
+            Operator::SetTool(Tool::EditTopstitch),
+            Operator::SetTool(Tool::Zipper),
+            Operator::SetTool(Tool::Button),
+            Operator::SetTool(Tool::Buttonhole),
+            Operator::SetTool(Tool::FastenButton),
+            Operator::SetTool(Tool::Graphic),
+        ],
+    ),
+    (
+        "Notes & Measure",
+        "TEXT",
+        &[Operator::SetTool(Tool::Comment), Operator::SetTool(Tool::Measure)],
+    ),
+];
 
 /// Sewing tools and seam edits.
 fn sewing_entries() -> Vec<MenuEntry> {
@@ -1075,6 +1155,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::Open),
         Item(O::Save),
         Item(O::SaveAs),
+        Item(O::RecoverAutoSave),
         Separator,
         Item(O::Share),
         Item(O::ShareFile),
@@ -1183,6 +1264,16 @@ pub fn top_menus() -> Vec<Menu> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_garment_menu_lists_every_shelf_tool_in_its_group() {
+        assert_eq!(TOOL_MENUS.len(), Tool::PATTERN_GROUPS.len());
+        for ((_, _, menu), group) in TOOL_MENUS.iter().zip(Tool::PATTERN_GROUPS) {
+            let tools: Vec<Operator> = group.iter().map(|&t| Operator::SetTool(t)).collect();
+            assert_eq!(*menu, tools.as_slice());
+        }
+    }
+
     use super::*;
     use blenderui::Modifiers;
 

@@ -881,3 +881,76 @@ fn the_grading_panel_shows_a_rule_table_for_the_selected_point() {
         }
     });
 }
+
+#[test]
+fn adjust_last_operation_redoes_pleats_and_fillets() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        let area = |cx: &App| {
+            azam_geom::signed_area(&ui.app(cx).session().project.pieces[&back].outline().poly).abs()
+        };
+        // a fillet first: the panel offers its radius, and a new radius rounds it again
+        ui.key(cx, "f", "f");
+        let first = ui.app(cx).session().project.pieces[&back].pts[0].pos;
+        ui.click(cx, first);
+        assert!(matches!(
+            ui.app(cx).last_op(),
+            Some(azam_app::redo_panel::LastKind::Fillet(..))
+        ));
+        let points = ui.app(cx).session().project.pieces[&back].pts.len();
+        win_update(cx, &ui, |app| app.adjust_last(0, 35.0));
+        assert_eq!(
+            ui.app(cx).session().project.pieces[&back].pts.len(),
+            points,
+            "redone, not added"
+        );
+        let pts = &ui.app(cx).session().project.pieces[&back].pts;
+        let (lo, hi) = pts.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+            (lo.min(p.pos.y), hi.max(p.pos.y))
+        });
+        let x = ui.centre(cx, &back).x;
+        ui.search(cx, "pleat");
+        let (sx, sy0) = ui.at(cx, Vec2::new(x, hi + 40.0));
+        let (_, sy1) = ui.at(cx, Vec2::new(x, lo - 40.0));
+        cx.simulate_drag(ui.win.id, (sx, sy0), (sx, sy1));
+        cx.draw(ui.win.id);
+        let pleated = area(cx);
+        assert!(matches!(
+            ui.app(cx).last_op(),
+            Some(azam_app::redo_panel::LastKind::Spread(..))
+        ));
+        win_update(cx, &ui, |app| app.adjust_last(0, 40.0));
+        assert!(
+            area(cx) > pleated + 500.0,
+            "a deeper pleat: {pleated} → {}",
+            area(cx)
+        );
+    });
+}
+
+fn win_update(cx: &mut App, ui: &Ui, f: impl FnOnce(&mut AzamApp)) {
+    ui.win.root().update(cx, |app, cx| {
+        f(app);
+        cx.notify();
+    });
+    cx.draw(ui.win.id);
+}
+
+#[test]
+fn a_modal_move_shows_how_far_it_has_gone() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        let centre = ui.centre(cx, &back);
+        ui.click(cx, centre);
+        let (x, y) = ui.at(cx, centre);
+        cx.simulate_mouse_move(ui.win.id, x, y);
+        ui.key(cx, "g", "g");
+        cx.simulate_mouse_move(ui.win.id, x + 40.0, y);
+        cx.draw(ui.win.id);
+        let status = ui.app(cx).status().to_owned();
+        assert!(status.starts_with("Move") && status.contains("ΔX"), "{status}");
+        ui.key(cx, "", "Escape");
+    });
+}

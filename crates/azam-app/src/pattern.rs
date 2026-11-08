@@ -242,7 +242,11 @@ impl PatternScene {
             };
             let zoom = view.zoom as f32;
             paint_grid(p, b, view, origin);
-            for piece in &self.pieces {
+            // selected pieces last, so one being moved or edited is drawn over its neighbours
+            for piece in self.pieces.iter().filter(|pc| !pc.selected) {
+                paint_piece(p, piece, &to_px, zoom, options);
+            }
+            for piece in self.pieces.iter().filter(|pc| pc.selected) {
                 paint_piece(p, piece, &to_px, zoom, options);
             }
             for stitch in &self.stitches {

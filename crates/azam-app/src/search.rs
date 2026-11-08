@@ -62,6 +62,17 @@ impl AzamApp {
                 rank(&op.label(), path.as_deref(), &query).map(|r| (r, i, op, path))
             })
             .collect();
+        // with nothing typed, the operators run lately come first, newest first
+        if query.trim().is_empty() {
+            for h in &mut hits {
+                if let Some(k) = self.recent_ops.iter().position(|o| *o == h.2) {
+                    h.0 = 0;
+                    h.1 = k;
+                } else {
+                    h.0 = 1;
+                }
+            }
+        }
         hits.sort_by_key(|&(r, i, ..)| (r, i));
         hits.into_iter()
             .take(SEARCH_LIMIT)

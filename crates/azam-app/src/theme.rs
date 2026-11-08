@@ -140,8 +140,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
           white-space: nowrap; text-overflow: ellipsis; }
 .pfield { flex: 1; min-width: 0; }
 .pvalue { flex: 1; color: #e6e6e6; }
-.pnote { color: #8f8f8f; font-size: 11px; padding: 2px 4px; white-space: nowrap; overflow: hidden;
-         text-overflow: ellipsis; flex-shrink: 0; min-width: 0; }
+.pnote { color: #8f8f8f; font-size: 11px; padding: 2px 4px; white-space: normal; flex-shrink: 0; min-width: 0; }
 .pbuttons { display: flex; gap: 2px; flex: 1; }
 .pbtn { flex: 1; height: 20px; display: flex; align-items: center; justify-content: center; gap: 4px;
         padding: 0 8px; white-space: nowrap;
@@ -229,6 +228,8 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .search { position: absolute; left: 50%; top: 80px; width: 460px; margin-left: -230px; z-index: 40;
           background: #181818; border: 1px solid #2e2e2e; border-radius: 6px; padding: 6px;
           box-shadow: 0 6px 20px rgba(0,0,0,0.6); }
+.search-empty { color: #8f8f8f; padding: 8px 6px; }
+.menu-item.hot { background: #3a3a3a; }
 .search-results { display: flex; flex-direction: column; margin-top: 4px; max-height: 360px;
                   overflow-y: scroll; }
 ";

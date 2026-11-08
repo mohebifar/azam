@@ -932,3 +932,102 @@ fn a_recorded_simulation_exports_as_an_animated_gltf() {
         );
     });
 }
+
+#[test]
+fn an_auto_save_recovers_the_project() {
+    let dir = std::env::temp_dir().join(format!("azam-autosave-{}", std::process::id()));
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        win.root().update(cx, |app, _| {
+            app.use_prefs_file(dir.join("prefs.json"));
+            app.edit_project("Rename", |p| "Saved Shirt".clone_into(&mut p.meta.name));
+        });
+        let path = win.root().read(cx).autosave_path().expect("an auto save place");
+        win.root().update(cx, |app, _| {
+            assert!(app.write_autosave_now(), "written");
+            app.edit_project("Rename", |p| "Lost Changes".clone_into(&mut p.meta.name));
+            app.recover_autosave();
+        });
+        let app = win.root().read(cx);
+        assert_eq!(app.session().project.meta.name, "Saved Shirt", "{}", app.status());
+        assert!(app.session().path.is_none(), "recovered as an unsaved project");
+        assert!(path.exists());
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn ctrl_space_maximizes_the_area_under_the_pointer() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let pat = cx.element_bounds(win.id, PATTERN_ID).expect("pattern editor");
+        cx.simulate_mouse_move(win.id, pat.origin.x + 200.0, pat.origin.y + 200.0);
+        cx.simulate_key_with(win.id, " ", "space", true, false);
+        cx.draw(win.id);
+        cx.draw(win.id);
+        assert!(
+            win.root().read(cx).maximized_area().is_some(),
+            "{}",
+            win.root().read(cx).status()
+        );
+        assert!(
+            cx.element_bounds(win.id, VIEWPORT_ID).is_none(),
+            "the 3D view is hidden"
+        );
+        let wide = cx.element_bounds(win.id, PATTERN_ID).expect("pattern editor");
+        assert!(
+            wide.size.width > pat.size.width * 1.5,
+            "the pattern editor fills the window"
+        );
+        cx.simulate_key_with(win.id, " ", "space", true, false);
+        cx.draw(win.id);
+        cx.draw(win.id);
+        assert_eq!(win.root().read(cx).maximized_area(), None);
+        assert!(
+            cx.element_bounds(win.id, VIEWPORT_ID).is_some(),
+            "the areas are back"
+        );
+    });
+}
+
+#[test]
+fn the_search_says_when_nothing_matches_and_lists_recent_commands_first() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        cx.simulate_mouse_move(win.id, 700.0, 400.0);
+        cx.draw(win.id);
+        // a command run from the keyboard becomes recent
+        cx.simulate_key(win.id, "", "Home");
+        cx.draw(win.id);
+        cx.simulate_key(win.id, "", "F3");
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let first = cx.element_bounds(win.id, "op-Frame All").map(|b| b.origin.y);
+        let other = cx.element_bounds(win.id, "op-Open…").map(|b| b.origin.y);
+        assert!(first.is_some(), "Frame All is listed");
+        assert!(
+            other.is_none_or(|o| first.is_some_and(|f| f < o)),
+            "the recent command comes first"
+        );
+        for c in "zzqx".chars() {
+            let s = c.to_string();
+            cx.simulate_key(win.id, &s, &s);
+        }
+        cx.draw(win.id);
+        cx.draw(win.id);
+        assert!(
+            cx.element_bounds(win.id, "op-Frame All").is_none(),
+            "no results for nonsense"
+        );
+    });
+}

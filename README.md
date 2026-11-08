@@ -28,11 +28,14 @@ cargo run --release -p azam-app -- --screenshot r.png --template dress --frames 
 On macOS, `scripts/bundle-macos.sh` builds `target/release/azam.app` (with the MakeHuman pack inside).
 
 `--workspace` is one of `design`, `grading`, `colorway`, `review`, `techpack`; `--template` one of
-`tee`, `dress`, `skirt`, `labadeh`, `aba`; `azam --help` lists every option.
+`tee`, `dress`, `skirt`, `labadeh`, `aba`, `blank`; `azam --help` lists every option.
 
 Blender's controls apply: middle drag orbits the 3D view (Shift pans), the wheel zooms, `Z` opens the
 shading pie, `` ` `` the view pie, `F3` the operator search, `Space` plays the simulation, `Ctrl Z`
-undoes. Right-click opens a context menu for what is under the pointer (a piece, empty pattern space,
+undoes, `Ctrl Space` maximizes the area under the pointer (again: all areas back). F3 lists the
+commands used last first, highlights the one Enter runs and says when nothing matches. The app auto
+saves a copy every two minutes to its data folder (File ▸ Recover Auto Save opens it; Preferences
+sets the interval or turns it off); File ▸ New ▸ Blank starts an empty board. Right-click opens a context menu for what is under the pointer (a piece, empty pattern space,
 the 3D view); the editor-type button at the left of every area header switches the editor it shows
 (choosing one another area shows swaps them); F3 ranks matches and shows each command's menu and
 shortcut. The editor-type menu also splits any area side by side or one over the other (as often as you like, as in
@@ -46,7 +49,8 @@ the move in mm, the turn in degrees or the scale factor exactly; click or Enter 
 right-click cancels and leaves nothing to redo); elsewhere these keys pick their tools. The 3D
 header's mode selector switches between Garment Mode and Arrange Mode (arrangement points shown).
 Drags and modal transforms are one undo step each; separate clicks are always separate steps.
-After a dart or a rectangle, an Adjust Last Operation panel changes its size. Pattern ▸ View ▸ Tool Names in Shelf
+After a dart, a rectangle, a fillet, a spread or a pleat, an Adjust Last Operation panel changes
+its size. During G/R/S the status bar shows how far the selection has moved, turned or scaled. Pattern ▸ View ▸ Tool Names in Shelf
 shows the tool shelves with labels. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
 `P` add point, `H` polygon, `S` rectangle, `D` dart, `U` cut a piece along a dragged line, `F` round
 a corner (radius in the tool settings bar), `N` sew (`Shift N` free sew), `M` measure; hover a tool

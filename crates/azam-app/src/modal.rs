@@ -185,6 +185,38 @@ impl AzamApp {
         true
     }
 
+    /// The live readout of a pointer-driven modal transform for the status bar (Blender's header
+    /// text): how far the selection has moved, turned or scaled so far.
+    pub(crate) fn modal_readout(&self) -> Option<String> {
+        let m = self.modal.as_ref().filter(|m| m.typed.is_empty())?;
+        let id = m.ids.first()?;
+        let (now, was) = (self.session.project.pieces.get(id)?, m.origin.pieces.get(id)?);
+        let (a, b) = (now.pts.first()?.pos, was.pts.first()?.pos);
+        let axis = match m.axis {
+            Some(Axis::X) => " along X",
+            Some(Axis::Y) => " along Y",
+            None => "",
+        };
+        Some(match m.kind {
+            ModalKind::Move => {
+                let d = a - b;
+                format!(
+                    "Move{axis}  ΔX {:.1} mm  ΔY {:.1} mm  (type a number for exact)",
+                    d.x, d.y
+                )
+            }
+            ModalKind::Rotate => {
+                let (u, v) = (b - m.center, a - m.center);
+                let deg = -(u.x * v.y - u.y * v.x).atan2(u.dot(v)).to_degrees();
+                format!("Rotate  {deg:.1}°  (type degrees for exact)")
+            }
+            ModalKind::Scale => {
+                let k = m.scale.as_ref().map_or(1.0, |s| s.3.x.max(s.3.y));
+                format!("Scale{axis}  ×{k:.3}  (type a factor for exact)")
+            }
+        })
+    }
+
     /// The number typed during the modal transform, if any.
     #[must_use]
     pub fn modal_typed(&self) -> Option<&str> {

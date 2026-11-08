@@ -96,10 +96,10 @@ fn seams_table(project: &Project) -> Div {
             .child(td().child(name(&seam.b)))
             .child(td().child(format!("{:.1}", a / 10.0)))
             .child(td().child(format!("{:.1}", b / 10.0)))
-            .child(
-                td().class(if ok { "tp-ok" } else { "tp-warn" })
-                    .child(format!("{:+.1} mm", a - b)),
-            )
+            .child(td().class(if ok { "tp-ok" } else { "tp-warn" }).child(format!(
+                "{:+.1} mm",
+                if (a - b).abs() < 0.05 { 0.0 } else { a - b }
+            )))
     });
     div().class("tp-table").child(
         table()

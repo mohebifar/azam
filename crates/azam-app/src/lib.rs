@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod areas;
+pub mod autosave;
 mod avatar_motion;
 mod context_menu;
 pub mod decals;

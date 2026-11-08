@@ -41,6 +41,10 @@ pub enum LastKind {
     Dart(LastDart),
     /// A drawn piece.
     Shape(LastShape),
+    /// A rounded corner: the piece, the corner's index before rounding, the radius (mm).
+    Fillet(PieceId, usize, f64),
+    /// A spread or pleat: the piece, the line dragged and how it opened.
+    Spread(PieceId, Vec2, Vec2, azam_doc::Spread),
 }
 
 /// The last adjustable operation and the project revision right after it: the panel shows while
@@ -91,40 +95,34 @@ impl AzamApp {
     /// The Adjust Last Operation panel, while the last edit can be adjusted.
     pub(crate) fn redo_panel(&mut self, cx: &mut Context<Self>) -> Option<Div> {
         let kind = self.last_op()?.clone();
-        let (title, settings) = match &kind {
+        let setting = |label, value, min, max| Setting {
+            label,
+            value,
+            min,
+            max,
+        };
+        let (title, settings): (&str, Vec<Setting>) = match &kind {
             LastKind::Dart(d) => (
                 "Add Dart",
-                [
-                    Setting {
-                        label: "Width (mm)",
-                        value: d.width,
-                        min: 1.0,
-                        max: 200.0,
-                    },
-                    Setting {
-                        label: "Depth (mm)",
-                        value: d.depth,
-                        min: 1.0,
-                        max: 400.0,
-                    },
+                vec![
+                    setting("Width (mm)", d.width, 1.0, 200.0),
+                    setting("Depth (mm)", d.depth, 1.0, 400.0),
                 ],
             ),
             LastKind::Shape(s) => (
                 s.shape.name(),
-                [
-                    Setting {
-                        label: "Width (mm)",
-                        value: s.size.x.abs(),
-                        min: 5.0,
-                        max: 3000.0,
-                    },
-                    Setting {
-                        label: "Height (mm)",
-                        value: s.size.y.abs(),
-                        min: 5.0,
-                        max: 3000.0,
-                    },
+                vec![
+                    setting("Width (mm)", s.size.x.abs(), 5.0, 3000.0),
+                    setting("Height (mm)", s.size.y.abs(), 5.0, 3000.0),
                 ],
+            ),
+            LastKind::Fillet(_, _, r) => ("Fillet", vec![setting("Radius (mm)", *r, 1.0, 300.0)]),
+            LastKind::Spread(_, _, _, azam_doc::Spread::Pleat { depth }) => {
+                ("Add Pleat", vec![setting("Depth (mm)", *depth, 1.0, 500.0)])
+            }
+            LastKind::Spread(_, _, _, azam_doc::Spread::Fan { amount }) => (
+                "Slash and Spread",
+                vec![setting("Opening (mm)", *amount, 1.0, 500.0)],
             ),
         };
         let mut body = div().class("panel-body");
@@ -164,7 +162,8 @@ impl AzamApp {
         )
     }
 
-    /// Redoes the last adjustable operation with setting `index` (0 or 1) set to `value`.
+    /// Redoes the last adjustable operation with setting `index` (its first, second…) set to
+    /// `value`.
     pub fn adjust_last(&mut self, index: usize, value: f64) {
         let Some(mut kind) = self.last_op().cloned() else {
             return;
@@ -213,6 +212,45 @@ impl AzamApp {
                     s.size.x.abs(),
                     s.size.y.abs()
                 );
+            }
+            LastKind::Fillet(piece, index, radius) => {
+                *radius = value;
+                let (piece, index, r) = (piece.clone(), *index, *radius);
+                self.session.edit("Fillet", |p| {
+                    azam_doc::fillet_corner(p, &piece, index, r);
+                    azam_doc::sync_mirrors(p);
+                });
+                self.tools.fillet.radius = r;
+                self.status = format!("Rounded the corner ({r:.0} mm)");
+            }
+            LastKind::Spread(piece, from, to, how) => {
+                match how {
+                    azam_doc::Spread::Pleat { depth } => {
+                        *depth = value;
+                        self.tools.spread.depth = value;
+                    }
+                    azam_doc::Spread::Fan { amount } => {
+                        *amount = value;
+                        self.tools.spread.amount = value;
+                    }
+                }
+                let (piece, from, to, how) = (piece.clone(), *from, *to, *how);
+                let mut result = Err(azam_doc::CutError::NoPiece);
+                self.session.edit(
+                    if matches!(how, azam_doc::Spread::Pleat { .. }) {
+                        "Add Pleat"
+                    } else {
+                        "Slash and Spread"
+                    },
+                    |p| {
+                        result = azam_doc::spread_piece(p, &piece, from, to, how);
+                        azam_doc::sync_mirrors(p);
+                    },
+                );
+                self.status = match result {
+                    Ok(()) => format!("Spread {value:.0} mm"),
+                    Err(e) => format!("Not spread: {e}"),
+                };
             }
         }
         self.remember_last(kind);

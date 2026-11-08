@@ -103,6 +103,8 @@ const PROJECT_FILTER: &str = "azam Projects\t*.azam.json *.json";
 const COMPACT_HEADER_PX: f32 = 760.0;
 /// Below this width it also leaves out the fit map selector and the avatar and grid buttons.
 const NARROW_HEADER_PX: f32 = 600.0;
+/// How many recently run operators F3 remembers.
+const RECENT_OPS: usize = 6;
 /// Radius of a pie menu's ring of items, in logical pixels.
 const PIE_RADIUS: f32 = 110.0;
 
@@ -138,6 +140,8 @@ pub struct AzamApp {
     pub(crate) show_sidebar: bool,
     /// The last dart cut, for Adjust Last Operation.
     pub(crate) last_op: Option<crate::redo_panel::LastOp>,
+    /// When the project was last auto saved.
+    pub(crate) autosave: crate::autosave::AutosaveState,
     /// The user's preferences (interface options, custom shortcuts).
     pub(crate) prefs: crate::prefs::Prefs,
     /// Where the preferences are saved (none in tests and headless runs).
@@ -187,6 +191,10 @@ pub struct AzamApp {
     pub(crate) scene3d: Scene3d,
     /// The Render window (F12), while open.
     pub(crate) render_view: Option<crate::render_view::RenderView>,
+    /// The area maximized to fill the window (Ctrl Space), if any.
+    pub(crate) maximized: Option<crate::areas::AreaId>,
+    /// Operators run lately, newest first (F3 lists them first when nothing is typed).
+    pub(crate) recent_ops: Vec<Operator>,
     /// The viewport's own path trace in Rendered shading.
     pub(crate) live_render: Option<crate::render_view::LiveRender>,
     pub(crate) tooltip: Option<crate::tooltip::Tooltip>,
@@ -209,6 +217,7 @@ const fn doc_template(t: Template) -> DocTemplate {
         Template::Skirt => DocTemplate::Skirt,
         Template::Labadeh => DocTemplate::Labadeh,
         Template::Aba => DocTemplate::Aba,
+        Template::Blank => DocTemplate::Blank,
     }
 }
 
@@ -275,6 +284,7 @@ impl AzamApp {
             last_op: None,
             modal: None,
             prefs: crate::prefs::Prefs::default(),
+            autosave: crate::autosave::AutosaveState::at_revision(session.revision),
             prefs_path: None,
             prefs_view: None,
             area_bounds: std::collections::BTreeMap::new(),
@@ -308,6 +318,8 @@ impl AzamApp {
             scene3d: Scene3d::default(),
             render_view: None,
             live_render: None,
+            recent_ops: Vec::new(),
+            maximized: None,
             tooltip: None,
             open_submenu: None,
             submenu_anchor: (0.0, 0.0),
@@ -440,6 +452,9 @@ impl AzamApp {
         if self.scene3d.building() {
             return "Building avatar…".into();
         }
+        if self.session.project.pieces.is_empty() {
+            return "No pieces yet: draw one in the pattern editor".into();
+        }
         let Some(sim) = &self.scene3d.sim else {
             return "No simulation".into();
         };
@@ -476,6 +491,11 @@ impl AzamApp {
     /// Runs `op`.
     #[allow(clippy::too_many_lines, reason = "one arm per operator")]
     pub(crate) fn run(&mut self, op: Operator, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(op, Operator::Search) && Operator::searchable().contains(&op) {
+            self.recent_ops.retain(|o| *o != op);
+            self.recent_ops.insert(0, op);
+            self.recent_ops.truncate(RECENT_OPS);
+        }
         let from_menu = self.open_menu.is_some();
         self.open_menu = None;
         self.pie = None;
@@ -546,6 +566,23 @@ impl AzamApp {
             Operator::SplitArea(id, dir) => {
                 self.split_area(id, dir);
             }
+            Operator::MaximizeArea(id) => self.toggle_maximize(id),
+            Operator::MaximizeHovered => {
+                let p = window.mouse_position();
+                let hovered = self.maximized.or_else(|| {
+                    self.layout().leaves().into_iter().map(|(id, _)| id).find(|id| {
+                        self.area_bounds.get(id).is_some_and(|b| {
+                            p.x.0 >= b.origin.x
+                                && p.x.0 < b.origin.x + b.size.width
+                                && p.y.0 >= b.origin.y
+                                && p.y.0 < b.origin.y + b.size.height
+                        })
+                    })
+                });
+                if let Some(id) = hovered {
+                    self.toggle_maximize(id);
+                }
+            }
             Operator::JoinArea(id) => {
                 if !self.join_area(id) {
                     self.status = "That area fills the window alone".into();
@@ -568,6 +605,7 @@ impl AzamApp {
             Operator::Preferences => self.prefs_view = Some(crate::prefs::PrefsView::default()),
             Operator::FlattenPiece => self.flatten_active_piece(),
             Operator::RecordAnimation => self.toggle_recording(),
+            Operator::RecoverAutoSave => self.recover_autosave(),
             Operator::ExportAnimation => self.export(ExportKind::Animation),
             Operator::ToggleAvatar => self
                 .session
@@ -816,6 +854,37 @@ impl AzamApp {
         }
     }
 
+    /// Blender's view label: the preset the camera looks along ("Front Orthographic") or "User",
+    /// with the projection.
+    fn view_label(&self) -> String {
+        use std::f32::consts::{FRAC_PI_2, PI};
+        let c = &self.viewport.camera;
+        let near = |a: f32, b: f32| ((a - b + PI).rem_euclid(2.0 * PI) - PI).abs() < 1e-3;
+        let name = if c.pitch > 1.5 {
+            "Top"
+        } else if c.pitch.abs() > 1e-3 {
+            "User"
+        } else if near(c.yaw, 0.0) {
+            "Front"
+        } else if near(c.yaw, PI) {
+            "Back"
+        } else if near(c.yaw, FRAC_PI_2) {
+            "Right"
+        } else if near(c.yaw, -FRAC_PI_2) {
+            "Left"
+        } else {
+            "User"
+        };
+        format!(
+            "{name} {}",
+            if c.orthographic {
+                "Orthographic"
+            } else {
+                "Perspective"
+            }
+        )
+    }
+
     /// Whether the pointer is over the 3D view.
     fn over_3d(&self, window: &Window) -> bool {
         self.viewport.bounds.is_some_and(|b| {
@@ -1017,11 +1086,17 @@ impl AzamApp {
         }
         self.publish_cursor(e.position);
         if self.piece_drag_move(e.position) || self.modal_scale_move(e.position) {
+            if let Some(text) = self.piece_modal_readout().or_else(|| self.modal_readout()) {
+                self.status = text;
+            }
             cx.notify();
             return;
         }
         let mut changed = self.viewport.navigate(e.position);
         changed |= self.pattern_drag_move(e.position, e.modifiers);
+        if changed && let Some(text) = self.modal_readout() {
+            self.status = text;
+        }
         if let Some(grab) = self.scene3d.grab
             && let Some((origin, dir)) = self.viewport.ray(e.position)
             && let Some(sim) = self.scene3d.sim.as_mut()
@@ -1064,7 +1139,7 @@ impl AzamApp {
             .child(
                 div()
                     .class("logo")
-                    .child(self.icons.sized("BLENDER", 18.0, Some(0xe87d0d))),
+                    .child(self.icons.sized("MOD_CLOTH", 18.0, Some(0xe87d0d))),
             );
         for i in 0..self.top_menu_count {
             bar = bar.child(self.menu_title(i, cx));
@@ -1522,11 +1597,7 @@ impl AzamApp {
                 Operator::TogglePlay,
                 cx,
             ));
-        let projection = if self.viewport.camera.orthographic {
-            "User Orthographic"
-        } else {
-            "User Perspective"
-        };
+        let projection = self.view_label();
         let badge = self.sim_status();
         let body = div()
             .class("area-body")
@@ -1729,8 +1800,18 @@ impl AzamApp {
     fn search_popup(&mut self, cx: &mut Context<Self>) -> Div {
         let query = self.search.clone().unwrap_or_default();
         let mut results = div().class("search-results");
-        for (op, path) in self.search_results() {
-            results = results.child(self.menu_item_in(op, path, cx));
+        let hits = self.search_results();
+        if hits.is_empty() {
+            results = results.child(
+                div()
+                    .class("search-empty")
+                    .child(format!("No command matches “{}”", query.trim())),
+            );
+        }
+        for (k, (op, path)) in hits.into_iter().enumerate() {
+            // the first result is what Enter runs
+            let row = self.menu_item_in(op, path, cx);
+            results = results.child(if k == 0 { row.class("hot") } else { row });
         }
         div()
             .class("search")
@@ -1900,6 +1981,7 @@ impl AzamApp {
         self.pattern_bounds = window.bounds_of(PATTERN_ID);
         self.note_areas(window);
         self.frames += 1;
+        self.autosave_if_due();
         self.sync_collab();
         self.sync_scene();
         if let Some(i) = self.open_menu
@@ -1963,7 +2045,33 @@ impl AzamApp {
     /// The editor areas of the current workspace.
     fn workspace_areas(&mut self, cx: &mut Context<Self>) -> Div {
         let layout = self.layout_mut().clone();
-        div().class("areas").child(self.area_tree(&layout, cx).flex_1())
+        // a maximized area fills the window on its own (while it still exists)
+        let shown = self
+            .maximized
+            .and_then(|id| layout.leaves().into_iter().find(|&(i, _)| i == id))
+            .map_or(layout, |(id, editor)| crate::areas::AreaNode::Leaf { id, editor });
+        div().class("areas").child(self.area_tree(&shown, cx).flex_1())
+    }
+
+    /// Maximizes area `id`, or brings the other areas back if it is maximized already.
+    pub fn toggle_maximize(&mut self, id: crate::areas::AreaId) {
+        self.maximized = if self.maximized == Some(id) {
+            None
+        } else {
+            Some(id)
+        };
+        self.framed = false;
+        self.status = if self.maximized.is_some() {
+            "Area maximized (Ctrl Space brings the others back)".into()
+        } else {
+            "All areas back".into()
+        };
+    }
+
+    /// The area maximized to fill the window, if any.
+    #[must_use]
+    pub fn maximized_area(&self) -> Option<crate::areas::AreaId> {
+        self.maximized
     }
 
     /// Menus, popups and pies drawn over the window.

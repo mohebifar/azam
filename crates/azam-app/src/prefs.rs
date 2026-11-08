@@ -25,6 +25,10 @@ pub struct Prefs {
     pub tool_labels: bool,
     /// Custom shortcuts: key combination (see [`combo_of`]) to the label of the operator it runs.
     pub keymap: BTreeMap<String, String>,
+    /// Save a copy of the project to the data folder now and then (File ▸ Recover Auto Save).
+    pub autosave: bool,
+    /// Minutes between auto saves.
+    pub autosave_minutes: f64,
 }
 
 impl Default for Prefs {
@@ -33,6 +37,8 @@ impl Default for Prefs {
             tooltips: true,
             tool_labels: false,
             keymap: BTreeMap::new(),
+            autosave: true,
+            autosave_minutes: 2.0,
         }
     }
 }
@@ -321,6 +327,28 @@ impl AzamApp {
                 },
                 cx,
             ))
+            .child(check(
+                "Auto Save",
+                self.prefs.autosave,
+                |a, v| a.prefs.autosave = v,
+                cx,
+            ))
+            .child(
+                div().class("prow").child(
+                    NumberField()
+                        .attr("label", "Minutes Between Saves")
+                        .value(format!("{:.0}", self.prefs.autosave_minutes))
+                        .min(1.0)
+                        .max(60.0)
+                        .step(1.0)
+                        .class("pfield")
+                        .on_input(cx.listener(|this, e: &ChangeEvent, _, cx| {
+                            this.prefs.autosave_minutes = e.number.clamp(1.0, 60.0);
+                            this.save_prefs();
+                            cx.notify();
+                        })),
+                ),
+            )
             .child(div().class("pnote").child(match &self.prefs_path {
                 Some(p) => format!("Saved in {}", p.display()),
                 None => "Not saved (no data folder).".to_owned(),

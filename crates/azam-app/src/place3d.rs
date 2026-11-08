@@ -117,6 +117,25 @@ impl AzamApp {
         true
     }
 
+    /// The live readout of a modal 3D move or turn for the status bar.
+    pub(crate) fn piece_modal_readout(&self) -> Option<String> {
+        let d = self
+            .piece_drag
+            .as_ref()
+            .filter(|d| d.modal && d.typed.is_empty())?;
+        Some(if d.turn {
+            format!(
+                "Turn  {:.1}°  (type degrees for exact)",
+                d.total_turn.to_degrees()
+            )
+        } else {
+            format!(
+                "Move  X {:.0}  Y {:.0}  Z {:.0} mm  (X/Y/Z lock, type mm for exact)",
+                d.total.x, d.total.y, d.total.z
+            )
+        })
+    }
+
     /// Whether a modal 3D move or turn is running.
     #[must_use]
     pub fn piece_modal(&self) -> bool {
