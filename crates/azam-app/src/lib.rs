@@ -15,6 +15,7 @@ pub mod editors;
 pub mod export;
 pub mod fabric_library;
 pub mod garment3d;
+pub mod history_view;
 mod icons;
 pub mod import;
 pub mod marker_view;

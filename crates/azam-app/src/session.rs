@@ -193,6 +193,34 @@ impl Session {
         back
     }
 
+    /// The undo history: the steps done (oldest first; the last is where the project is now) and
+    /// the steps undone (in the order Redo would bring them back).
+    #[must_use]
+    pub fn history(&self) -> (Vec<String>, Vec<String>) {
+        (
+            self.undo.iter().map(|s| s.label.clone()).collect(),
+            self.redo.iter().rev().map(|s| s.label.clone()).collect(),
+        )
+    }
+
+    /// Goes to step `step` of the history: 0 is before the first step done, the number of steps
+    /// done is now, beyond that steps undone come back. Returns how many steps it moved.
+    pub fn jump_to(&mut self, step: usize) -> usize {
+        let done = self.undo.len();
+        let mut moved = 0;
+        if step < done {
+            while self.undo.len() > step && self.undo().is_some() {
+                moved += 1;
+            }
+        } else {
+            let target = step.min(done + self.redo.len());
+            while self.undo.len() < target && self.redo().is_some() {
+                moved += 1;
+            }
+        }
+        moved
+    }
+
     /// Replaces the project (New, Open), clearing the history. Stops sharing the old one.
     pub fn replace(&mut self, project: Project, path: Option<PathBuf>) {
         self.collab = None;
@@ -347,6 +375,31 @@ mod tests {
         );
         session.undo();
         assert_eq!(at(&session, "shR"), right_before, "undo puts the mirror back too");
+    }
+
+    #[test]
+    fn the_history_lists_steps_and_jumps_to_any() {
+        let mut session = Session::new(new_project(Template::Tee));
+        rename(&mut session, "Rename A", "a");
+        rename(&mut session, "Rename B", "b");
+        rename(&mut session, "Rename C", "c");
+        assert_eq!(
+            session.history(),
+            (
+                vec!["Rename A".into(), "Rename B".into(), "Rename C".into()],
+                vec![]
+            )
+        );
+        assert_eq!(session.jump_to(1), 2, "two steps back");
+        assert_eq!(session.project.meta.name, "a");
+        let (done, undone) = session.history();
+        assert_eq!(done, ["Rename A"]);
+        assert_eq!(undone, ["Rename B", "Rename C"], "in the order they come back");
+        assert_eq!(session.jump_to(3), 2);
+        assert_eq!(session.project.meta.name, "c");
+        session.jump_to(0);
+        assert_ne!(session.project.meta.name, "a", "the original");
+        assert_eq!(session.jump_to(99), 3, "clamped to the newest step");
     }
 
     #[test]

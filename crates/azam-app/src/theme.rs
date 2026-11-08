@@ -237,6 +237,11 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .keymap-list { display: flex; flex-direction: column; max-height: 420px; overflow-y: scroll; margin-top: 4px; }
 .keymap-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; }
 .keymap-row:hover { background: #2c2c2c; }
+.keymap-star { width: 16px; color: #8a8a8a; text-align: center; }
+.keymap-star.on { color: #f0b429; }
+.hist-now { background: #3a4b66; }
+.hist-undone .menu-label { color: #808080; }
+.menu-heading { padding: 3px 10px 5px 10px; color: #a8a8a8; }
 .keymap-name { flex: 1; color: #e6e6e6; white-space: nowrap; overflow: hidden; min-width: 0; }
 .keymap-key { width: 120px; color: #8f8f8f; text-align: right; }
 .keymap-key.custom { color: #e6e6e6; font-weight: 600; }

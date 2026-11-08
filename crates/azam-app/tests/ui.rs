@@ -1379,6 +1379,35 @@ fn new_colorway_copies_the_active_one_and_makes_it_active() {
 }
 
 #[test]
+fn quick_favorites_are_starred_kept_and_listed() {
+    use azam_app::operators::Operator;
+    let dir = std::env::temp_dir().join(format!("azam-favs-{}", std::process::id()));
+    let prefs = dir.join("prefs.json");
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        win.root().update(cx, |app, _| {
+            app.use_prefs_file(prefs.clone());
+            assert!(app.favorites().is_empty());
+            app.toggle_favorite(&Operator::RenderImage.label());
+            app.toggle_favorite(&Operator::Mirror.label());
+            assert_eq!(app.favorites(), [Operator::RenderImage, Operator::Mirror]);
+        });
+        let again = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        again.root().update(cx, |app, _| {
+            app.use_prefs_file(prefs.clone());
+            assert_eq!(app.favorites(), [Operator::RenderImage, Operator::Mirror], "kept");
+            app.toggle_favorite(&Operator::RenderImage.label());
+            assert_eq!(app.favorites(), [Operator::Mirror], "unstarred");
+        });
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn the_colorways_editor_shows_every_colorway_and_picks_one() {
     Application::headless().run(|cx| {
         let win = cx

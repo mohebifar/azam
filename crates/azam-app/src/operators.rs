@@ -511,6 +511,10 @@ pub enum Operator {
     MaximizeHovered,
     /// Put the current workspace's areas back as they start.
     ResetLayout,
+    /// Show the undo history and go to any step of it.
+    UndoHistory,
+    /// Open the Quick Favorites menu.
+    QuickFavorites,
     /// Add a workspace tab of a built-in kind.
     AddWorkspace(crate::app::Workspace),
     /// Copy the active workspace tab and its layout.
@@ -596,6 +600,8 @@ impl Operator {
             Self::Quit => "Quit",
             Self::Undo => "Undo",
             Self::Redo => "Redo",
+            Self::UndoHistory => "Undo History…",
+            Self::QuickFavorites => "Quick Favorites",
             Self::SelectAll => "Select All",
             Self::Duplicate => "Duplicate Pieces",
             Self::Delete => "Delete",
@@ -686,6 +692,7 @@ impl Operator {
             Self::Quit => "QUIT",
             Self::Undo => "LOOP_BACK",
             Self::Redo => "LOOP_FORWARDS",
+            Self::QuickFavorites => "SOLO_ON",
             Self::Duplicate | Self::DuplicateWorkspace => "DUPLICATE",
             Self::Delete => "TRASH",
             Self::Mirror => "MOD_MIRROR",
@@ -721,7 +728,7 @@ impl Operator {
             Self::Preferences => "PREFERENCES",
             Self::FlattenPiece => "UV_DATA",
             Self::RecordAnimation => "REC",
-            Self::RecoverAutoSave => "RECOVER_LAST",
+            Self::RecoverAutoSave | Self::UndoHistory => "RECOVER_LAST",
             Self::RenderImage => "RENDER_STILL",
             Self::SetEditor(_, e) => e.icon(),
             Self::SplitArea(_, crate::areas::Dir::Row) => "SPLIT_VERTICAL",
@@ -747,6 +754,8 @@ impl Operator {
                 Self::MaximizeArea(_) | Self::MaximizeHovered => "Ctrl Space",
                 Self::Undo => "Ctrl Z",
                 Self::Redo => "Shift Ctrl Z",
+                Self::UndoHistory => "Ctrl Alt Z",
+                Self::QuickFavorites => "Q",
                 Self::SelectAll => "A",
                 Self::Duplicate => "Shift D",
                 Self::Delete => "X",
@@ -788,7 +797,9 @@ impl Operator {
             ("s", true, true, _) => Self::SaveAs,
             ("q", true, _, _) => Self::Quit,
             ("comma" | ",", true, false, _) => Self::Preferences,
+            ("z", true, false, true) => Self::UndoHistory,
             ("z", true, false, _) => Self::Undo,
+            ("q", false, false, false) => Self::QuickFavorites,
             ("z", true, true, _) | ("y", true, _, _) => Self::Redo,
             ("a", false, false, false) => Self::SelectAll,
             ("d", false, true, _) => Self::Duplicate,
@@ -832,6 +843,8 @@ impl Operator {
             Self::ImportSvg,
             Self::ImportAvatar,
             Self::ImportU3m,
+            Self::UndoHistory,
+            Self::QuickFavorites,
             Self::DuplicateWorkspace,
             Self::RenameWorkspace,
             Self::DeleteWorkspace,
@@ -1299,6 +1312,7 @@ pub fn top_menus() -> Vec<Menu> {
             entries: vec![
                 Item(O::Undo),
                 Item(O::Redo),
+                Item(O::UndoHistory),
                 Separator,
                 Item(O::SelectAll),
                 Item(O::Duplicate),

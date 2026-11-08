@@ -175,6 +175,10 @@ pub struct AzamApp {
     pub(crate) marker_drag: Option<crate::marker_view::MarkerDrag>,
     /// Where the Marker editor last drew the marker.
     pub(crate) marker_frame: crate::marker_view::MarkerFrame,
+    /// The undo history or Quick Favorites popup, while open.
+    pub(crate) history_open: Option<crate::history_view::HistoryPopup>,
+    /// Where the pointer last was over the window, logical pixels.
+    pub(crate) pointer: (f32, f32),
     /// The workspace tab last clicked and when (two quick clicks rename it).
     last_tab_click: Option<(usize, std::time::Instant)>,
     pub(crate) tool: Tool,
@@ -317,6 +321,8 @@ impl AzamApp {
             active_tab: 0,
             rename_prompt: None,
             last_tab_click: None,
+            history_open: None,
+            pointer: (0.0, 0.0),
             marker_cache: None,
             marker_drag: None,
             marker_frame: std::sync::Arc::default(),
@@ -562,6 +568,12 @@ impl AzamApp {
                     .session
                     .undo()
                     .map_or_else(|| "Nothing to undo".into(), |l| format!("Undo {l}"));
+            }
+            Operator::UndoHistory => {
+                self.history_open = Some(crate::history_view::HistoryPopup::UndoHistory);
+            }
+            Operator::QuickFavorites => {
+                self.history_open = Some(crate::history_view::HistoryPopup::Favorites);
             }
             Operator::Redo => {
                 self.status = self
@@ -842,6 +854,7 @@ impl AzamApp {
             self.file_prompt = None;
             self.join_prompt = None;
             self.rename_prompt = None;
+            self.history_open = None;
             self.cancel_pattern_tool();
             window.focus_id("root");
             cx.notify();
@@ -1140,6 +1153,7 @@ impl AzamApp {
     }
 
     fn on_mouse_move(&mut self, e: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.pointer = (e.position.x.0, e.position.y.0);
         if self.drag_border(e.position) {
             cx.notify();
             return;
@@ -1401,6 +1415,7 @@ impl AzamApp {
             || self.search.is_some()
             || self.file_prompt.is_some()
             || self.rename_prompt.is_some()
+            || self.history_open.is_some()
             || self.pie.is_some()
             || self.prefs_view.is_some()
     }
@@ -2235,12 +2250,17 @@ impl AzamApp {
                 )
                 .child(self.dropdown(i, cx));
         }
-        if self.search.is_some() || self.file_prompt.is_some() || self.rename_prompt.is_some() {
+        if self.search.is_some()
+            || self.file_prompt.is_some()
+            || self.rename_prompt.is_some()
+            || self.history_open.is_some()
+        {
             root = root.child(div().class("menu-scrim").on_click(cx.listener(
                 |this, _: &ClickEvent, window, cx| {
                     this.search = None;
                     this.file_prompt = None;
                     this.rename_prompt = None;
+                    this.history_open = None;
                     window.focus_id("root");
                     cx.notify();
                 },
@@ -2257,6 +2277,9 @@ impl AzamApp {
         }
         if let Some(text) = self.rename_prompt.clone() {
             root = root.child(self.rename_popup(&text, cx));
+        }
+        if let Some(which) = self.history_open {
+            root = root.child(self.history_popup(which, cx));
         }
         if let Some(pie) = self.pie {
             root = root.child(self.pie_menu(pie, cx));

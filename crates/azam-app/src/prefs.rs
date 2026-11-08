@@ -33,6 +33,8 @@ pub struct Prefs {
     pub layouts: BTreeMap<String, serde_json::Value>,
     /// The workspace tabs, in order (empty: the built-in ones).
     pub workspaces: Vec<crate::workspaces::WorkspaceTab>,
+    /// Quick Favorites (Q): operators by label, in order.
+    pub favorites: Vec<String>,
 }
 
 impl Default for Prefs {
@@ -45,6 +47,7 @@ impl Default for Prefs {
             autosave_minutes: 2.0,
             layouts: BTreeMap::new(),
             workspaces: Vec::new(),
+            favorites: Vec::new(),
         }
     }
 }
@@ -384,8 +387,21 @@ impl AzamApp {
                     }
                     cx.notify();
                 }));
+            let starred = self.prefs.favorites.contains(&label);
+            let star = {
+                let label = label.clone();
+                div()
+                    .class(if starred { "keymap-star on" } else { "keymap-star" })
+                    .id(format!("fav-{label}"))
+                    .child(if starred { "★" } else { "☆" })
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.toggle_favorite(&label);
+                        cx.notify();
+                    }))
+            };
             let mut row = div()
                 .class("keymap-row")
+                .child(star)
                 .child(div().class("keymap-name").child(label.clone()))
                 .child(
                     div()
