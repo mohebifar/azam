@@ -72,6 +72,9 @@ pub struct SimValues {
     pub max_time: f64,
 }
 
+/// Particle-distance scale of the Normal preset: finer than the drafts' spacing, so cloth folds
+/// in wrinkles rather than broad planes.
+pub const NORMAL_PD_SCALE: f64 = 0.8;
 /// Substeps of the Normal preset.
 pub const NORMAL_SUBSTEPS: f64 = 20.0;
 
@@ -395,17 +398,17 @@ impl SimPreset {
     pub fn description(self) -> &'static str {
         match self {
             Self::Draft => {
-                "Coarser mesh, fewer substeps, two simulated frames per redraw. About a sixth of Normal's work; for blocking out fit while you edit (stiff cloth stretches more)."
+                "Coarser mesh, fewer substeps, two simulated frames per redraw: about 40% of Normal's particles, for blocking out fit while you edit (stiff cloth stretches more)."
             }
             Self::Normal => "Balanced default for working on a garment.",
             Self::Fine => {
-                "Finer mesh and more solver work: smaller wrinkles, tighter seams. About 2.5× the cost of Normal."
+                "Finer mesh and more solver work: smaller wrinkles, tighter seams. About 1.5× Normal's particles and nearly twice its time per frame."
             }
             Self::Layered => {
                 "More substeps and damping, and sliding friction between cloth, for garments worn over each other (robe + aba, coat over shirt): far fewer cloth pass-throughs."
             }
             Self::Final => {
-                "Finest mesh and most solver work, for presentation and fit sign-off. About 6× the cost of Normal; stops by itself once settled."
+                "Finest mesh and most solver work, for presentation and fit sign-off. About 2.5× Normal's particles; stops by itself once settled."
             }
         }
     }
@@ -424,20 +427,24 @@ impl SimPreset {
             ],
             // twice the defaults' substeps: with fewer, stiff cloth (interfacing, wool) does not
             // converge and stretches under its own weight (a waistband slides down onto the hips)
-            Self::Normal => vec![(K::Substeps, n(NORMAL_SUBSTEPS))],
+            Self::Normal => vec![
+                (K::PdScale, n(NORMAL_PD_SCALE)),
+                (K::Substeps, n(NORMAL_SUBSTEPS)),
+            ],
             Self::Fine => vec![
-                (K::PdScale, n(0.8)),
+                (K::PdScale, n(0.65)),
                 (K::Substeps, n(24.0)),
                 (K::Iterations, n(4.0)),
                 (K::Air, n(0.5)),
             ],
             Self::Layered => vec![
+                (K::PdScale, n(NORMAL_PD_SCALE)),
                 (K::Substeps, n(28.0)),
                 (K::Air, n(0.6)),
                 (K::FricModel, Value::String("slide".to_owned())),
             ],
             Self::Final => vec![
-                (K::PdScale, n(0.65)),
+                (K::PdScale, n(0.5)),
                 (K::Substeps, n(30.0)),
                 (K::Iterations, n(5.0)),
                 (K::Air, n(0.8)),
