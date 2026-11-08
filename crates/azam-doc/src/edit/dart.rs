@@ -19,6 +19,9 @@ pub const DEFAULT_DART_DEPTH_MM: f64 = 80.0;
 const DART_MARGIN: f64 = 0.02;
 /// The apex stays at most this share of the way to the far side of the piece.
 const MAX_DEPTH_SHARE: f64 = 0.8;
+/// Edges nearer than this along the apex direction are the dart's own mouth, not the piece's
+/// far side, in mm.
+const MIN_ROOM_MM: f64 = 1.0;
 
 /// Why a dart could not be cut.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,12 +95,15 @@ pub fn add_dart(
         let along = (b - a).normalize();
         let normal = Vec2::new(-along.y, along.x);
         let poly = Outline::new(&pc.pts).poly;
-        let inward = if inside(&poly, mid + normal) {
+        // probed half a dart width in: on a curved edge the stretch between the legs bows, and
+        // a probe right at the edge could land on its wrong side
+        let inward = if inside(&poly, mid + normal * (width / 2.0)) {
             normal
         } else {
             -normal
         };
-        let room = ray_exit(&poly, mid, inward).unwrap_or(f64::INFINITY);
+        // the bowed stretch between the legs gives way to the apex, so hits on it do not count
+        let room = ray_exit(&poly, mid, inward, MIN_ROOM_MM).unwrap_or(f64::INFINITY);
         let apex = OutlinePoint {
             id: PointId::new(ids.fresh(prefix::POINT)),
             pos: mid + inward * depth.min(room * MAX_DEPTH_SHARE),
@@ -193,7 +199,7 @@ fn grade_dart(pc: &mut Piece, ends: &[PointId; 2], [p1, apex, p2]: [&PointId; 3]
 }
 
 /// Distance from `from` along unit `dir` to the nearest edge of the polygon `poly` ahead of it.
-fn ray_exit(poly: &[Vec2], from: Vec2, dir: Vec2) -> Option<f64> {
+fn ray_exit(poly: &[Vec2], from: Vec2, dir: Vec2, min: f64) -> Option<f64> {
     let n = poly.len();
     (0..n)
         .filter_map(|i| {
@@ -206,7 +212,7 @@ fn ray_exit(poly: &[Vec2], from: Vec2, dir: Vec2) -> Option<f64> {
             let w = a - from;
             let t = (w.x * e.y - w.y * e.x) / denom;
             let u = (w.x * dir.y - w.y * dir.x) / denom;
-            (t > 1e-6 && (0.0..=1.0).contains(&u)).then_some(t)
+            (t > min && (0.0..=1.0).contains(&u)).then_some(t)
         })
         .min_by(f64::total_cmp)
 }

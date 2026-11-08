@@ -209,7 +209,8 @@ const WAISTBAND_NAME: &str = "Waistband";
 /// - pieces with no grading get it from the size chart: the template is drafted again on each
 ///   size's body and every point takes its offset from the base size (centred on the piece, so
 ///   the pieces grow about their middles rather than drift across the board);
-/// - the skirt's waistband is interfaced, so it holds the skirt at the waist.
+/// - the skirt's waistband is interfaced, so it holds the skirt at the waist;
+/// - the dress front gets a side bust dart each side (see [`dress::add_bust_darts`]).
 pub fn refine(project: &mut Project, template: Template) {
     if template == Template::Skirt {
         for pc in project.pieces.values_mut().filter(|pc| pc.name == WAISTBAND_NAME) {
@@ -217,6 +218,9 @@ pub fn refine(project: &mut Project, template: Template) {
         }
     }
     grade_from_chart(project, template);
+    if template == Template::Dress {
+        dress::add_bust_darts(project);
+    }
 }
 
 /// Grades every piece of `project` that has no grading by drafting `template` on the body of
@@ -460,5 +464,56 @@ mod tests {
             .find(|pc| pc.name == WAISTBAND_NAME)
             .expect("waistband");
         assert_eq!(band.strengthen, Some(true));
+    }
+
+    #[test]
+    fn the_dress_front_has_bust_darts_and_its_side_seams_still_match() {
+        let p = from_template(Template::Dress, Sex::Female, None, None, 0.0);
+        let reference = reference_template(Template::Dress, Sex::Female, None, None, 0.0);
+        let front = p.pieces.values().find(|pc| pc.name == "Front").expect("front");
+        let reference_front = reference
+            .pieces
+            .values()
+            .find(|pc| pc.name == "Front")
+            .expect("front");
+        assert!(
+            front.pts.len() >= reference_front.pts.len() + 6,
+            "two legs and an apex per dart (and the curve split around them)"
+        );
+        assert_eq!(
+            p.sewing.len(),
+            reference.sewing.len() + 2,
+            "a seam closing each dart"
+        );
+        let lengths = crate::sew_lengths(&p);
+        for seam in p.sewing.values() {
+            let l = &lengths[&seam.id];
+            // the side seams: the front's two stretches against the back's
+            if seam
+                .a
+                .iter()
+                .chain(&seam.b)
+                .filter(|s| s.piece == front.id)
+                .count()
+                >= 2
+                && seam.a.iter().chain(&seam.b).any(|s| s.piece != front.id)
+            {
+                assert!((l.a - l.b).abs() < 2.0, "side seam {:.1} vs {:.1}", l.a, l.b);
+            }
+        }
+        // each dart's legs are the same length, so it closes flat
+        for seam in p
+            .sewing
+            .values()
+            .filter(|s| s.a.iter().chain(&s.b).all(|x| x.piece == front.id))
+        {
+            let l = &lengths[&seam.id];
+            assert!((l.a - l.b).abs() < 0.5, "dart legs {:.1} vs {:.1}", l.a, l.b);
+        }
+        // and it grades with every size
+        for size in ["XS", "XL"] {
+            let ol = front.graded_outline(&azam_geom::SizeName::from(size), &p.base_size);
+            assert!(!ol.poly.is_empty());
+        }
     }
 }

@@ -107,7 +107,8 @@ project takes the table's size run and sample size; METRIC and ENGLISH tables, D
 the cut line as the outline and no added allowance.
 
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
-per size for the selected points); the templates come graded from the size chart, and the avatar
+per size for the selected points); the templates come graded from the size chart (the dress front with a side bust dart each side, its
+side seams drafted to still match the back), and the avatar
 takes the body of the size shown (Avatar tab ▸ Follows Size). The Piece tab's Point panel places the
 selected points by number and sets a straight segment's length. Length links keep two segments the same
 length, or one a set amount longer (Segment panel ▸ Match Length Of, closest lengths first): front

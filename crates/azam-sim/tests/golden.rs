@@ -312,7 +312,8 @@ fn particle_estimates_match() {
         };
         let template =
             azam_doc::Template::from_id(c["template"].as_str().expect("template id")).expect("template");
-        let project = azam_doc::from_template(template, sex, None, None, 0.0);
+        // the recording was made from the reference engine's drafts (no azam refinements)
+        let project = azam_doc::reference_template(template, sex, None, None, 0.0);
         for v in arr(&c["values"]) {
             let v = arr(v);
             assert_eq!(

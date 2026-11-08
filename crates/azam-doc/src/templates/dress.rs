@@ -2,7 +2,7 @@
 
 use std::f64::consts::PI;
 
-use azam_geom::Vec2;
+use azam_geom::{PointId, SideDirection, Vec2};
 
 use super::{
     DraftOptions, add_pom, assign_fabric, body, corner, curve, name_if_untitled, new_piece, nonzero,
@@ -35,6 +35,16 @@ const FLARE_PER_LENGTH: f64 = 0.12;
 const FRONT_NECK_DEPTH_MM: f64 = 95.0;
 /// Back neck depth, in mm.
 const BACK_NECK_DEPTH_MM: f64 = 30.0;
+/// Width of each side bust dart (what it takes out of the side seam), in mm.
+const BUST_DART_WIDTH_MM: f64 = 22.0;
+/// The bust darts' centres sit this far below the underarm, in mm.
+const BUST_DART_DROP_MM: f64 = 65.0;
+/// Half the distance between the bust points, as a share of the bust girth.
+const BUST_POINT_SHARE: f64 = 0.105;
+/// The darts stop this far short of the bust point, in mm.
+const BUST_DART_SHORT_MM: f64 = 25.0;
+/// Shallowest bust dart, in mm.
+const MIN_BUST_DART_MM: f64 = 60.0;
 
 /// Drafts the dress into `project`.
 pub fn draft_dress(project: &mut Project, opts: &DraftOptions<'_>) {
@@ -112,4 +122,87 @@ pub fn draft_dress(project: &mut Project, opts: &DraftOptions<'_>) {
     "#b9c3b2".clone_into(&mut fab.color);
     assign_fabric(project, fab);
     name_if_untitled(project, "Linen Shift Dress");
+}
+
+/// Gives the dress front a side bust dart on each side (azam's refinement of the reference
+/// draft, which has none and so drapes flat over the bust).
+///
+/// The front's underarm is raised by the dart's width first, so after the dart is sewn the front
+/// side seam is as long as the back's; then the side seams are taken off, the darts cut (each
+/// sewn shut by its own seam) and the side seams sewn again around them.
+pub(crate) fn add_bust_darts(project: &mut Project) {
+    let Some(front) = project
+        .pieces
+        .values()
+        .find(|pc| pc.name == "Front")
+        .map(|pc| pc.id.clone())
+    else {
+        return;
+    };
+    let width = BUST_DART_WIDTH_MM;
+    // lengthen the side seams by what the darts will take out
+    if let Some(pc) = project.pieces.get_mut(&front) {
+        for p in &mut pc.pts {
+            if matches!(p.id.0.as_str(), "uaL" | "ahL2" | "uaR" | "ahR2") {
+                p.pos.y -= width;
+            }
+        }
+    }
+    let m = project.avatar.body;
+    let w = (m.bust + EASE_MM) / 4.0;
+    let depth = (w - m.bust * BUST_POINT_SHARE - BUST_DART_SHORT_MM).max(MIN_BUST_DART_MM);
+    let saved = std::mem::take(&mut project.sewing);
+    // (segment, whether it runs from the underarm down)
+    let mut splits = Vec::new();
+    for (seg, from_underarm) in [("uaL", true), ("hipR", false)] {
+        let Some(len) = project.pieces.get(&front).and_then(|pc| {
+            let ol = pc.outline();
+            ol.segment_index(&PointId::new(seg)).map(|k| ol.segments[k].len)
+        }) else {
+            continue;
+        };
+        let along = (BUST_DART_DROP_MM + width / 2.0) / len;
+        let t = if from_underarm { along } else { 1.0 - along };
+        if crate::add_dart(project, &front, &PointId::new(seg), t, width, depth).is_err() {
+            continue;
+        }
+        // after the dart, the segment ends at its first leg; the edge goes on from the second
+        let rest = project.pieces.get(&front).and_then(|pc| {
+            let ol = pc.outline();
+            let k = ol.segment_index(&PointId::new(seg))?;
+            Some(ol.segments.get(k + 3)?.id.clone())
+        });
+        if let Some(rest) = rest {
+            splits.push((PointId::new(seg), rest));
+        }
+    }
+    let darts = std::mem::replace(&mut project.sewing, saved);
+    for seam in project.sewing.values_mut() {
+        for group in [&mut seam.a, &mut seam.b] {
+            let mut out = Vec::with_capacity(group.len() + 1);
+            for side in group.drain(..) {
+                let whole = side.side.a.segment == side.side.b.segment;
+                let split = splits
+                    .iter()
+                    .find(|(seg, _)| side.piece == front && whole && side.side.a.segment == *seg);
+                match split {
+                    Some((seg, rest)) => {
+                        let backward = side.side.direction == SideDirection::Backward;
+                        let (first, second) = (
+                            SeamSide::segment(&front, &seg.0, backward),
+                            SeamSide::segment(&front, &rest.0, backward),
+                        );
+                        if backward {
+                            out.extend([second, first]);
+                        } else {
+                            out.extend([first, second]);
+                        }
+                    }
+                    None => out.push(side),
+                }
+            }
+            *group = out;
+        }
+    }
+    project.sewing.extend(darts);
 }
