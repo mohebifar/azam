@@ -54,6 +54,12 @@ impl Workspace {
         Self::TechPack,
     ];
 
+    /// The workspace's name, as its tab shows it.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        self.label()
+    }
+
     const fn label(self) -> &'static str {
         match self {
             Self::Design => "Design",
@@ -567,6 +573,7 @@ impl AzamApp {
                 self.split_area(id, dir);
             }
             Operator::MaximizeArea(id) => self.toggle_maximize(id),
+            Operator::ResetLayout => self.reset_layout(),
             Operator::MaximizeHovered => {
                 let p = window.mouse_position();
                 let hovered = self.maximized.or_else(|| {
@@ -614,6 +621,7 @@ impl AzamApp {
             Operator::FrameAll => self.frame_all(),
             Operator::TogglePlay | Operator::ResetSim | Operator::StepSim => self.run_simulation(op),
             Operator::ExportDxf
+            | Operator::ExportDxfGraded
             | Operator::ExportSvg
             | Operator::ExportObj
             | Operator::ExportGltf
@@ -1113,7 +1121,10 @@ impl AzamApp {
     fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         let mut ended = self.viewport.drag.take().is_some()
             | self.pattern_drag_end()
-            | self.resizing.take().is_some()
+            | (self.resizing.take().is_some() && {
+                self.layouts_changed();
+                true
+            })
             | (!self.piece_modal() && self.end_piece_drag());
         if self.scene3d.grab.take().is_some() {
             if let Some(sim) = self.scene3d.sim.as_mut() {

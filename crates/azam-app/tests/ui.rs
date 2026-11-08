@@ -1031,3 +1031,45 @@ fn the_search_says_when_nothing_matches_and_lists_recent_commands_first() {
         );
     });
 }
+
+#[test]
+fn layouts_are_saved_and_come_back() {
+    use azam_app::areas::Dir;
+    use azam_app::editors::Editor;
+    let dir = std::env::temp_dir().join(format!("azam-layouts-{}", std::process::id()));
+    let prefs = dir.join("prefs.json");
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        let before = win.root().read(cx).layout().leaves().len();
+        win.root().update(cx, |app, cx| {
+            app.use_prefs_file(prefs.clone());
+            let props = app.area_with(Editor::Properties).expect("properties");
+            app.split_area(props, Dir::Column).expect("split");
+            cx.notify();
+        });
+        assert_eq!(win.root().read(cx).layout().leaves().len(), before + 1);
+        // a new window on the same preferences opens as it was left
+        let again = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(again.id);
+        again
+            .root()
+            .update(cx, |app, _| app.use_prefs_file(prefs.clone()));
+        assert_eq!(
+            again.root().read(cx).layout().leaves().len(),
+            before + 1,
+            "the split came back"
+        );
+        again.root().update(cx, |app, _| app.reset_layout());
+        assert_eq!(
+            again.root().read(cx).layout().leaves().len(),
+            before,
+            "Reset Layout"
+        );
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}

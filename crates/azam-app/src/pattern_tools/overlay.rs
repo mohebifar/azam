@@ -59,13 +59,16 @@ impl AzamApp {
         let mid = seg.point_at(0.5);
         let outward = -crate::scene::left_normal(mid.tangent) * crate::scene::inward_sign(&ol.poly);
         let at = mid.pos + outward * (LABEL_OFFSET_PX / self.pattern_view.zoom);
-        Some((at, format!("{:.1}", seg.len / 10.0)))
+        Some((at, crate::units::number(self.session.project.units, seg.len)))
     }
 
     /// The tools' feedback for the current state.
     pub(crate) fn pattern_overlay(&self) -> Overlay {
         let project = &self.session.project;
-        let mut o = Overlay::default();
+        let mut o = Overlay {
+            units: project.units,
+            ..Overlay::default()
+        };
         let hover = self.tools.hover.as_ref().filter(|_| self.pattern_drag.is_none());
         if let Some(hit) = hover {
             self.hover_feedback(hit, &mut o);

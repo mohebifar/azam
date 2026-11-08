@@ -50,6 +50,8 @@ pub struct ShapePreview {
 /// Everything the tools draw over the scene, in pattern space.
 #[derive(Clone, Debug, Default)]
 pub struct Overlay {
+    /// The units lengths are shown in.
+    pub units: azam_doc::Units,
     /// The segment under the pointer.
     pub hover_edge: Option<Vec<Vec2>>,
     /// The nearest point on it.
@@ -169,10 +171,10 @@ impl Overlay {
             ring(p, to_px(q), 10.0, rgb(SELECTED), 2.0);
         }
         if let Some(draft) = &self.draft {
-            paint_draft(p, draft, to_px);
+            paint_draft(p, draft, to_px, self.units);
         }
         if let Some(shape) = &self.shape {
-            paint_shape(p, shape, to_px);
+            paint_shape(p, shape, to_px, self.units);
         }
         if let Some((a, b)) = self.selection_box {
             let (pa, pb) = (to_px(a), to_px(b));
@@ -186,7 +188,7 @@ impl Overlay {
         if let Some((a, c)) = self.measure {
             let (pa, pc) = (to_px(a), to_px(c));
             p.line(&[pa, pc], rgb(MEASURE), 1.5);
-            let label = format!("{:.1} cm", a.distance(c) / 10.0);
+            let label = crate::units::text(self.units, a.distance(c)).to_string();
             chip(
                 p,
                 f32::midpoint(pa.0, pc.0),
@@ -232,7 +234,7 @@ impl Overlay {
     }
 }
 
-fn paint_draft(p: &mut Painter, draft: &Draft, to_px: &impl Fn(Vec2) -> (f32, f32)) {
+fn paint_draft(p: &mut Painter, draft: &Draft, to_px: &impl Fn(Vec2) -> (f32, f32), units: azam_doc::Units) {
     let mut px: Vec<(f32, f32)> = draft.points.iter().map(|(q, _)| to_px(*q)).collect();
     px.push(to_px(draft.cursor));
     if draft.internal {
@@ -256,12 +258,17 @@ fn paint_draft(p: &mut Painter, draft: &Draft, to_px: &impl Fn(Vec2) -> (f32, f3
     }
     if let Some((last, _)) = draft.points.last() {
         let (x, y) = to_px(draft.cursor);
-        let label = format!("{:.1} cm", last.distance(draft.cursor) / 10.0);
+        let label = crate::units::text(units, last.distance(draft.cursor)).to_string();
         p.text(x + 10.0, y - 18.0, &label, 10.5, rgb(0xe6e6e6));
     }
 }
 
-fn paint_shape(p: &mut Painter, shape: &ShapePreview, to_px: &impl Fn(Vec2) -> (f32, f32)) {
+fn paint_shape(
+    p: &mut Painter,
+    shape: &ShapePreview,
+    to_px: &impl Fn(Vec2) -> (f32, f32),
+    units: azam_doc::Units,
+) {
     let (lo, hi) = (shape.a.min(shape.b), shape.a.max(shape.b));
     let pts: Vec<(f32, f32)> = if shape.ellipse {
         let (c, r) = ((lo + hi) / 2.0, (hi - lo) / 2.0);
@@ -279,6 +286,10 @@ fn paint_shape(p: &mut Painter, shape: &ShapePreview, to_px: &impl Fn(Vec2) -> (
     };
     dashed(p, &pts, 4.0, 3.0, rgb(SELECTED), 1.5);
     let (x, y) = to_px(shape.b);
-    let label = format!("{:.1} × {:.1} cm", (hi.x - lo.x) / 10.0, (hi.y - lo.y) / 10.0);
+    let label = format!(
+        "{} × {}",
+        crate::units::number(units, hi.x - lo.x),
+        crate::units::text(units, hi.y - lo.y)
+    );
     p.text(x + 8.0, y + 6.0, &label, 10.5, rgb(0xe6e6e6));
 }

@@ -29,6 +29,8 @@ pub struct Prefs {
     pub autosave: bool,
     /// Minutes between auto saves.
     pub autosave_minutes: f64,
+    /// Each workspace's areas as last left, by workspace name.
+    pub layouts: BTreeMap<String, serde_json::Value>,
 }
 
 impl Default for Prefs {
@@ -39,6 +41,7 @@ impl Default for Prefs {
             keymap: BTreeMap::new(),
             autosave: true,
             autosave_minutes: 2.0,
+            layouts: BTreeMap::new(),
         }
     }
 }
@@ -200,6 +203,7 @@ impl AzamApp {
         self.prefs = Prefs::load(&path);
         self.tool_labels = self.prefs.tool_labels;
         self.prefs_path = Some(path);
+        self.load_layouts();
     }
 
     /// Whether the Preferences window is open.

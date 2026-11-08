@@ -3,7 +3,7 @@
 mod export;
 mod import;
 
-pub use export::export_dxf;
+pub use export::{export_dxf, export_dxf_graded};
 pub use import::{DxfError, ImportedLine, ImportedPiece, import_dxf};
 
 /// Layer names of the pattern conventions.

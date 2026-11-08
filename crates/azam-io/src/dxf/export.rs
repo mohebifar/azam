@@ -95,6 +95,24 @@ impl Writer {
 /// every block at the origin.
 #[must_use]
 pub fn export_dxf(project: &Project) -> String {
+    write_dxf(project, std::slice::from_ref(&project.active_size), false)
+}
+
+/// The graded nest as DXF text, in mm: every piece in every size of the project's size run, as
+/// [`export_dxf`] draws one size, each size its own block (`FRONT_1_M`) and all inserted at the
+/// origin, so the sizes lie over each other as graders and cutting rooms read them.
+#[must_use]
+pub fn export_dxf_graded(project: &Project) -> String {
+    let sizes = if project.sizes.is_empty() {
+        vec![project.active_size.clone()]
+    } else {
+        project.sizes.clone()
+    };
+    write_dxf(project, &sizes, true)
+}
+
+/// The DXF of `project` with each piece in each of `sizes`; `suffix` names the blocks by size.
+fn write_dxf(project: &Project, sizes: &[azam_geom::SizeName], suffix: bool) -> String {
     let mut w = Writer { out: Vec::new() };
     w.section("HEADER");
     w.pair(9, "$INSUNITS");
@@ -106,9 +124,14 @@ pub fn export_dxf(project: &Project) -> String {
     w.section("BLOCKS");
     let mut names = Vec::new();
     for (i, pc) in pieces_in_id_order(project).into_iter().enumerate() {
-        let name = format!("{}_{}", slug(&pc.name).to_uppercase(), i + 1);
-        piece_block(&mut w, project, pc, &name);
-        names.push(name);
+        for size in sizes {
+            let mut name = format!("{}_{}", slug(&pc.name).to_uppercase(), i + 1);
+            if suffix {
+                name = format!("{name}_{}", slug(&size.0).to_uppercase());
+            }
+            piece_block(&mut w, project, pc, &name, size);
+            names.push(name);
+        }
     }
     w.end_section();
 
@@ -126,8 +149,8 @@ pub fn export_dxf(project: &Project) -> String {
     w.out.join("\n")
 }
 
-fn piece_block(w: &mut Writer, project: &Project, pc: &Piece, name: &str) {
-    let ol = graded_outline(project, pc, None);
+fn piece_block(w: &mut Writer, project: &Project, pc: &Piece, name: &str, size: &azam_geom::SizeName) {
+    let ol = graded_outline(project, pc, Some(size));
     w.pair(0, "BLOCK");
     w.pair(8, "0");
     w.pair(2, name);
@@ -180,12 +203,7 @@ fn piece_block(w: &mut Writer, project: &Project, pc: &Piece, name: &str) {
         layer::CUT,
         NAME_TEXT_MM,
     );
-    w.text(
-        at(12.0),
-        &format!("Size: {}", project.active_size.0),
-        layer::CUT,
-        TEXT_MM,
-    );
+    w.text(at(12.0), &format!("Size: {}", size.0), layer::CUT, TEXT_MM);
     w.text(at(22.0), &format!("Material: {material}"), layer::CUT, TEXT_MM);
     w.text(
         at(32.0),
@@ -195,4 +213,23 @@ fn piece_block(w: &mut Writer, project: &Project, pc: &Piece, name: &str) {
     );
     w.pair(0, "ENDBLK");
     w.pair(8, "0");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_graded_nest_holds_every_size_of_every_piece() {
+        let mut p = azam_doc::from_template(azam_doc::Template::Tee, azam_doc::Sex::Female, None, None, 0.0);
+        p.ensure_ids_seeded();
+        let pieces = p.pieces.len();
+        let sizes = p.sizes.len();
+        let dxf = export_dxf_graded(&p);
+        let blocks = dxf.lines().filter(|l| *l == "BLOCK").count();
+        assert_eq!(blocks, pieces * sizes);
+        assert!(dxf.contains("Size: XS") && dxf.contains("Size: XL"));
+        // one size alone is what export_dxf writes
+        assert_eq!(export_dxf(&p).lines().filter(|l| *l == "BLOCK").count(), pieces);
+    }
 }

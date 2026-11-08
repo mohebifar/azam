@@ -9,7 +9,7 @@ use crate::areas::{AreaId, Dir};
 use crate::operators::{Menu, MenuEntry, Operator};
 
 /// An editor an area can show.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Editor {
     /// The 3D view with the avatar and the draped garment.
     View3d,
@@ -128,6 +128,7 @@ impl AzamApp {
         let done = self.layout_mut().split(id, dir, other, &mut next);
         self.next_area_id = next;
         self.framed = false;
+        self.layouts_changed();
         done.then_some(next)
     }
 
@@ -136,6 +137,7 @@ impl AzamApp {
     pub fn join_area(&mut self, id: AreaId) -> bool {
         let done = self.layout_mut().join(id);
         self.framed = false;
+        self.layouts_changed();
         done
     }
 
@@ -152,6 +154,7 @@ impl AzamApp {
         }
         self.layout_mut().set_editor(id, editor);
         self.framed = false;
+        self.layouts_changed();
     }
 
     /// The editor-type button of area `id`: its editor's icon, opening the menu of editors.

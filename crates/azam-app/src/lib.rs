@@ -36,6 +36,7 @@ mod sidebar;
 mod techpack;
 mod theme;
 mod tooltip;
+pub mod units;
 pub mod viewport;
 
 pub use app::AzamApp;

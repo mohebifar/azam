@@ -391,6 +391,8 @@ pub enum Operator {
     UseBuiltinBody,
     /// Export the pattern as DXF.
     ExportDxf,
+    /// Export every size of every piece as a graded nest (DXF).
+    ExportDxfGraded,
     /// Export the pattern as SVG.
     ExportSvg,
     /// Export the draped garment as OBJ.
@@ -497,6 +499,8 @@ pub enum Operator {
     MaximizeArea(crate::areas::AreaId),
     /// Ctrl Space: maximize the area under the pointer, or bring the others back.
     MaximizeHovered,
+    /// Put the current workspace's areas back as they start.
+    ResetLayout,
 }
 
 impl Operator {
@@ -537,6 +541,7 @@ impl Operator {
             Self::ImportAvatar => "Import Avatar OBJ…",
             Self::UseBuiltinBody => "Use Built-in Body",
             Self::ExportDxf => "Export DXF…",
+            Self::ExportDxfGraded => "Export DXF (All Sizes)…",
             Self::ExportSvg => "Export SVG…",
             Self::ExportObj => "Export OBJ…",
             Self::ExportGltf => "Export glTF (.glb)…",
@@ -591,6 +596,7 @@ impl Operator {
             Self::SplitArea(_, crate::areas::Dir::Column) => "Horizontal Split",
             Self::JoinArea(_) => "Join with Neighbour",
             Self::MaximizeArea(_) | Self::MaximizeHovered => "Toggle Maximize Area",
+            Self::ResetLayout => "Reset Layout",
         }
     }
 
@@ -608,6 +614,7 @@ impl Operator {
             Self::ImportAvatar => "OUTLINER_OB_ARMATURE",
             Self::UseBuiltinBody => "ARMATURE_DATA",
             Self::ExportDxf
+            | Self::ExportDxfGraded
             | Self::ExportSvg
             | Self::ExportObj
             | Self::ExportGltf
@@ -659,6 +666,7 @@ impl Operator {
             Self::SplitArea(_, crate::areas::Dir::Column) => "SPLIT_HORIZONTAL",
             Self::JoinArea(_) => "AREA_JOIN",
             Self::MaximizeArea(_) | Self::MaximizeHovered => "FULLSCREEN_ENTER",
+            Self::ResetLayout => "WORKSPACE",
             Self::SelectAll | Self::DetectHems | Self::ShadingPie | Self::ViewPie => return None,
         })
     }
@@ -763,6 +771,7 @@ impl Operator {
             Self::ImportAvatar,
             Self::UseBuiltinBody,
             Self::ExportDxf,
+            Self::ExportDxfGraded,
             Self::ExportSvg,
             Self::ExportObj,
             Self::ExportGltf,
@@ -808,6 +817,7 @@ impl Operator {
             Self::Shortcuts,
             Self::About,
             Self::Preferences,
+            Self::ResetLayout,
             Self::FlattenPiece,
             Self::RecordAnimation,
             Self::ExportAnimation,
@@ -1166,6 +1176,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::ImportSvg),
         Item(O::ImportAvatar),
         Item(O::ExportDxf),
+        Item(O::ExportDxfGraded),
         Item(O::ExportSvg),
         Item(O::ExportObj),
         Item(O::ExportGltf),
@@ -1194,6 +1205,7 @@ pub fn top_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::Search),
                 Separator,
+                Item(O::ResetLayout),
                 Item(O::Preferences),
             ],
         },

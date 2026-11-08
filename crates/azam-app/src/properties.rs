@@ -130,6 +130,8 @@ const SIM_PRESETS: [(&str, &str); 5] = [
 impl AzamApp {
     /// The properties editor's body.
     pub(crate) fn properties_body(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
+        // length fields show the project's units
+        FIELD_UNITS.with(|u| u.set(self.session.project.units));
         let mut tabs = div().class("prop-tabs");
         for tab in PropTab::ALL {
             let class = if tab == self.prop_tab {
@@ -170,7 +172,7 @@ impl AzamApp {
         )
     }
 
-    /// Points of measure against every size, in cm.
+    /// Points of measure against every size, in the project's units.
     fn pom_table(&self) -> Div {
         let project = &self.session.project;
         if project.poms.is_empty() {
@@ -186,8 +188,10 @@ impl AzamApp {
         for pom in project.poms.values() {
             let mut row = tr().child(td().child(pom.name.clone()));
             for size in &project.sizes {
-                let value = azam_doc::pom_value(project, pom, size) / 10.0;
-                let cell = td().child(format!("{value:.1}"));
+                let cell = td().child(crate::units::number(
+                    project.units,
+                    azam_doc::pom_value(project, pom, size),
+                ));
                 row = row.child(if *size == project.active_size {
                     cell.font_weight(FontWeight::BOLD)
                 } else {
@@ -256,16 +260,27 @@ impl AzamApp {
         } else {
             NumberField()
         };
+        // a length in mm shows (and is typed) in the project's units
+        let units = FIELD_UNITS.with(std::cell::Cell::get);
+        let (label, k) = if spec.label.contains("(mm)") && units != azam_doc::Units::Mm {
+            (
+                spec.label
+                    .replace("(mm)", &format!("({})", crate::units::name(units))),
+                crate::units::per_mm(units),
+            )
+        } else {
+            (spec.label.to_owned(), 1.0)
+        };
         div().class("prow").child(
             widget
-                .attr("label", spec.label)
-                .value(format_num(value))
-                .min(spec.min)
-                .max(spec.max)
-                .step(spec.step)
+                .attr("label", label)
+                .value(format_num((value * k * 1000.0).round() / 1000.0))
+                .min(spec.min * k)
+                .max(spec.max * k)
+                .step(spec.step * k)
                 .class("pfield")
                 .on_input(cx.listener(move |this, e: &ChangeEvent, _, cx| {
-                    let v = e.number.clamp(spec.min, spec.max);
+                    let v = (e.number / k).clamp(spec.min, spec.max);
                     this.session.edit_continuous(spec.label, |p| apply(p, v));
                     cx.notify();
                 })),
@@ -408,6 +423,25 @@ impl AzamApp {
                 ],
             ),
             self.panel("Sizes", vec![size_row, run_row, base_row, self.pom_table()]),
+            self.panel(
+                "Units",
+                vec![{
+                    let units = [azam_doc::Units::Mm, azam_doc::Units::Cm, azam_doc::Units::In];
+                    let current = units
+                        .iter()
+                        .position(|u| *u == self.session.project.units)
+                        .unwrap_or(1);
+                    Self::choice(
+                        "Lengths In",
+                        &["Millimetres", "Centimetres", "Inches"],
+                        current,
+                        cx,
+                        move |p, i| {
+                            p.units = units[i.min(2)];
+                        },
+                    )
+                }],
+            ),
             self.panel(
                 "Colorways",
                 vec![
@@ -1147,6 +1181,11 @@ fn set_fabric_color(p: &mut Project, fid: &azam_doc::FabricId, color: String) {
             .or_default()
             .insert("color".into(), Value::from(color));
     }
+}
+
+thread_local! {
+    /// The units length fields show while the properties editor is built.
+    static FIELD_UNITS: std::cell::Cell<azam_doc::Units> = const { std::cell::Cell::new(azam_doc::Units::Mm) };
 }
 
 /// A number as a field shows it: integers without a fraction, others to two decimals.

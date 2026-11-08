@@ -20,7 +20,14 @@ impl AzamApp {
             .child(section("Pattern Pieces", pieces_table(project)))
             .child(section("Seam Check", seams_table(project)))
             .child(section("Materials", materials_table(project)))
-            .child(section("Points of Measure (cm)", poms_table(project)))
+            .child(section(
+                match project.units {
+                    azam_doc::Units::Mm => "Points of Measure (mm)",
+                    azam_doc::Units::Cm => "Points of Measure (cm)",
+                    azam_doc::Units::In => "Points of Measure (in)",
+                },
+                poms_table(project),
+            ))
     }
 }
 
@@ -76,6 +83,7 @@ fn pieces_table(project: &Project) -> Div {
 }
 
 fn seams_table(project: &Project) -> Div {
+    let units = project.units;
     let lengths = azam_doc::sew_lengths(project);
     let numbers = azam_doc::seam_numbers(project);
     let rows = project.sewing.values().map(|seam| {
@@ -94,16 +102,27 @@ fn seams_table(project: &Project) -> Div {
         tr().child(td().child(div().class("tp-dot").bg(rgb(color)).child(number.to_string())))
             .child(td().child(name(&seam.a)))
             .child(td().child(name(&seam.b)))
-            .child(td().child(format!("{:.1}", a / 10.0)))
-            .child(td().child(format!("{:.1}", b / 10.0)))
-            .child(td().class(if ok { "tp-ok" } else { "tp-warn" }).child(format!(
-                "{:+.1} mm",
-                if (a - b).abs() < 0.05 { 0.0 } else { a - b }
-            )))
+            .child(td().child(crate::units::number(units, a)))
+            .child(td().child(crate::units::number(units, b)))
+            .child(td().class(if ok { "tp-ok" } else { "tp-warn" }).child({
+                let d = crate::units::number(units, a - b);
+                format!(
+                    "{}{d} {}",
+                    if d.starts_with('-') { "" } else { "+" },
+                    crate::units::name(units)
+                )
+            }))
     });
     div().class("tp-table").child(
         table()
-            .child(header(&["#", "Side A", "Side B", "A cm", "B cm", "Difference"]))
+            .child(header(&[
+                "#",
+                "Side A",
+                "Side B",
+                &format!("A {}", crate::units::name(units)),
+                &format!("B {}", crate::units::name(units)),
+                "Difference",
+            ]))
             .child(tbody().children(rows)),
     )
 }
@@ -151,7 +170,10 @@ fn poms_table(project: &Project) -> Div {
     let rows = project.poms.values().map(|pom| {
         let mut row = tr().child(td().child(pom.name.clone()));
         for size in &project.sizes {
-            row = row.child(td().child(format!("{:.1}", azam_doc::pom_value(project, pom, size) / 10.0)));
+            row = row.child(td().child(crate::units::number(
+                project.units,
+                azam_doc::pom_value(project, pom, size),
+            )));
         }
         row
     });

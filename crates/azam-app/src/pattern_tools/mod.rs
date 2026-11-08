@@ -222,7 +222,10 @@ impl AzamApp {
             } => self.shape_end(tool, piece.as_ref(), from, to),
             PatternDrag::Measure { from } => {
                 if let Some((_, to)) = self.tools.measure {
-                    self.status = format!("Distance {:.1} cm", from.distance(to) / 10.0);
+                    self.status = format!(
+                        "Distance {}",
+                        crate::units::text(self.session.project.units, from.distance(to))
+                    );
                 }
             }
             PatternDrag::Cut { from, to } => match self.tool {

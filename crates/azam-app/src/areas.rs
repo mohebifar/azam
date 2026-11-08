@@ -13,7 +13,7 @@ use crate::editors::Editor;
 pub type AreaId = u32;
 
 /// How a split lays out its two parts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Dir {
     /// Side by side (the border runs up and down).
     Row,
@@ -22,7 +22,7 @@ pub enum Dir {
 }
 
 /// A layout: an area showing an editor, or a split into two parts.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum AreaNode {
     /// An area.
     Leaf {
@@ -251,7 +251,53 @@ fn split_box_id(id: AreaId) -> String {
     format!("splitbox-{id}")
 }
 
+/// The largest id used in `node`.
+fn max_id(node: &AreaNode) -> AreaId {
+    match node {
+        AreaNode::Leaf { id, .. } => *id,
+        AreaNode::Split { id, a, b, .. } => (*id).max(max_id(a)).max(max_id(b)),
+    }
+}
+
 impl AzamApp {
+    /// Saves every workspace's layout in the preferences (when they have a file), so the window
+    /// opens as it was left.
+    pub(crate) fn layouts_changed(&mut self) {
+        self.prefs.layouts = self
+            .layouts
+            .iter()
+            .filter_map(|(ws, node)| Some((ws.name().to_owned(), serde_json::to_value(node).ok()?)))
+            .collect();
+        self.save_prefs();
+    }
+
+    /// Takes the layouts saved in the preferences (those that read back).
+    pub(crate) fn load_layouts(&mut self) {
+        for (name, value) in &self.prefs.layouts {
+            if let (Some(ws), Ok(node)) = (
+                Workspace::from_name(name),
+                serde_json::from_value::<AreaNode>(value.clone()),
+            ) && !node.leaves().is_empty()
+            {
+                self.next_area_id = self.next_area_id.max(max_id(&node));
+                self.layouts.insert(ws, node);
+            }
+        }
+        self.framed = false;
+    }
+
+    /// Puts the current workspace's areas back as they start.
+    pub fn reset_layout(&mut self) {
+        let ws = self.workspace();
+        let mut next = self.next_area_id;
+        self.layouts.insert(ws, default_layout(ws, &mut next));
+        self.next_area_id = next;
+        self.maximized = None;
+        self.framed = false;
+        self.layouts_changed();
+        self.status = "Layout reset".into();
+    }
+
     /// The current workspace's layout (made from its defaults the first time).
     pub(crate) fn layout_mut(&mut self) -> &mut AreaNode {
         let ws = self.workspace();

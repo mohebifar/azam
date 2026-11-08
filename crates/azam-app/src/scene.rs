@@ -55,7 +55,10 @@ pub fn pattern_scene_with(
 ) -> PatternScene {
     let mut pieces: Vec<_> = project.pieces.values().filter(|p| p.pts.len() >= 3).collect();
     pieces.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.id.cmp(&b.id)));
-    let mut scene = PatternScene::default();
+    let mut scene = PatternScene {
+        units: project.units,
+        ..PatternScene::default()
+    };
     for piece in &pieces {
         let mut draw = piece_draw(project, piece, selection, nested_sizes);
         draw.collaborators = collaborators

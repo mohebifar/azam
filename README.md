@@ -78,6 +78,12 @@ is not written; animated glTF carries the motion.
 
 A piece's starting place around the avatar (slot, distance, angle, height) is in the Piece tab's
 Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleeve L", "Collar"…).
+Lengths show in the project's units (Project tab ▸ Units: millimetres, centimetres or inches): the
+properties fields, segment labels, seam differences, the Measure tool and the tech pack. Area
+layouts are saved per workspace with the preferences and come back next time (Edit ▸ Reset Layout
+restores one). File ▸ Export DXF (All Sizes)… writes the graded nest: every piece in every size,
+the sizes laid over each other.
+
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
 per size for the selected points); the templates come graded from the size chart, and the avatar
 takes the body of the size shown (Avatar tab ▸ Follows Size). The Piece tab's Point panel places the

@@ -13,6 +13,8 @@ use crate::app::AzamApp;
 pub enum ExportKind {
     /// AAMA-style DXF of the pattern.
     Dxf,
+    /// AAMA-style DXF of every size (a graded nest).
+    DxfGraded,
     /// SVG of the pattern.
     Svg,
     /// The draped garment as OBJ (with an MTL next to it).
@@ -35,6 +37,7 @@ impl ExportKind {
         use crate::operators::Operator as O;
         match op {
             O::ExportSvg => Self::Svg,
+            O::ExportDxfGraded => Self::DxfGraded,
             O::ExportObj => Self::Obj,
             O::ExportGltf => Self::Gltf,
             O::ExportFbx => Self::Fbx,
@@ -46,7 +49,7 @@ impl ExportKind {
 
     const fn extension(self) -> &'static str {
         match self {
-            Self::Dxf => "dxf",
+            Self::Dxf | Self::DxfGraded => "dxf",
             Self::Svg => "svg",
             Self::Obj => "obj",
             Self::Gltf | Self::Animation => "glb",
@@ -60,13 +63,14 @@ impl ExportKind {
             Self::PatternPdf => "-pattern",
             Self::TechPackPdf => "-techpack",
             Self::Dxf | Self::Svg | Self::Obj | Self::Gltf | Self::Fbx => "",
+            Self::DxfGraded => "-graded",
             Self::Animation => "-animation",
         }
     }
 
     const fn filter(self) -> &'static str {
         match self {
-            Self::Dxf => "DXF\t*.dxf",
+            Self::Dxf | Self::DxfGraded => "DXF\t*.dxf",
             Self::Svg => "SVG\t*.svg",
             Self::Obj => "Wavefront OBJ\t*.obj",
             Self::Gltf | Self::Animation => "glTF Binary\t*.glb",
@@ -136,6 +140,7 @@ impl AzamApp {
             |p: &Path, bytes: &[u8]| std::fs::write(p, bytes).map_err(|e| format!("{}: {e}", p.display()));
         match kind {
             ExportKind::Dxf => write(path, azam_io::export_dxf(project).as_bytes()),
+            ExportKind::DxfGraded => write(path, azam_io::export_dxf_graded(project).as_bytes()),
             ExportKind::Svg => write(path, azam_io::export_svg(project).as_bytes()),
             ExportKind::PatternPdf => {
                 let pdf = azam_io::pattern_pdf(project, &PatternPdfOptions::default())

@@ -96,6 +96,8 @@ pub struct SeamDraw {
 /// Everything the pattern editor draws.
 #[derive(Clone, Debug, Default)]
 pub struct PatternScene {
+    /// The units lengths are shown in.
+    pub units: azam_doc::Units,
     /// Pieces in drawing order.
     pub pieces: Vec<PieceDraw>,
     /// Seams.
@@ -253,7 +255,7 @@ impl PatternScene {
                 parts::paint_stitch(p, stitch, &to_px, zoom);
             }
             for seam in &self.seams {
-                paint_seam(p, seam, &to_px);
+                paint_seam(p, seam, &to_px, self.units);
             }
             parts::paint_items(p, self, &to_px, zoom);
             overlay.paint(p, &to_px);
@@ -436,7 +438,7 @@ fn paint_piece(
     }
 }
 
-fn paint_seam(p: &mut Painter, seam: &SeamDraw, to_px: &impl Fn(Vec2) -> (f32, f32)) {
+fn paint_seam(p: &mut Painter, seam: &SeamDraw, to_px: &impl Fn(Vec2) -> (f32, f32), units: azam_doc::Units) {
     let width = if seam.selected { 4.0 } else { 2.5 };
     let mut mids = Vec::new();
     for side in seam.a.iter().chain(&seam.b) {
@@ -462,7 +464,7 @@ fn paint_seam(p: &mut Painter, seam: &SeamDraw, to_px: &impl Fn(Vec2) -> (f32, f
     if seam.diff_mm.abs() > SEAM_DIFF_LABEL_MM
         && let Some(&(x, y)) = mids.first()
     {
-        let label = format!("Δ {:.1} cm", seam.diff_mm.abs() / 10.0);
+        let label = format!("Δ {}", crate::units::text(units, seam.diff_mm.abs()));
         let w = label.chars().count() as f32 * 6.0 + 8.0;
         p.quad(
             Bounds {

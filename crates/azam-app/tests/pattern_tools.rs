@@ -954,3 +954,26 @@ fn a_modal_move_shows_how_far_it_has_gone() {
         ui.key(cx, "", "Escape");
     });
 }
+
+#[test]
+fn lengths_follow_the_project_units() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        ui.win.root().update(cx, |app, cx| {
+            app.edit_project("Units", |p| p.units = azam_doc::Units::In);
+            cx.notify();
+        });
+        cx.draw(ui.win.id);
+        assert_eq!(ui.app(cx).pattern_scene().units, azam_doc::Units::In);
+        ui.key(cx, "m", "m");
+        let (x0, y) = ui.at(cx, Vec2::new(0.0, -200.0));
+        let (x1, _) = ui.at(cx, Vec2::new(254.0, -200.0));
+        cx.simulate_drag(ui.win.id, (x0, y), (x1, y));
+        cx.draw(ui.win.id);
+        let status = ui.app(cx).status().to_owned();
+        assert!(
+            status.starts_with("Distance") && status.ends_with(" in"),
+            "{status}"
+        );
+    });
+}

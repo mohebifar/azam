@@ -141,7 +141,10 @@ impl AzamApp {
                         side.side
                             .range(&pc.graded_outline(&project.active_size, &project.base_size))
                     })
-                    .map_or_else(|| "–".to_owned(), |r| format!("{:.1} cm", r.length / 10.0));
+                    .map_or_else(
+                        || "–".to_owned(),
+                        |r| crate::units::text(self.session.project.units, r.length).to_string(),
+                    );
                 sides.push(info(
                     format!("{group}{} {}", i + 1, self.piece_name(&side.piece)),
                     length,
@@ -172,7 +175,11 @@ impl AzamApp {
         if let Some(l) = lengths {
             rows.push(info(
                 "Total A / B".into(),
-                format!("{:.1} / {:.1} cm", l.a / 10.0, l.b / 10.0),
+                format!(
+                    "{} / {}",
+                    crate::units::number(self.session.project.units, l.a),
+                    crate::units::text(self.session.project.units, l.b)
+                ),
             ));
             // Adding zero turns a rounded -0.0 into 0.0.
             let diff = (((l.a - l.b) * 10.0).round() / 10.0) + 0.0;
@@ -234,7 +241,10 @@ impl AzamApp {
             "Segment",
             vec![
                 info("Piece".into(), name),
-                info("Length".into(), format!("{:.1} cm", length / 10.0)),
+                info(
+                    "Length".into(),
+                    crate::units::text(self.session.project.units, length).to_string(),
+                ),
                 sa_row,
                 hem_row,
             ],
