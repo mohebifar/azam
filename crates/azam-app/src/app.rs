@@ -171,6 +171,10 @@ pub struct AzamApp {
     pub(crate) rename_prompt: Option<String>,
     /// The marker as last made, and the project revision it was made at.
     pub(crate) marker_cache: Option<(u64, std::sync::Arc<azam_io::Marker>)>,
+    /// The marker piece being dragged.
+    pub(crate) marker_drag: Option<crate::marker_view::MarkerDrag>,
+    /// Where the Marker editor last drew the marker.
+    pub(crate) marker_frame: crate::marker_view::MarkerFrame,
     /// The workspace tab last clicked and when (two quick clicks rename it).
     last_tab_click: Option<(usize, std::time::Instant)>,
     pub(crate) tool: Tool,
@@ -314,6 +318,8 @@ impl AzamApp {
             rename_prompt: None,
             last_tab_click: None,
             marker_cache: None,
+            marker_drag: None,
+            marker_frame: std::sync::Arc::default(),
             tool: Tool::Select,
             shading: Shading::Solid,
             fit_mode: azam_sim::FitMode::Fit,

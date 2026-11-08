@@ -100,8 +100,9 @@ a graded pattern. The Marker editor (in the Tech Pack workspace, or any area's e
 every piece, as many copies as each is cut, on the fabric with the grain along the selvedge: set the
 fabric width, the gap, whether pieces may turn 180° (not for one-way fabrics) and whether one
 garment of every size goes in, and it shows the length of fabric the lay takes and its efficiency,
-following every edit. A pair's second copy is laid flipped. File ▸ Export Marker DXF… / SVG… write
-it for the cutting room. File ▸ Import DXF reads such a file back: when its boundary points carry rule
+following every edit. A pair's second copy is laid flipped. Drag a piece in the marker to place it by hand (pieces that
+overlap or leave the fabric turn red, and the length follows); Re-nest clears the hand moves.
+File ▸ Export Marker DXF… / SVG… write it for the cutting room. File ▸ Import DXF reads such a file back: when its boundary points carry rule
 numbers and a `.rul` table of the same name sits next to it, the pieces come in graded (the
 project takes the table's size run and sample size; METRIC and ENGLISH tables, DELTA rules), with
 the cut line as the outline and no added allowance.

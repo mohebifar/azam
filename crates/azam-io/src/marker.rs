@@ -82,7 +82,102 @@ pub struct Marker {
     pub left_out: Vec<(String, SizeName)>,
 }
 
+impl Placement {
+    /// A name for this copy that stays the same while the pattern does: piece, size and copy.
+    #[must_use]
+    pub fn key(&self) -> String {
+        format!("{}|{}|{}", self.name, self.size.0, self.copy)
+    }
+}
+
+/// Whether two closed polygons overlap: their edges cross, or one lies inside the other.
+#[must_use]
+pub fn polygons_overlap(a: &[Vec2], b: &[Vec2]) -> bool {
+    let bb = |pts: &[Vec2]| {
+        pts.iter()
+            .fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |(x0, y0, x1, y1), p| {
+                (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y))
+            })
+    };
+    let (ba, bb2) = (bb(a), bb(b));
+    if ba.2 <= bb2.0 || bb2.2 <= ba.0 || ba.3 <= bb2.1 || bb2.3 <= ba.1 {
+        return false;
+    }
+    let cross = |o: Vec2, p: Vec2, q: Vec2| (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+    let (na, nb) = (a.len(), b.len());
+    for i in 0..na {
+        let (p1, p2) = (a[i], a[(i + 1) % na]);
+        for j in 0..nb {
+            let (q1, q2) = (b[j], b[(j + 1) % nb]);
+            let (d1, d2) = (cross(q1, q2, p1), cross(q1, q2, p2));
+            let (d3, d4) = (cross(p1, p2, q1), cross(p1, p2, q2));
+            if d1 * d2 < 0.0 && d3 * d4 < 0.0 {
+                return true;
+            }
+        }
+    }
+    let inside = |pts: &[Vec2], q: Vec2| {
+        let n = pts.len();
+        let mut odd = false;
+        for i in 0..n {
+            let (p0, p1) = (pts[i], pts[(i + 1) % n]);
+            if (p0.y > q.y) != (p1.y > q.y) && q.x < p0.x + (q.y - p0.y) / (p1.y - p0.y) * (p1.x - p0.x) {
+                odd = !odd;
+            }
+        }
+        odd
+    };
+    a.first().is_some_and(|&q| inside(b, q)) || b.first().is_some_and(|&q| inside(a, q))
+}
+
 impl Marker {
+    /// The marker with the copies named in `moves` (by [`Placement::key`]) shifted by their
+    /// offsets, mm, as a marker maker nudges pieces by hand; its length follows the pieces.
+    #[must_use]
+    pub fn with_moves(mut self, moves: &std::collections::BTreeMap<String, Vec2>, gap_mm: f64) -> Self {
+        if moves.is_empty() {
+            return self;
+        }
+        for p in &mut self.placements {
+            if let Some(&d) = moves.get(&p.key()) {
+                for q in &mut p.outline {
+                    *q += d;
+                }
+            }
+        }
+        self.length_mm = self
+            .placements
+            .iter()
+            .flat_map(|p| p.outline.iter().map(|q| q.x))
+            .fold(0.0, f64::max)
+            + gap_mm.max(0.0) / 2.0;
+        self
+    }
+
+    /// For each laid copy, whether it overlaps another or leaves the fabric's width.
+    #[must_use]
+    pub fn clashes(&self) -> Vec<bool> {
+        let n = self.placements.len();
+        let mut out: Vec<bool> = self
+            .placements
+            .iter()
+            .map(|p| {
+                p.outline
+                    .iter()
+                    .any(|q| q.y < -0.5 || q.y > self.width_mm + 0.5 || q.x < -0.5)
+            })
+            .collect();
+        for i in 0..n {
+            for j in i + 1..n {
+                if polygons_overlap(&self.placements[i].outline, &self.placements[j].outline) {
+                    out[i] = true;
+                    out[j] = true;
+                }
+            }
+        }
+        out
+    }
+
     /// Area of the laid pieces over the fabric they take, 0..1.
     #[must_use]
     pub fn efficiency(&self) -> f64 {
@@ -622,5 +717,26 @@ mod tests {
             let _ = std::fs::write(format!("{dir}/marker.svg"), &svg);
             eprintln!("length {:.0} efficiency {:.3}", m.length_mm, m.efficiency());
         }
+    }
+
+    #[test]
+    fn hand_moves_shift_pieces_and_clashes_show() {
+        let p = tee();
+        let m = make_marker(&p, &MarkerOptions::single(&p.base_size));
+        assert!(m.clashes().iter().all(|c| !c), "the nest is clean");
+        // drag the second piece onto the first
+        let (a, b) = (&m.placements[0], &m.placements[1]);
+        let centre = |pts: &[Vec2]| pts.iter().fold(Vec2::ZERO, |s, &q| s + q) * (1.0 / pts.len() as f64);
+        let mut moves = std::collections::BTreeMap::new();
+        moves.insert(b.key(), centre(&a.outline) - centre(&b.outline));
+        let moved = m.clone().with_moves(&moves, DEFAULT_GAP_MM);
+        let clashes = moved.clashes();
+        assert!(clashes[0] && clashes[1], "the two now overlap");
+        // drag a piece far along the fabric: the lay gets longer
+        moves.clear();
+        moves.insert(b.key(), Vec2::new(2000.0, 0.0));
+        let longer = m.clone().with_moves(&moves, DEFAULT_GAP_MM);
+        assert!(longer.length_mm > m.length_mm + 1000.0);
+        assert!(longer.efficiency() < m.efficiency());
     }
 }

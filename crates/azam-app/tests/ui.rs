@@ -1327,6 +1327,41 @@ fn the_marker_follows_its_settings_and_exports() {
 }
 
 #[test]
+fn a_marker_piece_can_be_dragged_and_clashes_show() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        win.root()
+            .update(cx, |app, _| app.set_workspace(azam_app::app::Workspace::TechPack));
+        cx.draw(win.id);
+        win.root().update(cx, |app, _| {
+            let m = app.marker();
+            let centre = |pts: &[azam_geom::Vec2]| {
+                pts.iter().fold(azam_geom::Vec2::ZERO, |s, &q| s + q) * (1.0 / pts.len() as f64)
+            };
+            let (a, b) = (centre(&m.placements[0].outline), centre(&m.placements[1].outline));
+            let from = app.marker_to_window(b).expect("the editor drew the marker");
+            let to = app.marker_to_window(a).expect("drawn");
+            // drag the second piece onto the first
+            app.marker_press(from.0, from.1);
+            assert!(app.marker_drag_to(to.0, to.1), "dragging");
+            app.marker_release();
+            let moved = app.marker();
+            let clashes = moved.clashes();
+            assert!(clashes[0] && clashes[1], "the two overlap now");
+            let saved = azam_app::marker_view::MarkerSettings::of(&app.session().project).moves;
+            assert_eq!(saved.len(), 1, "the move is kept with the project");
+            // Re-nest by clearing the moves brings the clean nest back
+            app.edit_project("Re-nest Marker", |p| {
+                p.extra.insert("marker".into(), serde_json::json!({"moves": {}}));
+            });
+            assert!(app.marker().clashes().iter().all(|c| !c));
+        });
+    });
+}
+
+#[test]
 fn the_colorways_editor_shows_every_colorway_and_picks_one() {
     Application::headless().run(|cx| {
         let win = cx
