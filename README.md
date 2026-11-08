@@ -31,7 +31,10 @@ On macOS, `scripts/bundle-macos.sh` builds `target/release/azam.app` (with the M
 
 Blender's controls apply: middle drag orbits the 3D view (Shift pans), the wheel zooms, `Z` opens the
 shading pie, `` ` `` the view pie, `F3` the operator search, `Space` plays the simulation, `Ctrl Z`
-undoes. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
+undoes. Right-click opens a context menu for what is under the pointer (a piece, empty pattern space,
+the 3D view); the editor-type button at the left of every area header switches the editor it shows
+(choosing one another area shows swaps them); F3 ranks matches and shows each command's menu and
+shortcut. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
 `P` add point, `H` polygon, `S` rectangle, `D` dart, `N` sew (`Shift N` free sew), `M` measure; hover a
 tool for its name and key. The Dart tool cuts a 20 × 80 mm dart into the clicked segment and sews its
 legs; reshape it with Edit Points.
@@ -44,7 +47,7 @@ between the Fit, Strain, Stress and Pressure maps. Graphics placed on pieces are
 in the 3D view and in renders (F12), together with topstitches, buttons, buttonholes and zippers
 (the Zipper tool sews two edges and gives each a zipper half). Pins set with the 3D Pin tool are saved
 with the project. In the 3D view, drag a piece to move it before draping, Ctrl-drag to turn it around
-the body, or show the arrangement points (header button or View menu) and click one to send the
+the body (saved with the project and undoable), or show the arrangement points (header button or View menu) and click one to send the
 selected pieces there. The Dart tool's width and depth sit in the pattern editor's header while it
 is active. Fabrics can be deleted, saved to a fabric library shared by all projects
 (`~/Library/Application Support/azam/fabrics` on macOS, or `$AZAM_LIBRARY/fabrics`) and added from
@@ -81,6 +84,8 @@ it; DXF import also brings notches and grain lines.
 - Persian and Arabic text: contextual shaping (joined letter forms, lam-alef, ZWNJ) before bidi
   reordering, and per-glyph fallback to a system font for scripts the UI font lacks
   (`BUI_FALLBACK_FONT` overrides the font file).
+- Native controls that stick out of their scroll container hide instead of painting over what lies
+  beyond it (the kit cannot cut them partially).
 
 ## Working on it
 

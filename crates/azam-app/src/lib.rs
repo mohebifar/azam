@@ -7,7 +7,9 @@
 pub mod app;
 pub mod areas;
 mod avatar_motion;
+mod context_menu;
 pub mod decals;
+pub mod editors;
 mod export;
 pub mod fabric_library;
 pub mod garment3d;
@@ -22,6 +24,7 @@ mod place3d;
 pub mod properties;
 pub mod render_view;
 pub mod scene;
+mod search;
 pub mod selection;
 pub mod session;
 mod share_view;

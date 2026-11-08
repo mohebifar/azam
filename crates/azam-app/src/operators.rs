@@ -416,6 +416,8 @@ pub enum Operator {
     RenderImage,
     /// Show a fit map (switching to fit map shading).
     SetFitMap(azam_sim::FitMode),
+    /// Show an editor in an area (the editor-type menu).
+    SetEditor(crate::editors::Slot, crate::editors::Editor),
 }
 
 impl Operator {
@@ -428,6 +430,7 @@ impl Operator {
             Self::SetShading(Shading::Solid) => "Solid Shading".into(),
             Self::SetShading(Shading::FitMap) => "Fit Map Shading".into(),
             Self::SetFitMap(m) => format!("Fit Map: {}", fit_label(m)),
+            Self::SetEditor(_, e) => e.label().into(),
             Self::View(v) => match v {
                 ViewPreset::Front => "Front View",
                 ViewPreset::Back => "Back View",
@@ -484,7 +487,12 @@ impl Operator {
             Self::Shortcuts => "Keyboard Shortcuts",
             Self::About => "About azam",
             Self::RenderImage => "Render Image",
-            Self::New(_) | Self::SetTool(_) | Self::SetShading(_) | Self::SetFitMap(_) | Self::View(_) => "",
+            Self::New(_)
+            | Self::SetTool(_)
+            | Self::SetShading(_)
+            | Self::SetFitMap(_)
+            | Self::SetEditor(..)
+            | Self::View(_) => "",
         }
     }
 
@@ -534,6 +542,7 @@ impl Operator {
             Self::Shortcuts => "KEY_COMMAND",
             Self::About => "INFO",
             Self::RenderImage => "RENDER_STILL",
+            Self::SetEditor(_, e) => e.icon(),
             Self::SelectAll | Self::DetectHems | Self::ShadingPie | Self::ViewPie => return None,
         })
     }
@@ -736,6 +745,76 @@ pub struct Menu {
     pub title: &'static str,
     /// Entries in order.
     pub entries: Vec<MenuEntry>,
+}
+
+/// Which right-click menu to open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextMenu {
+    /// Over a piece in the pattern editor.
+    Piece,
+    /// Over empty pattern space.
+    Pattern,
+    /// In the 3D view.
+    Viewport,
+}
+
+impl ContextMenu {
+    /// Every right-click menu, in the order [`context_menus`] lists them.
+    pub const ALL: [Self; 3] = [Self::Piece, Self::Pattern, Self::Viewport];
+}
+
+/// The right-click menus, in [`ContextMenu::ALL`] order: commands for what is under the pointer,
+/// as Blender's context menus offer.
+#[must_use]
+pub fn context_menus() -> Vec<Menu> {
+    use MenuEntry::{Item, Separator};
+    use Operator as O;
+    vec![
+        Menu {
+            title: "Piece",
+            entries: vec![
+                Item(O::Duplicate),
+                Item(O::Mirror),
+                Separator,
+                Item(O::FlipHorizontal),
+                Item(O::FlipVertical),
+                Item(O::Rotate90),
+                Separator,
+                Item(O::DetectHems),
+                Separator,
+                Item(O::Delete),
+            ],
+        },
+        Menu {
+            title: "Pattern",
+            entries: vec![
+                Item(O::SelectAll),
+                Item(O::FramePattern),
+                Separator,
+                Item(O::SetTool(Tool::Polygon)),
+                Item(O::SetTool(Tool::Rectangle)),
+                Item(O::SetTool(Tool::Sew)),
+                Separator,
+                Item(O::ImportDxf),
+            ],
+        },
+        Menu {
+            title: "3D View",
+            entries: vec![
+                Item(O::TogglePlay),
+                Item(O::ResetSim),
+                Separator,
+                Item(O::FrameAll),
+                Item(O::ToggleOrtho),
+                Separator,
+                Item(O::SetShading(Shading::Solid)),
+                Item(O::SetShading(Shading::FitMap)),
+                Item(O::ToggleArrangementPoints),
+                Separator,
+                Item(O::RenderImage),
+            ],
+        },
+    ]
 }
 
 /// Menus in the editors' headers, in order: the 3D view's View and Simulation, then the pattern

@@ -140,6 +140,35 @@ pub struct Arrangement {
     /// Chador drape: z of the head centre.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub head_z: Option<f64>,
+    /// A rigid move after placing, mm (a piece dragged in the 3D view).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved: Option<[f64; 3]>,
+    /// A turn about the body's vertical axis before that move, radians (a piece turned in the 3D
+    /// view).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turned: Option<f64>,
+}
+
+impl Arrangement {
+    /// Whether `self` and `other` differ only in [`Self::moved`] and [`Self::turned`].
+    #[must_use]
+    pub fn same_but_placement(&self, other: &Self) -> bool {
+        let strip = |a: &Self| Self {
+            moved: None,
+            turned: None,
+            ..a.clone()
+        };
+        strip(self) == strip(other)
+    }
+
+    /// Applies the 3D move and turn to `p`: turned about the vertical axis through the origin, then
+    /// moved.
+    #[must_use]
+    pub fn place(&self, p: DVec3) -> DVec3 {
+        let (s, c) = self.turned.unwrap_or(0.0).sin_cos();
+        let m = self.moved.unwrap_or([0.0; 3]);
+        DVec3::new(p.x * c + p.z * s + m[0], p.y + m[1], -p.x * s + p.z * c + m[2])
+    }
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]

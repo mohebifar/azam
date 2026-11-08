@@ -213,7 +213,7 @@ fn pins_hold_and_release() {
 
 #[test]
 #[allow(clippy::float_cmp, reason = "positions and masses are copied, not computed")]
-fn translating_a_piece_adds_no_velocity_and_reset_restores_the_arrangement() {
+fn translating_a_piece_adds_no_velocity_and_reset_keeps_the_placement() {
     let av = female_avatar();
     let project = square_project(&["pc_sq"], SQUARE_MM);
     let fresh = Simulation::build(&project, &av, None, &SimParams::default());
@@ -228,10 +228,14 @@ fn translating_a_piece_adds_no_velocity_and_reset_restores_the_arrangement() {
     );
     sim.grab_at(5);
     sim.reset(&av);
-    assert_eq!(
-        sim.particles.x, fresh.particles.x,
-        "reset places the pieces as a fresh build does"
-    );
+    // reset re-arranges the piece and keeps its 3D placement (the move)
+    for (i, (a, b)) in sim.particles.x.iter().zip(&fresh.particles.x).enumerate() {
+        let want = if i % 3 == 1 { b + 50.0 } else { *b };
+        assert!(
+            (a - want).abs() < 1e-3,
+            "reset puts the piece at its arrangement plus the move"
+        );
+    }
     assert!(sim.grab.is_none() && sim.frames == 0 && sim.gravity_scale.is_none());
     assert!(sim.particles.v.iter().all(|&v| v == 0.0));
 }
@@ -356,6 +360,13 @@ fn a_new_arrangement_moves_only_that_piece_on_rebuild() {
     let mut moved = first.clone();
     moved.translate_piece(0, [0.0, 0.0, 50.0]);
     moved.translate_piece(1, [0.0, 0.0, 50.0]);
+    // the app records a 3D move on the piece; the re-slotted piece starts over
+    project
+        .pieces
+        .get_mut(&PieceId::new("pc_a"))
+        .expect("a")
+        .arr
+        .moved = Some([0.0, 0.0, 50.0]);
     project.pieces.get_mut(&PieceId::new("pc_b")).expect("b").arr.slot = "back".into();
     let rebuilt = Simulation::build(&project, &av, Some(&moved), &SimParams::default());
     let span = |s: &Simulation, ri: usize| {
@@ -366,7 +377,7 @@ fn a_new_arrangement_moves_only_that_piece_on_rebuild() {
     assert_eq!(
         span(&rebuilt, ri(&rebuilt, "pc_a")),
         span(&moved, ri(&moved, "pc_a")),
-        "an untouched piece keeps its place"
+        "a moved piece whose move is saved keeps its place"
     );
     let fresh = Simulation::build(&project, &av, None, &SimParams::default());
     assert_eq!(
@@ -391,4 +402,19 @@ fn turning_a_piece_keeps_its_height_and_distance_from_the_axis() {
         (f64::from(after[0]) - f64::from(before[2])).abs() < 1e-3,
         "a quarter turn moves z onto x"
     );
+}
+
+#[test]
+fn an_unsaved_move_is_undone_by_a_rebuild() {
+    let av = female_avatar();
+    let project = square_project(&["pc_sq"], SQUARE_MM);
+    let first = Simulation::build(&project, &av, None, &SimParams::default());
+    let mut moved = first.clone();
+    moved.turn_piece(0, 0.3, [0.0, 0.0]);
+    moved.translate_piece(0, [10.0, 0.0, 40.0]);
+    // the project never heard of the move (an undo, say): the piece goes back
+    let rebuilt = Simulation::build(&project, &av, Some(&moved), &SimParams::default());
+    for (a, b) in rebuilt.particles.x.iter().zip(&first.particles.x) {
+        assert!((a - b).abs() < 0.01, "{a} vs {b}");
+    }
 }

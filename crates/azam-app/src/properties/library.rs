@@ -56,6 +56,10 @@ impl AzamApp {
                     .get(&delete)
                     .map(|f| f.name.clone())
                     .unwrap_or_default();
+                if this.session.project.fabrics.len() < 2 {
+                    this.status = "The last fabric cannot be deleted".into();
+                    return;
+                }
                 let mut heir = None;
                 this.session
                     .edit("Delete Fabric", |p| heir = azam_doc::delete_fabric(p, &delete));
@@ -75,15 +79,14 @@ impl AzamApp {
                     this.status = "No folder for the fabric library".into();
                     return;
                 };
+                this.fabric_library = None;
                 this.status = match fabric_library::save(&dir, &fabric) {
                     Ok(path) => format!("Saved {} to {}", fabric.name, path.display()),
                     Err(e) => format!("Could not save to the library: {e}"),
                 };
             }),
         ]);
-        let library = fabric_library::fabrics_dir()
-            .map(|d| fabric_library::list(&d))
-            .unwrap_or_default();
+        let library = self.fabric_library.clone().unwrap_or_default();
         let mut select = Dropdown().class("pfield");
         select = select.child(option().child(LIBRARY_PROMPT).selected(true));
         for f in &library {
@@ -129,6 +132,10 @@ impl AzamApp {
                 }
             }),
             Self::action("Delete Colorway", cx, move |this| {
+                if this.session.project.colorways.len() < 2 {
+                    this.status = "The last colorway cannot be deleted".into();
+                    return;
+                }
                 let mut done = false;
                 this.session.edit("Delete Colorway", |p| {
                     done = azam_doc::delete_colorway(p, &active)

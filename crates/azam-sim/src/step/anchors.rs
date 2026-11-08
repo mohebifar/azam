@@ -133,15 +133,26 @@ impl Simulation {
     }
 
     /// Moves piece `ri` rigidly by `delta` mm (while the simulation is paused); the move adds no
-    /// velocity.
+    /// velocity. Its pins move along, and its arrangement records the move (so a rebuild from the
+    /// project, once it holds the same move, keeps the piece where it is).
     pub fn translate_piece(&mut self, ri: usize, delta: [f64; 3]) {
-        let Some(r) = self.records.get(ri) else { return };
+        let Some(r) = self.records.get_mut(ri) else { return };
+        let m = r.arrangement.moved.unwrap_or([0.0; 3]);
+        r.arrangement.moved = Some([m[0] + delta[0], m[1] + delta[1], m[2] + delta[2]]);
+        let range = r.offset..r.offset + r.count;
         let p = &mut self.particles;
-        for q in r.particles() {
+        for q in range.clone() {
             let k = q * 3;
             for ((xd, pd), dd) in p.x[k..k + 3].iter_mut().zip(&mut p.prev[k..k + 3]).zip(delta) {
                 nudge(xd, dd);
                 *pd = *xd;
+            }
+        }
+        for (e, &v) in self.pins.vertex.iter().enumerate() {
+            if range.contains(&(v as usize)) {
+                for (h, dd) in self.pins.pos[e * 3..e * 3 + 3].iter_mut().zip(delta) {
+                    nudge(h, dd);
+                }
             }
         }
     }
@@ -150,16 +161,36 @@ impl Simulation {
     /// z, mm), as a piece is turned around the body (while the simulation is paused); the turn
     /// adds no velocity.
     pub fn turn_piece(&mut self, ri: usize, angle: f64, centre: [f64; 2]) {
-        let Some(r) = self.records.get(ri) else { return };
+        let Some(r) = self.records.get_mut(ri) else { return };
         let (s, c) = angle.sin_cos();
+        let turn = |x: f32, z: f32| {
+            let (x, z) = (f64::from(x) - centre[0], f64::from(z) - centre[1]);
+            (
+                (centre[0] + x * c + z * s) as f32,
+                (centre[1] - x * s + z * c) as f32,
+            )
+        };
+        // the arrangement keeps "turn, then move": turning after a move turns the move too
+        if centre == [0.0, 0.0] {
+            r.arrangement.turned = Some(r.arrangement.turned.unwrap_or(0.0) + angle);
+            if let Some(m) = r.arrangement.moved {
+                let (x, z) = turn(m[0] as f32, m[2] as f32);
+                r.arrangement.moved = Some([f64::from(x), m[1], f64::from(z)]);
+            }
+        }
+        let range = r.offset..r.offset + r.count;
         let p = &mut self.particles;
-        for q in r.particles() {
+        for q in range.clone() {
             let k = q * 3;
-            let (x, z) = (f64::from(p.x[k]) - centre[0], f64::from(p.x[k + 2]) - centre[1]);
-            p.x[k] = (centre[0] + x * c + z * s) as f32;
-            p.x[k + 2] = (centre[1] - x * s + z * c) as f32;
+            (p.x[k], p.x[k + 2]) = turn(p.x[k], p.x[k + 2]);
             p.prev[k] = p.x[k];
             p.prev[k + 2] = p.x[k + 2];
+        }
+        for (e, &v) in self.pins.vertex.iter().enumerate() {
+            if range.contains(&(v as usize)) {
+                let k = e * 3;
+                (self.pins.pos[k], self.pins.pos[k + 2]) = turn(self.pins.pos[k], self.pins.pos[k + 2]);
+            }
         }
     }
 }

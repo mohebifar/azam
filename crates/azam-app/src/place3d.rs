@@ -109,6 +109,7 @@ impl AzamApp {
             return false;
         };
         if drag.moved {
+            self.record_placement(drag.ri, drag.turn);
             self.status = if drag.turn {
                 "Turned the piece; press Space to drape from here".into()
             } else {
@@ -116,6 +117,44 @@ impl AzamApp {
             };
         }
         true
+    }
+
+    /// Saves where piece record `ri` now sits (its 3D move and turn, as the simulation tracked
+    /// them) on the piece, as one undoable edit; saved pin positions on it move along.
+    fn record_placement(&mut self, ri: usize, turned_it: bool) {
+        let Some(record) = self.scene3d.sim.as_ref().and_then(|s| s.records.get(ri)) else {
+            return;
+        };
+        let (id, moved, turned) = (
+            record.id.clone(),
+            record.arrangement.moved,
+            record.arrangement.turned,
+        );
+        self.session
+            .edit(if turned_it { "Turn Piece" } else { "Move Piece" }, |p| {
+                let Some(pc) = p.pieces.get_mut(&id) else { return };
+                let as_placed = |moved: Option<[f64; 3]>, turned: Option<f64>| azam_avatar::Arrangement {
+                    moved,
+                    turned,
+                    ..azam_avatar::Arrangement::default()
+                };
+                let (old, new) = (as_placed(pc.arr.moved, pc.arr.turned), as_placed(moved, turned));
+                for pin in &mut pc.pins {
+                    if let Some(at) = pin.at {
+                        let m = old.moved.unwrap_or([0.0; 3]);
+                        let unmoved = glam::DVec3::new(at[0] - m[0], at[1] - m[1], at[2] - m[2]);
+                        let step = azam_avatar::Arrangement {
+                            turned: Some(new.turned.unwrap_or(0.0) - old.turned.unwrap_or(0.0)),
+                            moved: new.moved,
+                            ..azam_avatar::Arrangement::default()
+                        };
+                        let q = step.place(unmoved);
+                        pin.at = Some([q.x, q.y, q.z]);
+                    }
+                }
+                pc.arr.moved = moved;
+                pc.arr.turned = turned;
+            });
     }
 
     /// The avatar's arrangement points over the 3D view, while they are shown: clicking one sends

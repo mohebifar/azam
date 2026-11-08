@@ -146,6 +146,22 @@ impl AzamApp {
             self.pattern_drag = Some(PatternDrag::Pan { last: s });
             return;
         }
+        if e.button == MouseButton::Right {
+            // right-click: the piece under the pointer is selected and its commands offered
+            let hit = hit_test(&self.session.project, q, self.pattern_view.zoom, false);
+            let menu = match hit.piece {
+                Some(piece) => {
+                    if !self.session.selection.pieces.contains(&piece) {
+                        self.session.selection.select_only(piece);
+                    }
+                    crate::operators::ContextMenu::Piece
+                }
+                None => crate::operators::ContextMenu::Pattern,
+            };
+            self.open_context_menu(menu, e.position);
+            cx.notify();
+            return;
+        }
         if e.button != MouseButton::Left {
             return;
         }

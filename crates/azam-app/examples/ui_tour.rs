@@ -67,6 +67,19 @@ fn main() {
         cx.simulate_key(win.id, "z", "z");
         shot(cx, "04-pie");
         cx.simulate_key(win.id, "", "Escape");
+        win.root().update(cx, |app, _| {
+            app.open_context_menu(
+                azam_app::operators::ContextMenu::Piece,
+                point(px(720.0), px(430.0)),
+            );
+        });
+        shot(cx, "04b-context-menu");
+        cx.simulate_key(win.id, "", "Escape");
+        if let Some(b) = cx.element_bounds(win.id, "editor-type-1") {
+            cx.simulate_click(win.id, b.origin.x + 8.0, b.origin.y + b.size.height / 2.0);
+        }
+        shot(cx, "04c-editor-type");
+        cx.simulate_key(win.id, "", "Escape");
         // properties tabs down the side of the properties editor
         for (i, name) in [
             "05-tab-project",

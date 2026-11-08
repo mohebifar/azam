@@ -36,6 +36,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .menu-item.disabled:hover { background: transparent; color: #6b6b6b; }
 .menu-icon { width: 16px; height: 16px; flex-shrink: 0; }
 .menu-label { flex: 1; }
+.menu-path { color: #8f8f8f; white-space: nowrap; }
 .menu-shortcut { color: #8f8f8f; font-size: 11px; }
 .menu-item:hover .menu-shortcut { color: #dce4f2; }
 .menu-sep { height: 1px; margin: 4px 8px; background: #2e2e2e; }
@@ -44,8 +45,8 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .areas { flex: 1; display: flex; padding: 2px; min-height: 0; }
 .area { display: flex; flex-direction: column; border-radius: 6px; overflow: hidden; background: #303030;
         min-width: 0; min-height: 0; }
-.area-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.area-col-wrap { display: flex; flex-shrink: 0; min-height: 0; }
+.area-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
+.area-col-wrap { display: flex; flex-shrink: 0; min-height: 0; height: 100%; overflow: hidden; }
 .area-split { flex-shrink: 0; }
 .area-split.v { width: 3px; cursor: ew-resize; }
 .area-split.h { height: 3px; cursor: ns-resize; }
@@ -65,6 +66,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .hbtn.on { background: #4772b3; color: #ffffff; }
 .hgroup { display: flex; gap: 1px; }
 .tool-settings { gap: 4px; margin-left: 8px; }
+.tool-header { background: #2b2b2b; border-top: 1px solid #1f1f1f; }
 .hgroup .hbtn { border-radius: 0; }
 .hgroup .hbtn.first { border-radius: 4px 0 0 4px; }
 .hgroup .hbtn.last { border-radius: 0 4px 4px 0; }
@@ -119,7 +121,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
              gap: 4px; }
 .prop-title { display: flex; align-items: center; gap: 6px; padding: 2px 4px 6px 4px; color: #e6e6e6;
               font-weight: 600; }
-.panel { border-radius: 5px; background: #383838; overflow: hidden; }
+.panel { border-radius: 5px; background: #383838; overflow: hidden; flex-shrink: 0; }
 .panel-head { display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px;
               background: #3d3d3d; color: #e6e6e6; font-weight: 600; }
 .panel-head:hover { background: #444444; }
@@ -129,9 +131,11 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
           white-space: nowrap; text-overflow: ellipsis; }
 .pfield { flex: 1; min-width: 0; }
 .pvalue { flex: 1; color: #e6e6e6; }
-.pnote { color: #8f8f8f; font-size: 11px; padding: 2px 4px; }
+.pnote { color: #8f8f8f; font-size: 11px; padding: 2px 4px; white-space: nowrap; overflow: hidden;
+         flex-shrink: 0; }
 .pbuttons { display: flex; gap: 2px; flex: 1; }
 .pbtn { flex: 1; height: 20px; display: flex; align-items: center; justify-content: center; gap: 4px;
+        padding: 0 8px; white-space: nowrap;
         border-radius: 4px; background: #545454; color: #e6e6e6; }
 .pbtn:hover { background: #656565; }
 .pbtn.primary { background: #4772b3; color: #ffffff; }

@@ -50,6 +50,12 @@ pub struct Arrangement {
     /// Rotation around the body, in degrees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ang: Option<f64>,
+    /// A rigid move after placing, mm (the piece was dragged in the 3D view).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved: Option<[f64; 3]>,
+    /// A turn about the body's vertical axis before that move, radians (turned in the 3D view).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turned: Option<f64>,
     /// Fields this version does not interpret (flat, shift…), kept as stored.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -71,6 +77,8 @@ impl Arrangement {
             h: None,
             t: None,
             ang: None,
+            moved: None,
+            turned: None,
             extra: Map::new(),
         }
     }

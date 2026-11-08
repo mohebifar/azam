@@ -161,7 +161,7 @@ impl Scene3d {
                     .enumerate()
                     .filter_map(|(i, _)| r.fit.wanted[i].map(|w| (r.measured.0[i] - w).abs()))
                     .fold(0.0, f64::max);
-                format!("MakeHuman body (CC0) · largest deviation {worst:.1} mm")
+                format!("MakeHuman (CC0) · fits within {worst:.1} mm")
             }
             _ if makehuman_available() && !self.mannequin => "Mannequin (MakeHuman pack unreadable)".into(),
             _ => "Built-in mannequin".into(),

@@ -361,6 +361,30 @@ fn dragging_a_piece_in_3d_moves_it() {
         let after = app.piece_position(&front).expect("front cloth");
         let moved = ((after[0] - before[0]).powi(2) + (after[2] - before[2]).powi(2)).sqrt();
         assert!(moved > 20.0, "the front moved {moved} mm sideways");
+        assert!(
+            app.session().project.pieces[&front].arr.moved.is_some(),
+            "the move is saved on the piece"
+        );
+
+        // undo puts it back; the drape moves back with it
+        cx.simulate_click(win.id, 700.0, 850.0);
+        cx.simulate_key_with(win.id, "z", "z", true, false);
+        for _ in 0..3 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+        }
+        let app = win.root().read(cx);
+        assert!(
+            app.session().project.pieces[&front].arr.moved.is_none(),
+            "undo forgets the move"
+        );
+        let back = app.piece_position(&front).expect("front cloth");
+        let off = ((back[0] - before[0]).powi(2) + (back[2] - before[2]).powi(2)).sqrt();
+        // (the rebuild may push a few particles out of the body, so not exactly)
+        assert!(
+            off < moved * 0.25,
+            "undo puts the cloth back ({off} mm away after a {moved} mm move)"
+        );
     });
 }
 
@@ -390,5 +414,89 @@ fn clicking_an_arrangement_point_reslots_the_selected_piece() {
         cx.draw(win.id);
         let app = win.root().read(cx);
         assert_eq!(app.session().project.pieces[&front].arr.slot, "left");
+    });
+}
+
+#[test]
+fn the_piece_context_menu_runs_its_commands() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        let front = front_id(cx, &win);
+        let before = win.root().read(cx).session().project.pieces.len();
+        win.root().update(cx, |app, cx| {
+            app.select_piece(front.clone());
+            app.open_context_menu(
+                azam_app::operators::ContextMenu::Piece,
+                point(px(800.0), px(400.0)),
+            );
+            cx.notify();
+        });
+        cx.draw(win.id);
+        cx.draw(win.id);
+        assert_eq!(win.root().read(cx).open_context_menu_title(), Some("Piece"));
+        let item = cx
+            .element_bounds(win.id, "op-Duplicate Pieces")
+            .expect("Duplicate in the menu");
+        assert!(
+            item.origin.x >= 799.0 && item.origin.y >= 399.0,
+            "the menu opens at the pointer"
+        );
+        cx.simulate_click(
+            win.id,
+            item.origin.x + 20.0,
+            item.origin.y + item.size.height / 2.0,
+        );
+        cx.draw(win.id);
+        let app = win.root().read(cx);
+        assert_eq!(app.session().project.pieces.len(), before + 1, "Duplicate ran");
+        assert_eq!(app.open_context_menu_title(), None, "and the menu closed");
+    });
+}
+
+#[test]
+fn the_editor_type_menu_switches_an_area() {
+    use azam_app::editors::{Editor, Slot};
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        cx.draw(win.id);
+        assert_eq!(win.root().read(cx).editor_at(Slot::Main), Some(Editor::View3d));
+        let button = cx
+            .element_bounds(win.id, "editor-type-0")
+            .expect("the main area's editor type");
+        cx.simulate_click(
+            win.id,
+            button.origin.x + 8.0,
+            button.origin.y + button.size.height / 2.0,
+        );
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let item = cx
+            .element_bounds(win.id, "op-Pattern Editor")
+            .expect("Pattern Editor in the menu");
+        cx.simulate_click(
+            win.id,
+            item.origin.x + 20.0,
+            item.origin.y + item.size.height / 2.0,
+        );
+        for _ in 0..3 {
+            cx.draw(win.id);
+        }
+        let app = win.root().read(cx);
+        assert_eq!(app.editor_at(Slot::Main), Some(Editor::Pattern));
+        assert_eq!(
+            app.editor_at(Slot::Second),
+            Some(Editor::View3d),
+            "the two areas swap"
+        );
+        assert!(
+            cx.element_bounds(win.id, PATTERN_ID).is_some()
+                && cx.element_bounds(win.id, VIEWPORT_ID).is_some()
+        );
     });
 }

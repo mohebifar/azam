@@ -142,6 +142,9 @@ impl AzamApp {
                 .child(self.icons.icon(tab.icon()))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.prop_tab = tab;
+                    // opening a tab reads the fabric library afresh (another project may have
+                    // saved to it)
+                    this.fabric_library = None;
                     cx.notify();
                 }));
             tabs = tabs.child(Self::with_tooltip(button, tab.title().to_owned(), cx));
@@ -158,10 +161,13 @@ impl AzamApp {
             PropTab::Avatar => self.avatar_panels(cx),
             PropTab::Simulation => self.sim_panels(cx),
         };
-        div()
-            .class("props")
-            .child(tabs)
-            .child(div().class("prop-body").child(title).children(body))
+        div().class("props").child(tabs).child(
+            div()
+                .class("prop-body")
+                .id("prop-body")
+                .child(title)
+                .children(body),
+        )
     }
 
     /// Points of measure against every size, in cm.
@@ -636,6 +642,13 @@ impl AzamApp {
 
     #[allow(clippy::too_many_lines, reason = "the panels of one tab, read top to bottom")]
     fn fabric_panels(&mut self, cx: &mut Context<Self>) -> Vec<Div> {
+        if self.fabric_library.is_none() {
+            self.fabric_library = Some(
+                crate::fabric_library::fabrics_dir()
+                    .map(|d| crate::fabric_library::list(&d))
+                    .unwrap_or_default(),
+            );
+        }
         let project = &self.session.project;
         let fabric_id = self
             .active_piece()
