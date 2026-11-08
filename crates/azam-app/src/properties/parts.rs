@@ -237,18 +237,17 @@ impl AzamApp {
                 azam_doc::set_hem(p, &piece, &segment, v);
             })
         };
-        vec![self.panel(
-            "Segment",
-            vec![
-                info("Piece".into(), name),
-                info(
-                    "Length".into(),
-                    crate::units::text(self.session.project.units, length).to_string(),
-                ),
-                sa_row,
-                hem_row,
-            ],
-        )]
+        let mut rows = vec![
+            info("Piece".into(), name),
+            info(
+                "Length".into(),
+                crate::units::text(self.session.project.units, length).to_string(),
+            ),
+            sa_row,
+            hem_row,
+        ];
+        rows.extend(self.length_link_rows(piece, segment, cx));
+        vec![self.panel("Segment", rows)]
     }
 
     fn notch_panels(&mut self, piece: &PieceId, index: usize, cx: &mut Context<Self>) -> Vec<Div> {

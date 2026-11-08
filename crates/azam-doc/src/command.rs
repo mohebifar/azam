@@ -296,9 +296,11 @@ impl std::error::Error for EditError {}
 /// missing or would make the pattern invalid.
 pub fn apply(project: &mut Project, command: Command) -> Result<Applied, EditError> {
     let before = project.clone();
+    let lengths = crate::link_lengths(project);
     let mut created = Vec::new();
     match run(project, command, &mut created) {
         Ok(()) => {
+            crate::sync_length_links(project, &lengths);
             sync_mirrors(project);
             let changed = !same_content(project, &before);
             Ok(Applied {

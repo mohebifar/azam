@@ -2,6 +2,7 @@
 //! the active piece, the selected seam or part, its fabric, the avatar and the simulation.
 
 mod library;
+mod links;
 mod parts;
 
 use azam_doc::{FabricPreset, PieceId, PieceState, Project, Sex};

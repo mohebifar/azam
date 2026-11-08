@@ -413,6 +413,9 @@ pub struct Project {
     /// Tech-pack text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub techpack: Option<TechPack>,
+    /// Segments kept the same length (see [`crate::LengthLink`]).
+    #[serde(rename = "lengthLinks", default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<crate::LengthLink>,
     /// Generator for new ids. Not stored; seeded from the stored ids when first needed.
     #[serde(skip)]
     pub ids: IdGen,
@@ -463,6 +466,7 @@ impl Project {
             },
             graphics: Map::new(),
             techpack: None,
+            links: Vec::new(),
             ids,
             extra: Map::new(),
         }

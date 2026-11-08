@@ -21,6 +21,7 @@ mod fabric;
 mod hems;
 mod history;
 mod ids;
+mod links;
 mod measure;
 mod mirror;
 mod normalize;
@@ -59,6 +60,10 @@ pub use hems::{default_hem, detect_hems, mark_hems, set_hem};
 pub use history::{DEFAULT_HISTORY_LIMIT, History};
 pub use ids::{
     ColorwayId, FabricId, IdGen, ItemId, PartId, PieceId, PointId, PomId, SeamId, SizeName, StitchId, prefix,
+};
+pub use links::{
+    LINK_TOLERANCE_MM, LengthLink, LinkLengths, SegmentRef, add_length_link, fit_segment, link_lengths,
+    remove_length_link, segment_length, sync_length_links,
 };
 pub use measure::{SeamLengths, piece_area, pom_value, sew_lengths};
 pub use mirror::{MIRROR_PREFIX, mirror_seg_id, mirrored_point_id, src_seg_id, sync_mirrors};

@@ -13,6 +13,8 @@ use crate::pattern_input::PatternDrag;
 
 /// Length chips sit this far off the segment, into the piece's outside, in logical pixels.
 const LABEL_OFFSET_PX: f64 = 12.0;
+/// Length-link chips sit this far off the segment, beyond the length chips, in logical pixels.
+const LINK_LABEL_OFFSET_PX: f64 = 30.0;
 
 /// Tools that act on the segment under the pointer.
 const fn segment_tool(tool: Tool) -> bool {
@@ -62,6 +64,16 @@ impl AzamApp {
         Some((at, crate::units::number(self.session.project.units, seg.len)))
     }
 
+    /// A chip naming length link `n` on segment `r`, further out than the length chips.
+    fn link_label(&self, r: &azam_doc::SegmentRef, n: usize) -> Option<(Vec2, String)> {
+        let ol = shown_outline(&self.session.project, &r.piece)?;
+        let seg = ol.segments.get(ol.segment_index(&r.seg)?)?;
+        let mid = seg.point_at(0.5);
+        let outward = -crate::scene::left_normal(mid.tangent) * crate::scene::inward_sign(&ol.poly);
+        let at = mid.pos + outward * (LINK_LABEL_OFFSET_PX / self.pattern_view.zoom);
+        Some((at, format!("\u{21d4} {n}")))
+    }
+
     /// The tools' feedback for the current state.
     pub(crate) fn pattern_overlay(&self) -> Overlay {
         let project = &self.session.project;
@@ -78,6 +90,14 @@ impl AzamApp {
             && let Some(label) = self.length_label(piece, k)
         {
             o.labels.push(label);
+        }
+        // length links: the same number on both segments of each
+        for (i, link) in project.links.iter().enumerate() {
+            o.labels.extend(
+                [&link.a, &link.b]
+                    .into_iter()
+                    .filter_map(|r| self.link_label(r, i + 1)),
+            );
         }
         if let Some(sew) = &self.tools.sew {
             o.sew_sides

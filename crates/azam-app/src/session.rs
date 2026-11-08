@@ -127,7 +127,9 @@ impl Session {
             }
         }
         self.redo.clear();
+        let lengths = azam_doc::link_lengths(&self.project);
         f(&mut self.project);
+        azam_doc::sync_length_links(&mut self.project, &lengths);
         if self.collab.is_some()
             && let Some(top) = self.undo.last_mut()
         {
@@ -278,6 +280,35 @@ mod tests {
     fn rename(session: &mut Session, label: &str, name: &str) {
         let name = name.to_owned();
         session.edit(label, move |p| p.meta.name = name);
+    }
+
+    #[test]
+    fn a_length_link_follows_point_edits_and_undoes_with_them() {
+        let mut session = Session::new(new_project(Template::Skirt));
+        let ids: Vec<azam_doc::PieceId> = session.project.pieces.keys().take(2).cloned().collect();
+        // each skirt panel's second segment (a side seam)
+        let side = |s: &Session, i: usize| {
+            azam_doc::SegmentRef::new(&ids[i], &s.project.pieces[&ids[i]].outline().segments[1].id)
+        };
+        let (a, b) = (side(&session, 0), side(&session, 1));
+        session.edit("Link Lengths", |p| {
+            assert!(azam_doc::add_length_link(p, &a, &b, 3.0));
+        });
+        let len =
+            |s: &Session, r: &azam_doc::SegmentRef| azam_doc::segment_length(&s.project, r).expect("segment");
+        assert!((len(&session, &b) - len(&session, &a) - 3.0).abs() < 0.01);
+        // drag the end of a's side down 25 mm: b follows
+        let end = session.project.pieces[&ids[0]].outline().segments[1].end_point;
+        session.edit("Move Points", |p| {
+            p.pieces.get_mut(&ids[0]).expect("piece").pts[end].pos.y += 25.0;
+        });
+        assert!(
+            (len(&session, &b) - len(&session, &a) - 3.0).abs() < 0.01,
+            "b followed"
+        );
+        let moved = len(&session, &b);
+        session.undo();
+        assert!(len(&session, &b) < moved - 1.0, "undo puts the follower back too");
     }
 
     #[test]

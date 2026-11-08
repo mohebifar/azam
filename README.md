@@ -101,7 +101,11 @@ the cut line as the outline and no added allowance.
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
 per size for the selected points); the templates come graded from the size chart, and the avatar
 takes the body of the size shown (Avatar tab ▸ Follows Size). The Piece tab's Point panel places the
-selected points by number and sets a straight segment's length. The 3D header's wireframe button (or
+selected points by number and sets a straight segment's length. Length links keep two segments the same
+length, or one a set amount longer (Segment panel ▸ Match Length Of, closest lengths first): front
+and back side seams, a sleeve cap and its armhole. Edit either side and the other follows, its curve
+scaled about its start corner so only its far corner moves; the pattern editor marks linked pairs
+with the same "⇔ n" chip. Links hold in the base size. The 3D header's wireframe button (or
 View ▸ Wireframe Overlay) draws the cloth and body meshes' edges. View ▸ Fit Map (or the 3D header in fit map shading) switches
 between the Fit, Strain, Stress and Pressure maps. Graphics placed on pieces are printed on the cloth
 in the 3D view and in renders (F12), together with topstitches, buttons, buttonholes and zippers
