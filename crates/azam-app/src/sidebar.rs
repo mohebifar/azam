@@ -50,7 +50,8 @@ impl AzamApp {
                         if let Some(pc) = p.pieces.get_mut(&id) {
                             let mut m = pc.arr.moved.unwrap_or([0.0; 3]);
                             m[k] = v;
-                            pc.arr.moved = (m != [0.0; 3]).then_some(m);
+                            let turned = pc.arr.turned;
+                            crate::place3d::set_placement(pc, (m != [0.0; 3]).then_some(m), turned);
                         }
                     })
                 };
@@ -62,7 +63,12 @@ impl AzamApp {
                         cx,
                         move |p, v| {
                             if let Some(pc) = p.pieces.get_mut(&id) {
-                                pc.arr.turned = (v != 0.0).then_some(v.to_radians());
+                                let moved = pc.arr.moved;
+                                crate::place3d::set_placement(
+                                    pc,
+                                    moved,
+                                    (v != 0.0).then_some(v.to_radians()),
+                                );
                             }
                         },
                     )

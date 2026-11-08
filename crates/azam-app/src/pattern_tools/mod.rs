@@ -342,7 +342,7 @@ impl AzamApp {
             Tool::InternalEllipse => "Drag inside a piece".into(),
             Tool::Notch => "Click a segment to add a notch".into(),
             Tool::Dart => format!(
-                "Click a segment to cut a {:.0} × {:.0} mm dart there (size in the header)",
+                "Click a segment to cut a {:.0} × {:.0} mm dart there (size in the tool settings bar)",
                 self.tools.dart.width, self.tools.dart.depth
             ),
             Tool::Sew | Tool::FreeSew => SewDraft::hint(sewing, self.tool == Tool::FreeSew),

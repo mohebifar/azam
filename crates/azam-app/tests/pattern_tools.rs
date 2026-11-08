@@ -589,6 +589,12 @@ fn g_and_r_move_and_turn_pieces_modally() {
         cx.draw(ui.win.id);
         ui.key(cx, "", "Escape");
         assert!(first(cx).distance(moved) < 1e-9, "Esc puts the piece back");
+        cx.simulate_key_with(ui.win.id, "Z", "z", true, true);
+        cx.draw(ui.win.id);
+        assert!(
+            first(cx).distance(moved) < 1e-9,
+            "and redo does not bring the cancelled move back"
+        );
 
         // R, sweep the pointer round the middle, Enter: the piece turns
         let (cx0, cy0) = ui.at(cx, ui.centre(cx, &back));
@@ -600,5 +606,43 @@ fn g_and_r_move_and_turn_pieces_modally() {
         ui.key(cx, "", "Return");
         assert_eq!(ui.app(cx).modal_kind(), None);
         assert!(first(cx).distance(moved) > 1.0, "R turned the piece");
+
+        // G then X: the move keeps to the horizontal
+        let before = first(cx);
+        let (cx1, cy1) = ui.at(cx, ui.centre(cx, &back));
+        cx.simulate_mouse_move(ui.win.id, cx1, cy1);
+        ui.key(cx, "g", "g");
+        ui.key(cx, "x", "x");
+        assert_eq!(ui.app(cx).modal_axis(), Some(azam_app::modal::Axis::X));
+        cx.simulate_mouse_move(ui.win.id, cx1 + 30.0, cy1 + 40.0);
+        cx.draw(ui.win.id);
+        ui.key(cx, "", "Return");
+        let after = first(cx);
+        assert!(
+            (after.y - before.y).abs() < 1e-9 && (after.x - before.x).abs() > 1.0,
+            "only x moved"
+        );
+
+        // S: twice as far from the middle, twice the size
+        let width = |cx: &App| {
+            let pts = &ui.app(cx).session().project.pieces[&back].pts;
+            let b = azam_geom::bbox(pts.iter().map(|q| q.pos)).expect("outline");
+            b.max.x - b.min.x
+        };
+        let w0 = width(cx);
+        let (mx, my) = ui.at(cx, ui.centre(cx, &back));
+        cx.simulate_mouse_move(ui.win.id, mx + 40.0, my);
+        ui.key(cx, "s", "s");
+        assert_eq!(ui.app(cx).modal_kind(), Some(azam_app::modal::ModalKind::Scale));
+        cx.simulate_mouse_move(ui.win.id, mx + 80.0, my);
+        cx.draw(ui.win.id);
+        ui.key(cx, "", "Return");
+        let w1 = width(cx);
+        assert!((w1 / w0 - 2.0).abs() < 0.1, "scaled {w0} → {w1}");
+        ui.undo(cx);
+        assert!(
+            (width(cx) - w0).abs() < 1e-6,
+            "one undo takes the whole scale back"
+        );
     });
 }

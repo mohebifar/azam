@@ -266,7 +266,7 @@ impl AzamApp {
                 .class("pfield")
                 .on_input(cx.listener(move |this, e: &ChangeEvent, _, cx| {
                     let v = e.number.clamp(spec.min, spec.max);
-                    this.session.edit(spec.label, |p| apply(p, v));
+                    this.session.edit_continuous(spec.label, |p| apply(p, v));
                     cx.notify();
                 })),
         )

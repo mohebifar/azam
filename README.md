@@ -36,8 +36,11 @@ the 3D view); the editor-type button at the left of every area header switches t
 (choosing one another area shows swaps them); F3 ranks matches and shows each command's menu and
 shortcut. The editor-type menu also splits an area or joins it with its neighbour. N over the 3D view
 opens its sidebar (the selected piece's placement as numbers); over the pattern editor it is the Sew
-tool, as each Blender editor has its own keys. With the Select tool and pieces selected, G and R over
-the pattern editor move and turn them modally (click or Enter keeps, Esc or right-click cancels).
+tool, as each Blender editor has its own keys. With the Select tool and pieces selected, G, R and S with
+the pointer over them move, turn and scale them modally (X or Y locks the axis; click or Enter keeps,
+Esc or right-click cancels and leaves nothing to redo); elsewhere these keys pick their tools. The 3D
+header's mode selector switches between Garment Mode and Arrange Mode (arrangement points shown).
+Drags and modal transforms are one undo step each; separate clicks are always separate steps.
 After a dart, an Adjust Last Operation panel changes its size. Pattern ▸ View ▸ Tool Names in Shelf
 shows the tool shelves with labels. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
 `P` add point, `H` polygon, `S` rectangle, `D` dart, `N` sew (`Shift N` free sew), `M` measure; hover a

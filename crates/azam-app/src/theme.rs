@@ -74,7 +74,9 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 
 /* -- tool shelf (T) --------------------------------------------------------------------------- */
 .toolbar { position: absolute; left: 6px; top: 6px; display: flex; flex-direction: column; gap: 2px;
-           padding: 3px; border-radius: 6px; background: rgba(40,40,40,0.92); z-index: 5; }
+           padding: 3px; border-radius: 6px; background: rgba(40,40,40,0.92); z-index: 5;
+           max-height: 94%; overflow-y: scroll; }
+.toolbar .tool, .toolbar .tool-sep { flex-shrink: 0; }
 .tool { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
         border-radius: 4px; }
 .tool:hover { background: #454545; }
@@ -117,29 +119,29 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .ol-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 
 /* -- properties ----------------------------------------------------------------------------------- */
-.props { flex: 1; display: flex; min-height: 0; background: #303030; }
+.props { flex: 1; display: flex; min-height: 0; min-width: 0; background: #303030; }
 .prop-tabs { width: 30px; display: flex; flex-direction: column; gap: 2px; padding: 4px 2px;
              background: #232323; flex-shrink: 0; }
 .prop-tab { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
             border-radius: 4px; }
 .prop-tab:hover { background: #3a3a3a; }
 .prop-tab.active { background: #4772b3; }
-.prop-body { flex: 1; overflow-y: scroll; padding: 6px 6px 20px 6px; display: flex; flex-direction: column;
+.prop-body { flex: 1; min-width: 0; overflow-y: scroll; padding: 6px 6px 20px 6px; display: flex; flex-direction: column;
              gap: 4px; }
 .prop-title { display: flex; align-items: center; gap: 6px; padding: 2px 4px 6px 4px; color: #e6e6e6;
               font-weight: 600; }
-.panel { border-radius: 5px; background: #383838; overflow: hidden; flex-shrink: 0; }
+.panel { border-radius: 5px; background: #383838; overflow: hidden; flex-shrink: 0; min-width: 0; }
 .panel-head { display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px;
               background: #3d3d3d; color: #e6e6e6; font-weight: 600; }
 .panel-head:hover { background: #444444; }
-.panel-body { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px 8px 8px; }
+.panel-body { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px 8px 8px; min-width: 0; }
 .prow { display: flex; align-items: center; gap: 6px; min-height: 20px; }
 .plabel { width: 42%; text-align: right; color: #c8c8c8; flex-shrink: 0; overflow: hidden;
           white-space: nowrap; text-overflow: ellipsis; }
 .pfield { flex: 1; min-width: 0; }
 .pvalue { flex: 1; color: #e6e6e6; }
 .pnote { color: #8f8f8f; font-size: 11px; padding: 2px 4px; white-space: nowrap; overflow: hidden;
-         flex-shrink: 0; }
+         text-overflow: ellipsis; flex-shrink: 0; min-width: 0; }
 .pbuttons { display: flex; gap: 2px; flex: 1; }
 .pbtn { flex: 1; height: 20px; display: flex; align-items: center; justify-content: center; gap: 4px;
         padding: 0 8px; white-space: nowrap;

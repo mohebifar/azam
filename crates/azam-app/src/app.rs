@@ -739,9 +739,11 @@ impl AzamApp {
         }
         // a modal transform takes Enter and Esc; G and R start one over the pattern editor
         if self.modal.is_some() {
-            match key.key.as_str() {
-                "Escape" => self.cancel_modal(),
-                "Return" | "KP_Enter" => self.confirm_modal(),
+            match key.key.to_ascii_lowercase().as_str() {
+                "escape" => self.cancel_modal(),
+                "return" | "kp_enter" => self.confirm_modal(),
+                "x" => self.toggle_modal_axis(crate::modal::Axis::X),
+                "y" => self.toggle_modal_axis(crate::modal::Axis::Y),
                 _ => {}
             }
             cx.notify();
@@ -751,6 +753,7 @@ impl AzamApp {
             let kind = match key.key.to_ascii_lowercase().as_str() {
                 "g" => Some(crate::modal::ModalKind::Move),
                 "r" => Some(crate::modal::ModalKind::Rotate),
+                "s" => Some(crate::modal::ModalKind::Scale),
                 _ => None,
             };
             if let Some(kind) = kind
@@ -931,7 +934,7 @@ impl AzamApp {
             cx.notify();
         }
         self.publish_cursor(e.position);
-        if self.piece_drag_move(e.position) {
+        if self.piece_drag_move(e.position) || self.modal_scale_move(e.position) {
             cx.notify();
             return;
         }
@@ -1251,6 +1254,34 @@ impl AzamApp {
         self.fit_mode
     }
 
+    /// The 3D view's mode, as Blender's mode selector: Garment (select, grab and pin cloth) or
+    /// Arrange (the avatar's arrangement points are shown for placing pieces).
+    fn mode_dropdown(&mut self, cx: &mut Context<Self>) -> Div {
+        const MODES: [&str; 2] = ["Garment Mode", "Arrange Mode"];
+        let current = usize::from(self.show_arrangement);
+        if self.overlay_open() {
+            return div()
+                .class("hgroup")
+                .child(div().class("hbtn").w(px(112.0)).child(MODES[current]));
+        }
+        let mut select = Dropdown().css("width", "112px");
+        for (i, m) in MODES.into_iter().enumerate() {
+            select = select.child(option().child(m).selected(i == current));
+        }
+        div()
+            .class("hgroup")
+            .child(select.on_change(cx.listener(|this, e: &ChangeEvent, _, cx| {
+                this.show_arrangement = e.number >= 1.0;
+                if this.show_arrangement {
+                    this.tool = Tool::Select;
+                    this.status =
+                    "Arrange: click an arrangement point to send the selected pieces there, or drag a piece"
+                        .into();
+                }
+                cx.notify();
+            })))
+    }
+
     /// The avatar motion played with the simulation (None, Raise Arms, Walk, Sit, Turntable).
     fn motion_dropdown(&mut self, cx: &mut Context<Self>) -> Div {
         let current = self.scene3d.motion.motion();
@@ -1259,11 +1290,11 @@ impl AzamApp {
         if self.overlay_open() {
             return div()
                 .class("hgroup")
-                .child(div().class("hbtn").w(px(104.0)).child(current.label()));
+                .child(div().class("hbtn").w(px(96.0)).child(motion_label(current)));
         }
-        let mut select = Dropdown().css("width", "104px");
+        let mut select = Dropdown().css("width", "96px");
         for m in azam_avatar::Motion::ALL {
-            select = select.child(option().child(m.label()).selected(m == current));
+            select = select.child(option().child(motion_label(m)).selected(m == current));
         }
         let group =
             div()
@@ -1272,7 +1303,7 @@ impl AzamApp {
                     let i = e.number.max(0.0) as usize;
                     if let Some(&m) = azam_avatar::Motion::ALL.get(i) {
                         this.scene3d.set_motion(m);
-                        this.status = format!("Avatar motion: {}", m.label());
+                        this.status = format!("Avatar motion: {}", motion_label(m));
                     }
                     cx.notify();
                 })));
@@ -1288,18 +1319,12 @@ impl AzamApp {
         let header = div()
             .class("area-header")
             .child(self.editor_type_button(slot, cx))
-            .child(div().class("mode-label").child("Garment Mode"))
+            .child(self.mode_dropdown(cx))
             .child(self.menu_title(self.top_menu_count, cx))
             .child(self.menu_title(self.top_menu_count + 1, cx))
             .child(div().class("header-spacer"))
             .child(self.header_button("ARMATURE_DATA", show_avatar, Operator::ToggleAvatar, cx))
             .child(self.header_button("GRID", self.viewport.overlays.grid, Operator::ToggleGrid, cx))
-            .child(self.header_button(
-                "PIVOT_CURSOR",
-                self.show_arrangement,
-                Operator::ToggleArrangementPoints,
-                cx,
-            ))
             .child(div().class("header-sep"))
             .child(
                 div()
@@ -1915,4 +1940,13 @@ impl Render for AzamApp {
 fn contains(b: &Bounds<f32>, p: Point<Pixels>) -> bool {
     let (x, y) = (p.x.0, p.y.0);
     x >= b.origin.x && x < b.origin.x + b.size.width && y >= b.origin.y && y < b.origin.y + b.size.height
+}
+
+/// How the 3D header names avatar motion `m` ("Rest Pose" for none).
+fn motion_label(m: azam_avatar::Motion) -> &'static str {
+    if m == azam_avatar::Motion::None {
+        "Rest Pose"
+    } else {
+        m.label()
+    }
 }

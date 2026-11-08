@@ -132,28 +132,9 @@ impl AzamApp {
         );
         self.session
             .edit(if turned_it { "Turn Piece" } else { "Move Piece" }, |p| {
-                let Some(pc) = p.pieces.get_mut(&id) else { return };
-                let as_placed = |moved: Option<[f64; 3]>, turned: Option<f64>| azam_avatar::Arrangement {
-                    moved,
-                    turned,
-                    ..azam_avatar::Arrangement::default()
-                };
-                let (old, new) = (as_placed(pc.arr.moved, pc.arr.turned), as_placed(moved, turned));
-                for pin in &mut pc.pins {
-                    if let Some(at) = pin.at {
-                        let m = old.moved.unwrap_or([0.0; 3]);
-                        let unmoved = glam::DVec3::new(at[0] - m[0], at[1] - m[1], at[2] - m[2]);
-                        let step = azam_avatar::Arrangement {
-                            turned: Some(new.turned.unwrap_or(0.0) - old.turned.unwrap_or(0.0)),
-                            moved: new.moved,
-                            ..azam_avatar::Arrangement::default()
-                        };
-                        let q = step.place(unmoved);
-                        pin.at = Some([q.x, q.y, q.z]);
-                    }
+                if let Some(pc) = p.pieces.get_mut(&id) {
+                    set_placement(pc, moved, turned);
                 }
-                pc.arr.moved = moved;
-                pc.arr.turned = turned;
             });
     }
 
@@ -225,4 +206,24 @@ impl AzamApp {
             azam_avatar::slot_by_id(slot).label
         );
     }
+}
+
+/// Gives `pc` the 3D placement `moved` / `turned`; its saved pin positions move along, so pins
+/// keep holding the same spot of the cloth.
+pub(crate) fn set_placement(pc: &mut azam_doc::Piece, moved: Option<[f64; 3]>, turned: Option<f64>) {
+    let (old_moved, old_turned) = (pc.arr.moved.unwrap_or([0.0; 3]), pc.arr.turned.unwrap_or(0.0));
+    let step = azam_avatar::Arrangement {
+        turned: Some(turned.unwrap_or(0.0) - old_turned),
+        moved,
+        ..azam_avatar::Arrangement::default()
+    };
+    for pin in &mut pc.pins {
+        if let Some(at) = pin.at {
+            let unmoved = glam::DVec3::new(at[0] - old_moved[0], at[1] - old_moved[1], at[2] - old_moved[2]);
+            let q = step.place(unmoved);
+            pin.at = Some([q.x, q.y, q.z]);
+        }
+    }
+    pc.arr.moved = moved;
+    pc.arr.turned = turned;
 }

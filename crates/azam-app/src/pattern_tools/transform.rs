@@ -98,7 +98,13 @@ impl AzamApp {
     pub(super) fn transform_drag(&mut self, drag: PatternDrag, q: Vec2, shift: bool) {
         match drag {
             PatternDrag::MovePieces { ids, last } => {
-                let delta = q - last;
+                let mut delta = q - last;
+                // a modal move locked to an axis moves along it only
+                match self.modal_axis() {
+                    Some(crate::modal::Axis::X) => delta.y = 0.0,
+                    Some(crate::modal::Axis::Y) => delta.x = 0.0,
+                    None => {}
+                }
                 if delta.length_squared() > 0.0 && !ids.is_empty() {
                     self.session.edit("Move Pieces", |p| {
                         for id in &ids {

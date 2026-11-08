@@ -34,6 +34,9 @@ pub struct Session {
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
     last_edit: Option<(String, Instant)>,
+    /// A gesture in progress (a drag, a modal transform): `Some(true)` once it has recorded its
+    /// undo step.
+    gesture: Option<bool>,
     /// Bumped on every change, so derived data (meshes, the simulation) knows to rebuild.
     pub revision: u64,
     saved_revision: u64,
@@ -54,6 +57,7 @@ impl Session {
             undo: Vec::new(),
             redo: Vec::new(),
             last_edit: None,
+            gesture: None,
             revision: 1,
             saved_revision: 1,
             collab: None,
@@ -67,12 +71,50 @@ impl Session {
         self.revision != self.saved_revision
     }
 
-    /// Applies an undoable edit named `label`.
+    /// Applies an undoable edit named `label`, as its own undo step (inside a gesture, as part of
+    /// the gesture's one step).
     pub fn edit(&mut self, label: &str, f: impl FnOnce(&mut Project)) {
-        let merge = self
-            .last_edit
-            .as_ref()
-            .is_some_and(|(l, at)| l == label && at.elapsed() < MERGE_WINDOW);
+        self.apply(label, false, f);
+    }
+
+    /// Applies an edit from a continuous control (a number field being scrubbed): edits with the
+    /// same label in quick succession make one undo step.
+    pub fn edit_continuous(&mut self, label: &str, f: impl FnOnce(&mut Project)) {
+        self.apply(label, true, f);
+    }
+
+    /// Starts a gesture: every edit until [`Self::end_gesture`] makes one undo step.
+    pub fn begin_gesture(&mut self) {
+        self.gesture = Some(false);
+    }
+
+    /// Ends the gesture; without `keep`, everything it changed is put back and it leaves no
+    /// trace in the history (nothing to redo either).
+    pub fn end_gesture(&mut self, keep: bool) {
+        let recorded = self.gesture.take() == Some(true);
+        self.last_edit = None;
+        if !keep
+            && recorded
+            && let Some(snap) = self.undo.pop()
+        {
+            self.restore(snap);
+        }
+    }
+
+    fn apply(&mut self, label: &str, continuous: bool, f: impl FnOnce(&mut Project)) {
+        let merge = match self.gesture {
+            Some(recorded) => recorded,
+            None => {
+                continuous
+                    && self
+                        .last_edit
+                        .as_ref()
+                        .is_some_and(|(l, at)| l == label && at.elapsed() < MERGE_WINDOW)
+            }
+        };
+        if self.gesture.is_some() {
+            self.gesture = Some(true);
+        }
         if !merge {
             self.undo.push(Snapshot {
                 project: self.project.clone(),
@@ -95,18 +137,6 @@ impl Session {
         self.last_edit = Some((label.to_owned(), Instant::now()));
         self.push_sync();
         self.revision += 1;
-    }
-
-    /// How many edits can be undone.
-    #[must_use]
-    pub fn undo_depth(&self) -> usize {
-        self.undo.len()
-    }
-
-    /// Starts a new undo step with the next edit, even if it has the same label as the last one
-    /// (a modal transform that may be cancelled must not merge into an earlier edit).
-    pub fn seal(&mut self) {
-        self.last_edit = None;
     }
 
     /// Undoes the last edit; returns its label.
@@ -245,6 +275,60 @@ mod tests {
     use crate::app::new_project;
     use crate::operators::Template;
 
+    fn rename(session: &mut Session, label: &str, name: &str) {
+        let name = name.to_owned();
+        session.edit(label, move |p| p.meta.name = name);
+    }
+
+    #[test]
+    fn quick_discrete_edits_stay_separate_undo_steps() {
+        let mut session = Session::new(new_project(Template::Tee));
+        rename(&mut session, "Add Dart", "one");
+        rename(&mut session, "Add Dart", "two");
+        assert_eq!(session.undo().as_deref(), Some("Add Dart"));
+        assert_eq!(
+            session.project.meta.name, "one",
+            "the second dart alone is undone"
+        );
+    }
+
+    #[test]
+    fn a_cancelled_gesture_leaves_nothing_to_undo_or_redo() {
+        let mut session = Session::new(new_project(Template::Tee));
+        rename(&mut session, "Rename", "before");
+        session.begin_gesture();
+        rename(&mut session, "Move Pieces", "a");
+        rename(&mut session, "Move Pieces", "b");
+        session.end_gesture(false);
+        assert_eq!(session.project.meta.name, "before");
+        assert!(session.redo().is_none(), "nothing to redo");
+        assert_eq!(
+            session.undo().as_deref(),
+            Some("Rename"),
+            "the edit before the gesture is next"
+        );
+    }
+
+    #[test]
+    fn a_kept_gesture_is_one_step_and_scrubbing_merges() {
+        let mut session = Session::new(new_project(Template::Tee));
+        let start = session.project.meta.name.clone();
+        session.begin_gesture();
+        rename(&mut session, "Move Pieces", "a");
+        rename(&mut session, "Move Pieces", "b");
+        session.end_gesture(true);
+        let name = |s: &str| s.to_owned();
+        session.edit_continuous("Grain", |p| p.meta.name = name("c"));
+        session.edit_continuous("Grain", |p| p.meta.name = name("d"));
+        assert_eq!(session.undo().as_deref(), Some("Grain"));
+        assert_eq!(
+            session.project.meta.name, "b",
+            "both scrubbed values go in one step"
+        );
+        assert_eq!(session.undo().as_deref(), Some("Move Pieces"));
+        assert_eq!(session.project.meta.name, start, "the whole drag is one step");
+    }
+
     #[test]
     fn save_then_load_round_trips() {
         let mut session = Session::new(new_project(Template::Labadeh));
@@ -272,15 +356,15 @@ mod tests {
     }
 
     #[test]
-    fn quick_edits_with_one_label_merge_into_one_step() {
+    fn quick_continuous_edits_with_one_label_merge_into_one_step() {
         let mut session = Session::new(new_project(Template::Tee));
         for i in 0..5 {
-            session.edit("Drag", |p| p.meta.name = format!("step {i}"));
+            session.edit_continuous("Scrub", |p| p.meta.name = format!("step {i}"));
         }
         session.undo();
         assert_ne!(
             session.project.meta.name, "step 3",
-            "one undo goes back past the whole drag"
+            "one undo goes back past the whole scrub"
         );
         assert!(session.undo().is_none());
     }

@@ -193,6 +193,14 @@ impl AzamApp {
             double: e.click_count >= 2 && near_last,
         };
         self.tool_press(&press);
+        // a drag the press started is one undo step, however many moves it takes
+        if self
+            .pattern_drag
+            .as_ref()
+            .is_some_and(|d| !matches!(d, PatternDrag::Pan { .. }))
+        {
+            self.session.begin_gesture();
+        }
         self.force_scene();
         cx.notify();
     }
@@ -237,6 +245,7 @@ impl AzamApp {
         };
         self.tools.snap = None;
         self.drag_end(drag);
+        self.session.end_gesture(true);
         self.force_scene();
         true
     }
