@@ -520,6 +520,45 @@ index ae613f8..879be90 100644
              let cs: Vec<CString> = items.iter().map(|s| cstr(s)).collect();
              let ptrs: Vec<*const std::ffi::c_char> = cs.iter().map(|c| c.as_ptr()).collect();
              sys::BK_set_strs(n, c"items".as_ptr(), ptrs.as_ptr(), ptrs.len() as i32);
+diff --git a/bindings/rust/blenderui/src/window.rs b/bindings/rust/blenderui/src/window.rs
+index a59814b..4ede124 100644
+--- a/bindings/rust/blenderui/src/window.rs
++++ b/bindings/rust/blenderui/src/window.rs
+@@ -544,7 +544,13 @@ impl App {
+ 
+     fn with_window<R>(&mut self, id: usize, f: impl FnOnce(&mut Window, &mut App) -> R) -> Option<R> {
+         let mut w = self.windows.get_mut(id)?.take()?;
++        let notified = self.notified;
+         let r = f(&mut w, self);
++        // `notify` refreshes the windows in the list, which this one was not while `f` ran: a
++        // handler that notified (a key press, a pointer move) must still redraw its own window
++        if self.notified != notified {
++            w.refresh();
++        }
+         self.windows[id] = Some(w);
+         Some(r)
+     }
+@@ -797,7 +803,7 @@ unsafe extern "C" fn on_frame(data: *mut c_void, _win: *mut sys::BKWindow) {
+         }
+     }
+     let id = data as usize;
+-    with_running_app(|app| {
++    let ran = with_running_app(|app| {
+         app.drain();
+         app.with_window(id, |w, app| {
+             w.frame_pending = false;
+@@ -807,6 +813,11 @@ unsafe extern "C" fn on_frame(data: *mut c_void, _win: *mut sys::BKWindow) {
+         });
+         app.flush();
+     });
++    if !ran {
++        // the app is busy (a re-entrant callback): the kit has used up this frame request, so
++        // ask for another, or the window would wait on it and never repaint
++        unsafe { sys::BK_window_request_frame(_win, 1) };
++    }
+ }
+ 
+ unsafe extern "C" fn on_close(data: *mut c_void, _win: *mut sys::BKWindow) -> c_int {
 diff --git a/gpu/intern/gpu_raster.c b/gpu/intern/gpu_raster.c
 index e2e3eb7..14aa1ef 100644
 --- a/gpu/intern/gpu_raster.c

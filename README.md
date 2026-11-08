@@ -56,7 +56,7 @@ Sizes are graded in the Project tab (size run, base size) and the Piece tab's Gr
 per size for the selected points). View ▸ Fit Map (or the 3D header in fit map shading) switches
 between the Fit, Strain, Stress and Pressure maps. Graphics placed on pieces are printed on the cloth
 in the 3D view and in renders (F12), together with topstitches, buttons, buttonholes and zippers
-(the Zipper tool sews two edges and gives each a zipper half). Pins set with the 3D Pin tool are saved
+(the Zipper tool sews two edges and gives each a zipper half; in the simulation the cloth under its tape barely stretches or bends, and the zipper's weight hangs on the edge). Pins set with the 3D Pin tool are saved
 with the project. In the 3D view, drag a piece to move it before draping, Ctrl-drag to turn it around
 the body (saved with the project and undoable), or show the arrangement points (header button or View menu) and click one to send the
 selected pieces there. The Dart tool's width and depth sit in the pattern editor's header while it

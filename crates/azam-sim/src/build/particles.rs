@@ -154,10 +154,14 @@ fn lumped_masses(xy: &[f64], tris: &[u32], n: usize, density: f64) -> Vec<f32> {
     mass
 }
 
-/// Writes the per-particle properties of record `ri`.
-pub(crate) fn fill(p: &mut Particles, ri: usize, record: &PieceRecord, m: &Material) {
+/// Writes the per-particle properties of record `ri`; `extra` is weight (g) per vertex carried on
+/// top of the cloth's own (a zipper's).
+pub(crate) fn fill(p: &mut Particles, ri: usize, record: &PieceRecord, m: &Material, extra: &[f64]) {
     let mesh = &record.mesh;
-    let mass = lumped_masses(&mesh.xy, &mesh.tris, record.count, m.density);
+    let mut mass = lumped_masses(&mesh.xy, &mesh.tris, record.count, m.density);
+    for (mi, &e) in mass.iter_mut().zip(extra) {
+        *mi = (f64::from(*mi) + e) as f32;
+    }
     let active = record.state != PieceState::Off;
     let free = record.state == PieceState::Active;
     let margin = BASE_MARGIN_MM + m.thickness * 0.5 + f64::from(m.layer) * (m.thickness + LAYER_MARGIN_MM);

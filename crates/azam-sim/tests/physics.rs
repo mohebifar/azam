@@ -418,3 +418,79 @@ fn an_unsaved_move_is_undone_by_a_rebuild() {
         assert!((a - b).abs() < 0.01, "{a} vs {b}");
     }
 }
+
+/// The square of the drape tests, with a zipper half along its first edge if `zipped`.
+fn drape_project(zipped: bool) -> Project {
+    let mut project = square_project(&["pc_sq"], DRAPE_MM);
+    for f in project.fabrics.values_mut() {
+        f.phys.friction = DRAPE_FRICTION;
+    }
+    if zipped {
+        azam_doc::add_zipper_half(
+            &mut project,
+            &PieceId::new("pc_sq"),
+            &azam_geom::PointId::new("a"),
+        )
+        .expect("zipper on the first edge");
+    }
+    project
+}
+
+/// Mean relative stretch of the constraints along the first edge of the square after draping it
+/// over the head (with a zipper half on that edge or without), and how many there are.
+fn first_edge_strain(av: &Avatar, zipped: bool) -> (f64, usize) {
+    let mut sim = Simulation::build(&drape_project(zipped), av, None, &SimParams::default());
+    lay_flat(&mut sim, 0, av.height() + DROP_HEIGHT_MM);
+    for _ in 0..DRAPE_FRAMES {
+        sim.step(av, 1.0 / 60.0);
+    }
+    let r = &sim.records[0];
+    let on_edge = |v: u32| {
+        let v = v as usize - r.offset;
+        v < r.mesh.boundary_count() && r.mesh.boundary_segment[v] == 0
+    };
+    let x = &sim.particles.x;
+    let at = |v: u32| {
+        let v = v as usize * 3;
+        glam::DVec3::new(f64::from(x[v]), f64::from(x[v + 1]), f64::from(x[v + 2]))
+    };
+    let (mut sum, mut n) = (0.0, 0);
+    for c in 0..sim.stretch.i.len() {
+        let (i, j) = (sim.stretch.i[c], sim.stretch.j[c]);
+        if on_edge(i) && on_edge(j) {
+            sum += (at(i).distance(at(j)) / f64::from(sim.stretch.rest[c]) - 1.0).abs();
+            n += 1;
+        }
+    }
+    (sum / n.max(1) as f64, n)
+}
+
+#[test]
+fn a_zipper_holds_its_edge_and_weighs_on_it() {
+    let av = female_avatar();
+    let (plain, n) = first_edge_strain(&av, false);
+    let (zipped, m) = first_edge_strain(&av, true);
+    assert!(
+        n > 5 && n == m,
+        "the same edge constraints in both runs ({n}, {m})"
+    );
+    assert!(
+        zipped < plain * 0.8,
+        "the zipper's tape stretches less than plain cloth: {zipped:.5} vs {plain:.5}"
+    );
+    // its weight: a half zipper's 11 g/m along the 700 mm edge
+    let mass = |zipped: bool| {
+        let sim = Simulation::build(&drape_project(zipped), &av, None, &SimParams::default());
+        sim.particles
+            .inv_mass
+            .iter()
+            .filter(|&&w| w > 0.0)
+            .map(|&w| 1.0 / f64::from(w))
+            .sum::<f64>()
+    };
+    let added = mass(true) - mass(false);
+    assert!(
+        (added - 0.011 * DRAPE_MM).abs() < 0.5,
+        "the zipper adds {added:.2} g"
+    );
+}

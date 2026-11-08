@@ -1,6 +1,8 @@
 //! Stretch, bending and fold constraints of one piece, from its mesh and fabric.
 
 use azam_doc::Piece;
+
+use super::zipper::{ZIPPER_BEND_FACTOR, ZIPPER_STRETCH_FACTOR};
 use azam_geom::hypot;
 use serde_json::Value;
 
@@ -18,7 +20,6 @@ const FLAT_FOLD_DEG: f64 = 180.0;
 pub(crate) const FOLD_COMPLIANCE: f64 = -0.01;
 /// Smallest squared rest distance of a fold constraint, in mm².
 const MIN_FOLD_DISTANCE_SQ: f64 = 1.0;
-
 /// Length factor of each outline segment from the piece's elastic settings (1 = not elastic).
 fn segment_elastic(piece: &Piece, record: &PieceRecord) -> Vec<f64> {
     record
@@ -38,14 +39,15 @@ fn segment_elastic(piece: &Piece, record: &PieceRecord) -> Vec<f64> {
         .collect()
 }
 
-/// Adds the constraints of an active piece. `bend_of_edge` receives, per topology edge, the
-/// index of its bending constraint.
+/// Adds the constraints of an active piece. Edges with both ends in `tape` (a zipper's band, see
+/// [`super::zipper`]) are held much more stiffly, as a zipper's tape holds the cloth it is sewn to.
 pub(crate) fn add_piece(
     stretch: &mut StretchConstraints,
     bend: &mut BendConstraints,
     piece: &Piece,
     record: &PieceRecord,
     m: &Material,
+    tape: &[bool],
 ) {
     let mesh = &record.mesh;
     let xy = &mesh.xy;
@@ -78,6 +80,10 @@ pub(crate) fn add_piece(
                 }
             }
         }
+        let taped = tape.get(a).copied().unwrap_or(false) && tape.get(b).copied().unwrap_or(false);
+        if taped {
+            compliance *= ZIPPER_STRETCH_FACTOR;
+        }
         stretch.i.push(off + e.a);
         stretch.j.push(off + e.b);
         stretch.rest.push(rest as f32);
@@ -96,8 +102,9 @@ pub(crate) fn add_piece(
             bend.j.push(off + o2);
             bend.rest
                 .push((el * (m.shrink_weft * cc * cc + m.shrink_warp * ss * ss)) as f32);
+            let bend_factor = if taped { ZIPPER_BEND_FACTOR } else { 1.0 };
             bend.compliance
-                .push((m.bend_weft * cc * cc + m.bend_warp * ss * ss) as f32);
+                .push(((m.bend_weft * cc * cc + m.bend_warp * ss * ss) * bend_factor) as f32);
             bend_of_edge[ei] = Some(bend.i.len() - 1);
         }
     }

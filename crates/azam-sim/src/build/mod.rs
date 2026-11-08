@@ -8,6 +8,7 @@ mod particles;
 mod pieces;
 mod remap;
 mod sewing;
+mod zipper;
 
 use std::sync::Arc;
 
@@ -147,9 +148,10 @@ impl Simulation {
         let mut bend = BendConstraints::default();
         for (ri, (r, piece)) in recs.iter().enumerate() {
             let m = Material::new(project, piece);
-            particles::fill(&mut particles, ri, r, &m);
+            let tape = zipper::ZipperTape::of(project, piece, r);
+            particles::fill(&mut particles, ri, r, &m, &tape.weight);
             if r.state != azam_doc::PieceState::Off {
-                constraints::add_piece(&mut stretch, &mut bend, piece, r, &m);
+                constraints::add_piece(&mut stretch, &mut bend, piece, r, &m, &tape.band);
             }
         }
         let sewing = sewing::sewing(project, &records);
