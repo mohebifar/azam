@@ -529,9 +529,88 @@ impl AzamApp {
             self.panel("Material", vec![fabric_row, grain_row]),
             self.panel("Seam Allowance", vec![sa_row]),
             self.arrangement_panel(&id, cx),
+            self.point_panel(&id, cx),
             self.grading_panel(&id, cx),
             self.panel("Simulation", vec![state_row, pd_row, layer_row]),
         ]
+    }
+
+    /// The selected outline points of piece `id` as numbers (Blender's sidebar Median): where they
+    /// are, and the length of the segment that starts at a single selected point. Editing X or Y
+    /// moves the points together; editing a straight segment's length moves its far end along it.
+    fn point_panel(&mut self, id: &azam_doc::PieceId, cx: &mut Context<Self>) -> Div {
+        let project = &self.session.project;
+        let sel = &self.session.selection;
+        let Some(pc) = project.pieces.get(id) else {
+            return div();
+        };
+        let points: Vec<usize> = if sel.active.as_ref() == Some(id) {
+            sel.points.iter().copied().filter(|&i| i < pc.pts.len()).collect()
+        } else {
+            Vec::new()
+        };
+        if points.is_empty() {
+            return self.panel(
+                "Point",
+                vec![
+                    div()
+                        .class("pnote")
+                        .child("Select points (Edit Points tool) to place them by number."),
+                ],
+            );
+        }
+        let median = points.iter().map(|&i| pc.pts[i].pos).sum::<azam_geom::Vec2>() / points.len() as f64;
+        let axis = |label, value, cx: &mut Context<Self>, x_axis: bool| {
+            let (id, points) = (id.clone(), points.clone());
+            Self::number(field(label, -5000.0, 5000.0, 1.0), value, cx, move |p, v| {
+                azam_doc::set_points_median(p, &id, &points, x_axis, v);
+            })
+        };
+        let label = if points.len() == 1 {
+            "X (mm)"
+        } else {
+            "Median X (mm)"
+        };
+        let mut rows = vec![
+            axis(label, median.x, cx, true),
+            axis(
+                if points.len() == 1 {
+                    "Y (mm)"
+                } else {
+                    "Median Y (mm)"
+                },
+                median.y,
+                cx,
+                false,
+            ),
+        ];
+        if let [i] = points[..] {
+            let n = pc.pts.len();
+            let next = (i + 1) % n;
+            let (a, b) = (pc.pts[i].pos, pc.pts[next].pos);
+            let seg = pc.pts[i].id.clone();
+            let outline = pc.outline();
+            let length = outline
+                .segment_index(&seg)
+                .map_or_else(|| a.distance(b), |k| outline.segments[k].len);
+            if !pc.pts[i].curve && !pc.pts[next].curve {
+                let id = id.clone();
+                rows.push(Self::number(
+                    field("Segment Length (mm)", 1.0, 5000.0, 1.0),
+                    length,
+                    cx,
+                    move |p, v| {
+                        azam_doc::set_segment_length(p, &id, i, v);
+                    },
+                ));
+            } else {
+                rows.push(Self::info_row(
+                    "Segment Length",
+                    format!("{length:.1} mm (curved)"),
+                ));
+            }
+        }
+        self.panel("Point", rows)
     }
 
     /// Linear grading of the selected points of piece `id`: how far they move per size away from
@@ -794,6 +873,22 @@ impl AzamApp {
                         cx.notify();
                     })),
             );
+        let follow_row = div()
+            .class("prow")
+            .child(div().class("plabel").child("Follows Size"))
+            .child(
+                Checkbox()
+                    .checked(self.session.project.avatar.follows_size())
+                    .on_change(cx.listener(|this, e: &ChangeEvent, _, cx| {
+                        let on = e.checked;
+                        this.session.edit("Avatar Follows Size", move |p| {
+                            p.avatar
+                                .extra
+                                .insert(azam_doc::FOLLOW_SIZE_KEY.to_owned(), serde_json::Value::Bool(on));
+                        });
+                        cx.notify();
+                    })),
+            );
         let m = |spec, value, cx: &mut Context<Self>, set: fn(&mut azam_doc::Measurements, f64)| {
             Self::number(spec, value, cx, move |p, v| set(&mut p.avatar.body, v))
         };
@@ -898,9 +993,12 @@ impl AzamApp {
         };
         avatar_rows.extend([
             show_row,
+            follow_row,
             body_buttons,
             div().class("pnote").child(self.scene3d.avatar_status()),
-            div().class("pnote").child("All measurements in mm."),
+            div()
+                .class("pnote")
+                .child("All measurements in mm, for the base size; with Follows Size the avatar takes each size's body from the size chart."),
         ]);
         vec![
             self.panel("Avatar", avatar_rows),

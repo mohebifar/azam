@@ -108,6 +108,12 @@ impl AzamApp {
                 .class("pbuttons")
                 .child(toggle("Avatar", avatar, Operator::ToggleAvatar, cx))
                 .child(toggle("Grid", grid, Operator::ToggleGrid, cx))
+                .child(toggle(
+                    "Wire",
+                    self.viewport.overlays.wireframe,
+                    Operator::ToggleWireframe,
+                    cx,
+                ))
                 .child(toggle("Points", points, Operator::ToggleArrangementPoints, cx)),
         ];
         Some(

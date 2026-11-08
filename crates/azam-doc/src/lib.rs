@@ -36,7 +36,7 @@ mod torso;
 mod wire;
 
 pub use avatar::Avatar;
-pub use avatar::{DEFAULT_SKIN, Measurements, Sex, SizeSpec, size_chart};
+pub use avatar::{DEFAULT_SKIN, FOLLOW_SIZE_KEY, Measurements, Sex, SizeSpec, size_chart};
 pub use command::{Applied, Command, Created, EditError, apply};
 pub use edit::{
     DEFAULT_DART_DEPTH_MM, DEFAULT_DART_WIDTH_MM, DartError, DeletePointsError, DuplicateMode, ELLIPSE_KAPPA,
@@ -45,8 +45,8 @@ pub use edit::{
     de_casteljau_split, delete_colorway, delete_fabric, delete_internal_line, delete_pieces, delete_points,
     duplicate_colorway, duplicate_fabric, duplicate_piece, flip_piece, grade_points_linear, grade_step,
     internal_fold, remap_refs, rigid_map, rotate_piece_90, seg_bez_param, set_base_size, set_curvature,
-    set_grade_step_axis, set_internal_closed, set_internal_fold, set_point_curve, set_sizes, split_segment,
-    transform_piece, translate_internal_line,
+    set_grade_step_axis, set_internal_closed, set_internal_fold, set_point_curve, set_points_median,
+    set_segment_length, set_sizes, split_segment, transform_piece, translate_internal_line,
 };
 pub use fabric::{
     Fabric, FabricPhysics, FabricPreset, PhysKey, PresetSpec, e2d, limit_strain, make_fabric, r_bend,
@@ -93,6 +93,6 @@ pub use seams::{
 pub use slots::{SlotKind, mirror_slot, slot_for_name, slot_kind};
 pub use templates::{
     AbaPieces, DraftOptions, Template, draft_aba, draft_dress, draft_labadeh, draft_skirt, draft_tee,
-    from_template,
+    from_template, reference_template, refine,
 };
 pub use torso::{BodyProfile, Landmarks, TorsoProfile, ellipse_axes};

@@ -6,7 +6,7 @@ use std::fmt;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
-use crate::mesh::{GpuMesh, bounds_of};
+use crate::mesh::{GpuMesh, bounds_of, edge_list};
 use crate::{MeshData, MeshId, OrbitCamera};
 
 /// Colour format of the offscreen target; read-back bytes are sRGB-encoded RGBA.
@@ -179,6 +179,8 @@ pub struct Overlays {
     pub grid: bool,
     /// Shadows from the key light (on the floor and between meshes).
     pub shadows: bool,
+    /// Draw every mesh's edges over its shading (Blender's Wireframe overlay).
+    pub wireframe: bool,
 }
 
 impl Default for Overlays {
@@ -186,6 +188,7 @@ impl Default for Overlays {
         Self {
             grid: true,
             shadows: true,
+            wireframe: false,
         }
     }
 }
@@ -323,6 +326,7 @@ struct Pipelines {
     mesh: wgpu::RenderPipeline,
     grid: wgpu::RenderPipeline,
     shadow: wgpu::RenderPipeline,
+    wire: wgpu::RenderPipeline,
     frame_layout: wgpu::BindGroupLayout,
     light_layout: wgpu::BindGroupLayout,
     draw_layout: wgpu::BindGroupLayout,
@@ -628,6 +632,8 @@ impl Renderer {
                 }
                 self.queue
                     .write_buffer(&mesh.indices, 0, bytemuck::cast_slice(data.indices));
+                self.queue
+                    .write_buffer(&mesh.edges, 0, bytemuck::cast_slice(&edge_list(data.indices)));
                 mesh.bounds = bounds_of(data.positions);
             }
             _ => {
@@ -902,6 +908,17 @@ impl Renderer {
             pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..mesh.index_count, 0, 0..1);
         }
+        if overlays.wireframe {
+            pass.set_pipeline(&self.pipelines.wire);
+            for d in draws {
+                let Some(mesh) = self.meshes.get(&d.mesh) else {
+                    continue;
+                };
+                pass.set_vertex_buffer(0, mesh.positions.slice(..));
+                pass.set_index_buffer(mesh.edges.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..mesh.edge_count, 0, 0..1);
+            }
+        }
         if overlays.grid || overlays.shadows {
             pass.set_pipeline(&self.pipelines.grid);
             pass.draw(0..6, 0..1);
@@ -992,10 +1009,12 @@ impl Pipelines {
         let mesh = Self::mesh_pipeline(device, &frame_layout, &draw_layout, &decal_layout);
         let grid = Self::grid_pipeline(device, &frame_layout);
         let shadow = Self::shadow_pipeline(device, &light_layout);
+        let wire = Self::wire_pipeline(device, &frame_layout);
         Self {
             mesh,
             grid,
             shadow,
+            wire,
             frame_layout,
             light_layout,
             draw_layout,
@@ -1103,6 +1122,52 @@ impl Pipelines {
                 targets: &targets,
             }),
             primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(Self::depth_state(false)),
+            multisample: wgpu::MultisampleState {
+                count: SAMPLES,
+                ..Default::default()
+            },
+            multiview: None,
+            cache: None,
+        })
+    }
+
+    fn wire_pipeline(device: &wgpu::Device, frame_layout: &wgpu::BindGroupLayout) -> wgpu::RenderPipeline {
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/wire.wgsl"));
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("wire"),
+            bind_group_layouts: &[frame_layout],
+            push_constant_ranges: &[],
+        });
+        let positions = [wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x3,
+            offset: 0,
+            shader_location: 0,
+        }];
+        let targets = Self::color_target();
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("wire"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: 12,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &positions,
+                }],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                ..wgpu::PrimitiveState::default()
+            },
             depth_stencil: Some(Self::depth_state(false)),
             multisample: wgpu::MultisampleState {
                 count: SAMPLES,

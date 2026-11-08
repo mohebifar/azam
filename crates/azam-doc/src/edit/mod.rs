@@ -20,7 +20,8 @@ pub use refs::remap_refs;
 pub use segment::{add_curve_point, de_casteljau_split, seg_bez_param, set_curvature, split_segment};
 pub use shapes::{
     ELLIPSE_KAPPA, MIN_SHAPE_MM, Shape, add_internal_ellipse, create_shape_piece, delete_internal_line,
-    internal_fold, set_internal_closed, set_internal_fold, set_point_curve, translate_internal_line,
+    internal_fold, set_internal_closed, set_internal_fold, set_point_curve, set_points_median,
+    set_segment_length, translate_internal_line,
 };
 pub use transform::{
     FlipAxis, PieceTransform, RigidMap, flip_piece, rigid_map, rotate_piece_90, transform_piece,

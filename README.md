@@ -27,7 +27,7 @@ cargo run --release -p azam-app -- --render render.png --template dress --frames
 On macOS, `scripts/bundle-macos.sh` builds `target/release/azam.app` (with the MakeHuman pack inside).
 
 `--workspace` is one of `design`, `grading`, `colorway`, `review`, `techpack`; `--template` one of
-`tee`, `dress`, `skirt`, `labadeh`, `aba`.
+`tee`, `dress`, `skirt`, `labadeh`, `aba`; `azam --help` lists every option.
 
 Blender's controls apply: middle drag orbits the 3D view (Shift pans), the wheel zooms, `Z` opens the
 shading pie, `` ` `` the view pie, `F3` the operator search, `Space` plays the simulation, `Ctrl Z`
@@ -53,7 +53,10 @@ legs; reshape it with Edit Points.
 A piece's starting place around the avatar (slot, distance, angle, height) is in the Piece tab's
 Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleeve L", "Collar"…).
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
-per size for the selected points). View ▸ Fit Map (or the 3D header in fit map shading) switches
+per size for the selected points); the templates come graded from the size chart, and the avatar
+takes the body of the size shown (Avatar tab ▸ Follows Size). The Piece tab's Point panel places the
+selected points by number and sets a straight segment's length. The 3D header's wireframe button (or
+View ▸ Wireframe Overlay) draws the cloth and body meshes' edges. View ▸ Fit Map (or the 3D header in fit map shading) switches
 between the Fit, Strain, Stress and Pressure maps. Graphics placed on pieces are printed on the cloth
 in the 3D view and in renders (F12), together with topstitches, buttons, buttonholes and zippers
 (the Zipper tool sews two edges and gives each a zipper half; in the simulation the cloth under its tape barely stretches or bends, and the zipper's weight hangs on the edge). Pins set with the 3D Pin tool are saved

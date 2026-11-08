@@ -86,9 +86,22 @@ pub struct Scene3d {
     pub mannequin: bool,
 }
 
-/// The avatar settings of `project` as the avatar builder reads them.
+/// The avatar settings of `project` as the avatar builder reads them, with the body of the size
+/// shown (see [`azam_doc::Avatar::body_for_size`]).
 fn avatar_params(project: &Project) -> Option<AvatarParams> {
-    serde_json::to_value(&project.avatar)
+    let mut avatar = project.avatar.clone();
+    let base = if project.base_size.0.is_empty() {
+        azam_doc::DEFAULT_BASE_SIZE
+    } else {
+        project.base_size.0.as_str()
+    };
+    let shown = if project.active_size.0.is_empty() {
+        base
+    } else {
+        project.active_size.0.as_str()
+    };
+    avatar.body = avatar.body_for_size(base, shown);
+    serde_json::to_value(&avatar)
         .ok()
         .and_then(|v| serde_json::from_value(v).ok())
 }

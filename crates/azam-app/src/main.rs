@@ -1,7 +1,8 @@
 //! The `azam` binary: `azam [project.json]` opens the window (on that project);
 //! `azam --screenshot out.png [--size WxH]` renders one
 //! frame headless; `azam --render out.png [--frames N] [--render-size WxH] [--samples N]` drapes
-//! for `N` frames and path-traces the 3D view (Blender's F12) headless.
+//! for `N` frames and path-traces the 3D view (Blender's F12) headless. `azam --help` lists the
+//! options.
 
 use azam_app::AzamApp;
 use blenderui::prelude::*;
@@ -10,6 +11,7 @@ use blenderui::prelude::*;
 const WINDOW_SIZE: (f32, f32) = (1480.0, 900.0);
 
 /// Command-line options.
+#[derive(Debug)]
 struct Args {
     screenshot: Option<String>,
     render: Option<String>,
@@ -23,64 +25,114 @@ struct Args {
     size: (f32, f32),
 }
 
-fn parse_args() -> Args {
-    let args: Vec<String> = std::env::args().collect();
-    let value = |flag: &str| {
-        args.iter()
-            .position(|a| a == flag)
-            .and_then(|i| args.get(i + 1))
-            .cloned()
+/// What `azam --help` prints.
+const USAGE: &str = "azam: garment design with Blender's interface
+
+Usage:
+  azam [PROJECT.azam.json]                 open the window (on a saved project)
+  azam --screenshot OUT.png [options]      render one frame of the window headless
+  azam --render OUT.png [options]          path-trace the 3D view headless (Blender's F12)
+
+Options:
+  --workspace NAME     design, grading, colorway, review or techpack
+  --template NAME      tee, dress, skirt, labadeh or aba
+  --frames N           simulate N frames (1/60 s each) first
+  --size WxH           window size for --screenshot (default 1480x900)
+  --render-size WxH    image size for --render (default 1280x800)
+  --samples N          samples per pixel for --render
+  -h, --help           show this help
+";
+
+/// Options that take a value.
+const WITH_VALUE: [&str; 8] = [
+    "--screenshot",
+    "--render",
+    "--render-size",
+    "--samples",
+    "--workspace",
+    "--template",
+    "--frames",
+    "--size",
+];
+
+/// Parses `WxH`.
+fn parse_size<T: std::str::FromStr>(flag: &str, s: &str) -> Result<(T, T), String> {
+    s.split_once('x')
+        .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+        .ok_or_else(|| format!("{flag} takes WIDTHxHEIGHT, not {s:?}"))
+}
+
+/// Parses `value` of `flag` as a number.
+fn parse_num<T: std::str::FromStr>(flag: &str, value: &str) -> Result<T, String> {
+    value
+        .parse()
+        .map_err(|_| format!("{flag} takes a number, not {value:?}"))
+}
+
+/// The options in `args` (without the program name); `Ok(None)` when help was asked for.
+fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
+    let mut a = Args {
+        screenshot: None,
+        render: None,
+        render_size: (1280, 800),
+        samples: azam_app::render_view::RENDER_SAMPLES,
+        workspace: None,
+        template: None,
+        open: None,
+        frames: 0,
+        size: WINDOW_SIZE,
     };
-    let size = value("--size")
-        .and_then(|s| {
-            let (w, h) = s.split_once('x')?;
-            Some((w.parse().ok()?, h.parse().ok()?))
-        })
-        .unwrap_or(WINDOW_SIZE);
-    let render_size = value("--render-size")
-        .and_then(|s| {
-            let (w, h) = s.split_once('x')?;
-            Some((w.parse().ok()?, h.parse().ok()?))
-        })
-        .unwrap_or((1280, 800));
-    Args {
-        screenshot: value("--screenshot"),
-        render: value("--render"),
-        render_size,
-        samples: value("--samples")
-            .and_then(|f| f.parse().ok())
-            .unwrap_or(azam_app::render_view::RENDER_SAMPLES),
-        workspace: value("--workspace"),
-        template: value("--template"),
-        open: {
-            const WITH_VALUE: [&str; 8] = [
-                "--screenshot",
-                "--render",
-                "--render-size",
-                "--samples",
-                "--workspace",
-                "--template",
-                "--frames",
-                "--size",
-            ];
-            let mut open = None;
-            let mut k = 1;
-            while k < args.len() {
-                if WITH_VALUE.contains(&args[k].as_str()) {
-                    k += 2;
-                    continue;
+    let mut k = 0;
+    while k < args.len() {
+        let flag = args[k].as_str();
+        if flag == "-h" || flag == "--help" {
+            return Ok(None);
+        }
+        if WITH_VALUE.contains(&flag) {
+            let value = args
+                .get(k + 1)
+                .ok_or_else(|| format!("{flag} needs a value"))?
+                .clone();
+            match flag {
+                "--screenshot" => a.screenshot = Some(value),
+                "--render" => a.render = Some(value),
+                "--render-size" => a.render_size = parse_size(flag, &value)?,
+                "--samples" => a.samples = parse_num(flag, &value)?,
+                "--workspace" => {
+                    if azam_app::app::Workspace::from_name(&value).is_none() {
+                        return Err(format!(
+                            "no workspace {value:?} (design, grading, colorway, review, techpack)"
+                        ));
+                    }
+                    a.workspace = Some(value);
                 }
-                if !args[k].starts_with("--") {
-                    open = Some(args[k].clone());
-                    break;
+                "--template" => {
+                    if azam_app::operators::Template::from_key(&value).is_none() {
+                        return Err(format!("no template {value:?} (tee, dress, skirt, labadeh, aba)"));
+                    }
+                    a.template = Some(value);
                 }
-                k += 1;
+                "--frames" => a.frames = parse_num(flag, &value)?,
+                _ => a.size = parse_size(flag, &value)?,
             }
-            open
-        },
-        frames: value("--frames").and_then(|f| f.parse().ok()).unwrap_or(0),
-        size,
+            k += 2;
+            continue;
+        }
+        if flag.starts_with("-psn_") {
+            // the process serial number older macOS passes to apps opened from the Finder
+            k += 1;
+            continue;
+        }
+        if flag.starts_with('-') {
+            return Err(format!("unknown option {flag}"));
+        }
+        if a.open.is_some() {
+            return Err(format!("one project at a time ({flag} is a second)"));
+        }
+        a.open = Some(flag.to_owned());
+        k += 1;
     }
+    Ok(Some(a))
 }
 
 fn write_png(path: &str, width: usize, height: usize, pixels: &[u32]) -> std::io::Result<()> {
@@ -98,8 +150,24 @@ fn write_png(path: &str, width: usize, height: usize, pixels: &[u32]) -> std::io
         .map_err(std::io::Error::other)
 }
 
+/// The command line's options; prints the usage and exits for `--help` or a mistake.
+fn args_or_exit() -> Args {
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    match parse_args(&raw) {
+        Ok(Some(args)) => args,
+        Ok(None) => {
+            print!("{USAGE}");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("azam: {e}\n\n{USAGE}");
+            std::process::exit(2);
+        }
+    }
+}
+
 fn main() {
-    let args = parse_args();
+    let args = args_or_exit();
     let headless = args.screenshot.is_some() || args.render.is_some();
     let application = if headless {
         Application::headless()
@@ -152,8 +220,9 @@ fn main() {
             for _ in 0..3 {
                 cx.draw(window.id);
             }
-            if args.render.is_some() {
-                // The avatar is built on a worker thread: wait for the garment to exist.
+            {
+                // The avatar is built on a worker thread: wait for the garment to exist, so a
+                // screenshot shows the body and garment rather than "Building avatar…".
                 for _ in 0..2000 {
                     if window.root().read(cx).sim_time().is_some() {
                         break;
@@ -197,4 +266,38 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(line: &str) -> Result<Option<Args>, String> {
+        parse_args(&line.split_whitespace().map(str::to_owned).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn options_parse_and_mistakes_are_reported() {
+        let a = parse("--screenshot out.png --workspace grading --frames 30 shirt.azam.json")
+            .expect("valid")
+            .expect("not help");
+        assert_eq!(a.screenshot.as_deref(), Some("out.png"));
+        assert_eq!(a.workspace.as_deref(), Some("grading"));
+        assert_eq!(a.frames, 30);
+        assert_eq!(a.open.as_deref(), Some("shirt.azam.json"));
+        assert!(matches!(parse("--help"), Ok(None)));
+        assert!(matches!(parse("-h"), Ok(None)));
+        assert!(parse("--bogus").unwrap_err().contains("unknown option"));
+        assert!(parse("--template nope").unwrap_err().contains("no template"));
+        assert!(parse("--frames many").unwrap_err().contains("number"));
+        assert!(parse("--size 10").unwrap_err().contains("WIDTHxHEIGHT"));
+        assert!(parse("--screenshot").unwrap_err().contains("needs a value"));
+        assert!(
+            parse("-psn_0_12345")
+                .expect("ignored")
+                .expect("opens")
+                .open
+                .is_none()
+        );
+    }
 }

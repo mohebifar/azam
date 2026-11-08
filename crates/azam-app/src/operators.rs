@@ -408,6 +408,8 @@ pub enum Operator {
     ToggleAvatar,
     /// Show or hide the floor grid.
     ToggleGrid,
+    /// Show or hide every mesh's edges over its shading (Blender's Wireframe overlay).
+    ToggleWireframe,
     /// Show or hide the avatar's arrangement points (click one to arrange the selected pieces).
     ToggleArrangementPoints,
     /// Show the tool shelves' tool names beside their icons (Blender's wide toolbar).
@@ -500,6 +502,7 @@ impl Operator {
             Self::FramePattern => "Frame Pattern",
             Self::ToggleAvatar => "Show Avatar",
             Self::ToggleGrid => "Show Floor Grid",
+            Self::ToggleWireframe => "Wireframe Overlay",
             Self::ToggleArrangementPoints => "Show Arrangement Points",
             Self::ToggleToolLabels => "Tool Names in Shelf",
             Self::ToggleCurvePoint => "Toggle Corner / Curve",
@@ -565,6 +568,7 @@ impl Operator {
             Self::FrameAll | Self::FramePattern => "ZOOM_ALL",
             Self::ToggleAvatar => "USER",
             Self::ToggleGrid => "GRID",
+            Self::ToggleWireframe => "SHADING_WIRE",
             Self::ToggleArrangementPoints => "PIVOT_CURSOR",
             Self::ToggleToolLabels => "ALIGN_LEFT",
             Self::ToggleCurvePoint => "HANDLE_AUTO",
@@ -711,6 +715,7 @@ impl Operator {
             Self::FramePattern,
             Self::ToggleAvatar,
             Self::ToggleGrid,
+            Self::ToggleWireframe,
             Self::ToggleArrangementPoints,
             Self::ToggleToolLabels,
             Self::ToggleSidebar,
@@ -910,6 +915,7 @@ pub fn editor_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::ToggleAvatar),
                 Item(O::ToggleGrid),
+                Item(O::ToggleWireframe),
                 Item(O::ToggleArrangementPoints),
                 Item(O::ToggleSidebar),
                 Separator,
@@ -1082,6 +1088,7 @@ pub fn top_menus() -> Vec<Menu> {
                 MenuEntry::Sub("Fit Map", "SHADING_TEXTURE", FIT_MAP_MENU),
                 Item(O::ToggleAvatar),
                 Item(O::ToggleGrid),
+                Item(O::ToggleWireframe),
                 Item(O::ToggleArrangementPoints),
             ],
         },

@@ -139,8 +139,32 @@ fn avatar(doc: &Value) -> &'static Avatar {
     })
 }
 
+/// Substeps of each preset in the reference engine. azam's presets take more (see
+/// `SimPreset::changes`: stiff cloth does not converge with these), so the recorded runs are
+/// replayed with the reference's.
+fn reference_substeps(preset: azam_sim::SimPreset) -> f64 {
+    match preset {
+        azam_sim::SimPreset::Draft => 8.0,
+        azam_sim::SimPreset::Normal => 10.0,
+        azam_sim::SimPreset::Fine => 14.0,
+        azam_sim::SimPreset::Layered => 16.0,
+        azam_sim::SimPreset::Final => 20.0,
+    }
+}
+
+/// `r` as the reference engine resolves it: the preset's substeps as the reference has them,
+/// unless the project sets its own.
+fn as_reference(mut r: azam_sim::ResolvedSettings) -> azam_sim::ResolvedSettings {
+    let substeps = reference_substeps(r.preset);
+    r.base.substeps = substeps;
+    if !r.overrides.contains_key("substeps") {
+        r.values.substeps = substeps;
+    }
+    r
+}
+
 fn params_for(case: &Value, project: &Project) -> SimParams {
-    let mut p = SimParams::from(&resolve_settings(&project.sim));
+    let mut p = SimParams::from(&as_reference(resolve_settings(&project.sim)));
     let extra = &case["extraParams"];
     if extra["cpuTriCollision"] == json!(true) {
         p.cpu_triangle_collision = true;
@@ -173,7 +197,7 @@ fn build_case(name: &str) -> (&'static Value, Project, &'static Avatar, Simulati
 fn settings_resolve_like_the_reference() {
     for (i, c) in arr(&DATA["settings"]).iter().enumerate() {
         let stored: SimSettings = serde_json::from_value(c["sim"].clone()).expect("stored settings");
-        let r = resolve_settings(&stored);
+        let r = as_reference(resolve_settings(&stored));
         let e = &c["resolved"];
         let what = format!("settings case {i} ({})", c["sim"]);
         assert_eq!(r.preset.key(), e["preset"], "{what}: preset");

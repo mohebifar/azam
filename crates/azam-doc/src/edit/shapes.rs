@@ -153,6 +153,57 @@ pub fn internal_fold(line: &InternalLine) -> Option<f64> {
     line.extra.get(LINE_FOLD_KEY).and_then(Value::as_f64)
 }
 
+/// Moves points `indices` of `piece` together so their median's `x` (`along_x`) or `y` is `value`
+/// (Blender's sidebar Median). Returns `false` if there is no such piece or point.
+pub fn set_points_median(
+    project: &mut Project,
+    piece: &PieceId,
+    indices: &[usize],
+    along_x: bool,
+    value: f64,
+) -> bool {
+    let Some(pc) = project.pieces.get_mut(piece) else {
+        return false;
+    };
+    if indices.is_empty() || indices.iter().any(|&i| i >= pc.pts.len()) {
+        return false;
+    }
+    let now = indices.iter().map(|&i| pc.pts[i].pos).sum::<Vec2>() / indices.len() as f64;
+    let d = if along_x {
+        Vec2::new(value - now.x, 0.0)
+    } else {
+        Vec2::new(0.0, value - now.y)
+    };
+    for &i in indices {
+        pc.pts[i].pos += d;
+    }
+    true
+}
+
+/// Makes the straight segment that starts at corner `index` of `piece` `length` mm long by moving
+/// its far corner along it. Returns `false` if the segment is curved (either end is a curve
+/// point), has no length, or there is no such point.
+pub fn set_segment_length(project: &mut Project, piece: &PieceId, index: usize, length: f64) -> bool {
+    let Some(pc) = project.pieces.get_mut(piece) else {
+        return false;
+    };
+    let n = pc.pts.len();
+    if index >= n || n < 2 || length.is_nan() || length <= 0.0 {
+        return false;
+    }
+    let next = (index + 1) % n;
+    if pc.pts[index].curve || pc.pts[next].curve {
+        return false;
+    }
+    let a = pc.pts[index].pos;
+    let dir = (pc.pts[next].pos - a).normalize_or_zero();
+    if dir == Vec2::ZERO {
+        return false;
+    }
+    pc.pts[next].pos = a + dir * length;
+    true
+}
+
 /// Turns point `index` of `piece` into a curve point (`curve`) or a corner, keeping seams, notches
 /// and topstitches attached. The first point stays a corner, and at least [`super::MIN_CORNERS`]
 /// corners remain. Returns `false` if nothing changed.
@@ -177,6 +228,36 @@ pub fn set_point_curve(project: &mut Project, piece: &PieceId, index: usize, cur
 mod tests {
     use super::*;
     use crate::avatar::Sex;
+
+    #[test]
+    fn points_move_by_their_median_and_straight_segments_take_a_length() {
+        let mut p = Project::new(None, Sex::Female, 0.0);
+        let pc = p.add_piece(crate::piece::Piece::new(
+            PieceId::new("pc"),
+            "Box",
+            vec![
+                OutlinePoint::corner("a", 0.0, 0.0),
+                OutlinePoint::corner("b", 100.0, 0.0),
+                OutlinePoint::corner("c", 100.0, 50.0),
+                OutlinePoint::corner("d", 0.0, 50.0),
+            ],
+        ));
+        assert!(set_points_median(&mut p, &pc, &[1, 2], true, 120.0));
+        assert_eq!(p.pieces[&pc].pts[1].pos, Vec2::new(120.0, 0.0));
+        assert_eq!(p.pieces[&pc].pts[2].pos, Vec2::new(120.0, 50.0));
+        assert!(set_points_median(&mut p, &pc, &[0], false, -10.0));
+        assert_eq!(p.pieces[&pc].pts[0].pos, Vec2::new(0.0, -10.0));
+        assert!(!set_points_median(&mut p, &pc, &[9], true, 0.0), "no such point");
+        // the top edge, from a to b, becomes 80 mm long along its own direction
+        assert!(set_segment_length(&mut p, &pc, 0, 80.0));
+        let (a, b) = (p.pieces[&pc].pts[0].pos, p.pieces[&pc].pts[1].pos);
+        assert!((a.distance(b) - 80.0).abs() < 1e-9);
+        p.pieces.get_mut(&pc).expect("piece").pts[2].curve = true;
+        assert!(
+            !set_segment_length(&mut p, &pc, 1, 40.0),
+            "a curved segment keeps its shape"
+        );
+    }
 
     #[test]
     fn rectangles_are_four_corners_in_box_order() {

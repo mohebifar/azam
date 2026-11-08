@@ -6,11 +6,14 @@ mod labadeh;
 mod skirt;
 mod tee;
 
+use std::collections::BTreeMap;
+
 use azam_geom::{BBox, Outline, OutlinePoint, PointId, bbox};
 use serde_json::{Map, Value, json};
 
 use crate::avatar::Sex;
 use crate::ids::{PieceId, PomId, StitchId, prefix};
+use crate::num::round_half_up;
 use crate::piece::Piece;
 use crate::project::{Pom, PomRef, Project, Stitch, UNTITLED};
 use crate::torso::{BodyProfile, TorsoProfile};
@@ -163,9 +166,25 @@ impl Template {
     }
 }
 
-/// A new project drafted from `template` on the default avatar of `sex`.
+/// A new project drafted from `template` on the default avatar of `sex`, with azam's
+/// refinements of the reference drafts (see [`refine`]).
 #[must_use]
 pub fn from_template(
+    template: Template,
+    sex: Sex,
+    name: Option<&str>,
+    profile: Option<&dyn BodyProfile>,
+    now_ms: f64,
+) -> Project {
+    let mut project = reference_template(template, sex, name, profile, now_ms);
+    refine(&mut project, template);
+    project
+}
+
+/// A new project drafted from `template` exactly as the reference engine drafts it, without
+/// azam's refinements (for checking the drafts against recorded reference data).
+#[must_use]
+pub fn reference_template(
     template: Template,
     sex: Sex,
     name: Option<&str>,
@@ -181,6 +200,83 @@ pub fn from_template(
         },
     );
     project
+}
+
+/// Name of the skirt template's waistband piece.
+const WAISTBAND_NAME: &str = "Waistband";
+
+/// What azam adds to a fresh reference draft of `template`:
+/// - pieces with no grading get it from the size chart: the template is drafted again on each
+///   size's body and every point takes its offset from the base size (centred on the piece, so
+///   the pieces grow about their middles rather than drift across the board);
+/// - the skirt's waistband is interfaced, so it holds the skirt at the waist.
+pub fn refine(project: &mut Project, template: Template) {
+    if template == Template::Skirt {
+        for pc in project.pieces.values_mut().filter(|pc| pc.name == WAISTBAND_NAME) {
+            pc.strengthen = Some(true);
+        }
+    }
+    grade_from_chart(project, template);
+}
+
+/// Grades every piece of `project` that has no grading by drafting `template` on the body of
+/// each size in the project's size run (parametric torso, as the base it is compared with).
+fn grade_from_chart(project: &mut Project, template: Template) {
+    if project.pieces.values().all(|pc| pc.grade.is_some()) {
+        return;
+    }
+    let sex = project.avatar.body.sex;
+    let chart = crate::avatar::size_chart(sex);
+    let base_name = if project.base_size.0.is_empty() {
+        crate::project::DEFAULT_BASE_SIZE.to_owned()
+    } else {
+        project.base_size.0.clone()
+    };
+    let Some(base_spec) = chart.iter().find(|c| c.name == base_name) else {
+        return;
+    };
+    let draft_on = |m: crate::avatar::Measurements| {
+        let mut p = Project::new(None, sex, 0.0);
+        p.avatar.body = m;
+        template.draft(&mut p, &DraftOptions::default());
+        p
+    };
+    let body = project.avatar.body;
+    let base = draft_on(body);
+    let mut rules: BTreeMap<String, azam_geom::GradeRules> = BTreeMap::new();
+    for spec in chart {
+        if spec.name == base_spec.name || !project.sizes.iter().any(|s| s.0 == spec.name) {
+            continue;
+        }
+        let sized = draft_on(body.graded(base_spec, spec));
+        for (b, s) in base.pieces.values().zip(sized.pieces.values()) {
+            if b.name != s.name || b.pts.len() != s.pts.len() {
+                continue;
+            }
+            let centre = |pc: &crate::piece::Piece| {
+                azam_geom::bbox(pc.pts.iter().map(|p| p.pos)).map_or(azam_geom::Vec2::ZERO, |bb| bb.center())
+            };
+            let shift = centre(s) - centre(b);
+            let r = rules.entry(b.name.clone()).or_default();
+            for (pb, ps) in b.pts.iter().zip(&s.pts) {
+                let d = ps.pos - pb.pos - shift;
+                r.entry(pb.id.clone()).or_default().insert(
+                    azam_geom::SizeName::from(spec.name),
+                    azam_geom::GradeDelta {
+                        dx: round_half_up(d.x * 10.0) / 10.0,
+                        dy: round_half_up(d.y * 10.0) / 10.0,
+                    },
+                );
+            }
+        }
+    }
+    for pc in project.pieces.values_mut().filter(|pc| pc.grade.is_none()) {
+        if let Some(r) = rules.remove(&pc.name)
+            && !r.is_empty()
+        {
+            pc.grade = Some(r);
+        }
+    }
 }
 
 /// The body profile to draft on: the given one, or the avatar's parametric torso.
@@ -328,4 +424,41 @@ pub(crate) fn assign_fabric(project: &mut Project, fabric: crate::fabric::Fabric
 /// A JSON value for an arrangement field this version stores without interpreting.
 pub(crate) fn flag(v: bool) -> Value {
     Value::Bool(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::measure::pom_value;
+
+    #[test]
+    fn refined_templates_grade_and_interface_the_waistband() {
+        for template in [Template::Tee, Template::Dress, Template::Skirt] {
+            let p = from_template(template, Sex::Female, None, None, 0.0);
+            assert!(
+                p.pieces.values().all(|pc| pc.grade.is_some()),
+                "{template:?}: every piece grades"
+            );
+            for pom in p.poms.values() {
+                let at = |s: &str| pom_value(&p, pom, &azam_geom::SizeName::from(s));
+                assert!(
+                    at("XS") < at("M") && at("M") < at("XL"),
+                    "{template:?} {}: grows with size",
+                    pom.name
+                );
+            }
+            let reference = reference_template(template, Sex::Female, None, None, 0.0);
+            assert!(
+                reference.pieces.values().all(|pc| pc.grade.is_none()),
+                "the reference draft has none"
+            );
+        }
+        let skirt = from_template(Template::Skirt, Sex::Female, None, None, 0.0);
+        let band = skirt
+            .pieces
+            .values()
+            .find(|pc| pc.name == WAISTBAND_NAME)
+            .expect("waistband");
+        assert_eq!(band.strengthen, Some(true));
+    }
 }

@@ -30,8 +30,11 @@ pub(crate) struct GpuMesh {
     pub colors: wgpu::Buffer,
     pub uvs: wgpu::Buffer,
     pub indices: wgpu::Buffer,
+    /// Each unique edge of the triangles once, as a line list (the wireframe overlay).
+    pub edges: wgpu::Buffer,
     pub vertex_count: usize,
     pub index_count: u32,
+    pub edge_count: u32,
     /// Bounding box of the positions, for fitting the shadow map.
     pub bounds: (Vec3, Vec3),
 }
@@ -46,6 +49,18 @@ pub(crate) fn bounds_of(positions: &[[f32; 3]]) -> (Vec3, Vec3) {
             let v = Vec3::from(*p);
             (lo.min(v), hi.max(v))
         })
+}
+
+/// The unique edges of triangle list `indices`, two indices per edge.
+pub(crate) fn edge_list(indices: &[u32]) -> Vec<u32> {
+    let mut edges: Vec<(u32, u32)> = indices
+        .chunks_exact(3)
+        .flat_map(|t| [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])])
+        .map(|(a, b)| (a.min(b), a.max(b)))
+        .collect();
+    edges.sort_unstable();
+    edges.dedup();
+    edges.into_iter().flat_map(|(a, b)| [a, b]).collect()
 }
 
 impl GpuMesh {
@@ -66,6 +81,7 @@ impl GpuMesh {
                 usage,
             })
         };
+        let edges = edge_list(data.indices);
         Self {
             positions: make("positions", bytemuck::cast_slice(data.positions), vertex),
             normals: make("normals", bytemuck::cast_slice(data.normals), vertex),
@@ -76,14 +92,22 @@ impl GpuMesh {
                 bytemuck::cast_slice(data.indices),
                 wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             ),
+            edges: make(
+                "edges",
+                bytemuck::cast_slice(&edges),
+                wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            ),
             vertex_count: data.positions.len(),
             index_count: data.indices.len() as u32,
+            edge_count: edges.len() as u32,
             bounds: bounds_of(data.positions),
         }
     }
 
     /// `true` if `data` fits in these buffers as they are.
     pub fn fits(&self, data: &MeshData) -> bool {
-        self.vertex_count == data.positions.len() && self.index_count as usize == data.indices.len()
+        self.vertex_count == data.positions.len()
+            && self.index_count as usize == data.indices.len()
+            && self.edge_count as usize == edge_list(data.indices).len()
     }
 }

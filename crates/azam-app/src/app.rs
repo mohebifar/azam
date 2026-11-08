@@ -542,6 +542,9 @@ impl AzamApp {
             Operator::View(preset) => self.viewport.camera.set_preset(preset),
             Operator::ToggleOrtho => self.viewport.camera.orthographic = !self.viewport.camera.orthographic,
             Operator::ToggleGrid => self.viewport.overlays.grid = !self.viewport.overlays.grid,
+            Operator::ToggleWireframe => {
+                self.viewport.overlays.wireframe = !self.viewport.overlays.wireframe;
+            }
             Operator::ToggleArrangementPoints => self.show_arrangement = !self.show_arrangement,
             Operator::ToggleSidebar => self.toggle_sidebar(),
             Operator::ToggleCurvePoint => self.toggle_curve_points(),
@@ -1326,6 +1329,12 @@ impl AzamApp {
             .when(roomy, |el| {
                 el.child(self.header_button("ARMATURE_DATA", show_avatar, Operator::ToggleAvatar, cx))
                     .child(self.header_button("GRID", self.viewport.overlays.grid, Operator::ToggleGrid, cx))
+                    .child(self.header_button(
+                        "SHADING_WIRE",
+                        self.viewport.overlays.wireframe,
+                        Operator::ToggleWireframe,
+                        cx,
+                    ))
                     .child(div().class("header-sep"))
             })
             .child(

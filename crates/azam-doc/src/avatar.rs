@@ -91,6 +91,26 @@ impl Measurements {
         }
     }
 
+    /// These measurements graded from size `from` to size `to` of a size chart: each girth and
+    /// length moves by the chart's step between them, so a custom body keeps its proportions.
+    #[must_use]
+    pub fn graded(&self, from: &SizeSpec, to: &SizeSpec) -> Self {
+        Self {
+            height: self.height + to.height - from.height,
+            bust: self.bust + to.bust - from.bust,
+            underbust: self.underbust + to.underbust - from.underbust,
+            waist: self.waist + to.waist - from.waist,
+            hip: self.hip + to.hip - from.hip,
+            neck: self.neck + to.neck - from.neck,
+            shoulder: self.shoulder + to.shoulder - from.shoulder,
+            arm: self.arm + to.arm - from.arm,
+            crotch: self.crotch + to.crotch - from.crotch,
+            thigh: self.thigh + to.thigh - from.thigh,
+            upper_arm: self.upper_arm + to.upper_arm - from.upper_arm,
+            ..*self
+        }
+    }
+
     /// These measurements with the girths and lengths of a size-chart entry.
     #[must_use]
     pub fn with_size(&self, size: &SizeSpec) -> Self {
@@ -126,7 +146,35 @@ pub struct Avatar {
     pub extra: Map<String, Value>,
 }
 
+/// [`Avatar::extra`] key: `false` keeps the avatar at the project's body whatever size is shown.
+pub const FOLLOW_SIZE_KEY: &str = "followSize";
+
 impl Avatar {
+    /// Whether the avatar takes the body of the size shown (the default).
+    #[must_use]
+    pub fn follows_size(&self) -> bool {
+        self.extra
+            .get(FOLLOW_SIZE_KEY)
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    }
+
+    /// The body to show with size `shown` of a run whose base size is `base`: the project's body
+    /// graded by the size chart when the avatar follows the size, else the body as it is (also
+    /// when either size is not in the chart).
+    #[must_use]
+    pub fn body_for_size(&self, base: &str, shown: &str) -> Measurements {
+        if !self.follows_size() || base == shown {
+            return self.body;
+        }
+        let chart = size_chart(self.body.sex);
+        let find = |name: &str| chart.iter().find(|s| s.name == name);
+        match (find(base), find(shown)) {
+            (Some(from), Some(to)) => self.body.graded(from, to),
+            _ => self.body,
+        }
+    }
+
     /// The default avatar of `sex`.
     #[must_use]
     pub fn preset(sex: Sex) -> Self {
@@ -240,5 +288,32 @@ pub fn size_chart(sex: Sex) -> &'static [SizeSpec] {
     match sex {
         Sex::Female => &FEMALE_SIZES,
         Sex::Male => &MALE_SIZES,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_avatar_takes_the_body_of_the_size_shown() {
+        let mut av = Avatar::preset(Sex::Female);
+        av.body.waist += 30.0; // a custom body, not the chart's
+        let chart = size_chart(Sex::Female);
+        let (m, l) = (
+            chart.iter().find(|s| s.name == "M").expect("M"),
+            chart.iter().find(|s| s.name == "L").expect("L"),
+        );
+        let large = av.body_for_size("M", "L");
+        assert!((large.waist - (av.body.waist + l.waist - m.waist)).abs() < 1e-9);
+        assert!(large.hip > av.body.hip && large.height >= av.body.height);
+        assert_eq!(
+            av.body_for_size("M", "M"),
+            av.body,
+            "the base size is the body itself"
+        );
+        assert_eq!(av.body_for_size("M", "Q"), av.body, "a size outside the chart");
+        av.extra.insert(FOLLOW_SIZE_KEY.to_owned(), Value::Bool(false));
+        assert_eq!(av.body_for_size("M", "L"), av.body, "following can be turned off");
     }
 }

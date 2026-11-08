@@ -155,7 +155,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .swatch.selected { border: 2px solid #ffffff; }
 .pom-table { overflow-x: auto; }
 .pom-table table { width: 100%; border-collapse: collapse; font-size: 11px; }
-.pom-table th { text-align: left; color: #9d9d9d; font-weight: 600; padding: 2px 4px; border-bottom: 1px solid #474747; }
+.pom-table th { white-space: nowrap; text-align: left; color: #9d9d9d; font-weight: 600; padding: 2px 4px; border-bottom: 1px solid #474747; }
 .pom-table td { padding: 2px 4px; border-bottom: 1px solid #333333; color: #e6e6e6; }
 .techpack { flex: 1; overflow-y: scroll; padding: 12px 18px 30px 18px; background: #2b2b2b;
              display: flex; flex-direction: column; gap: 14px; }
