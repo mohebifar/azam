@@ -110,6 +110,11 @@ impl Viewport {
         self.frame_ms = start.elapsed().as_secs_f32() * 1000.0;
     }
 
+    /// Shows `image` (scaled to the canvas) in place of the last rendered frame.
+    pub fn show_image(&mut self, image: Arc<Image>) {
+        self.frame = Some(image);
+    }
+
     /// The canvas element showing the last frame.
     #[must_use]
     pub fn canvas(&self) -> Div {

@@ -40,6 +40,7 @@
 mod build;
 mod collide;
 mod fit;
+mod flatten;
 mod numeric;
 mod output;
 mod params;
@@ -54,6 +55,7 @@ pub use build::{BuildOptions, estimate_particles, nearest_particle, piece_spacin
 pub use collide::body_tri::{BODY_HASH_BUCKETS, BODY_HASH_CELL_MM, BodyTriangles};
 pub use collide::triangle::{TRIANGLE_HASH_BUCKETS, TriangleContacts, sewn_piece_mask};
 pub use fit::{FitMode, FitSummary};
+pub use flatten::flatten_piece;
 pub use output::PieceView;
 pub use params::{STANDARD_GRAVITY_MM_S2, SimParams};
 pub use settings::{

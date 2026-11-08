@@ -48,7 +48,15 @@ type PendingAvatar = (String, Receiver<(Avatar, Option<String>)>);
 
 /// The avatar and garment as uploaded to the renderer.
 #[derive(Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent switches of the 3D scene"
+)]
 pub struct Scene3d {
+    /// Frames recorded while the simulation runs, for animation export.
+    pub recording: Option<azam_io::Animation>,
+    /// Whether simulation steps add frames to the recording.
+    pub record: bool,
     avatar_key: String,
     /// The current avatar, once built.
     pub avatar: Option<Arc<Avatar>>,
@@ -395,6 +403,32 @@ impl Scene3d {
         }
         sim.compute_normals();
         self.step_ms = start.elapsed().as_secs_f32() * 1000.0;
+        if let Some(rec) = self.recording.as_mut().filter(|_| self.record) {
+            let frame: Vec<_> = sim
+                .piece_views()
+                .map(|v| (triples(v.positions), triples(v.normals)))
+                .collect();
+            // a rebuild changes the meshes: start the recording over
+            if rec.pieces.first().is_some_and(|f| {
+                f.len() != frame.len() || f.iter().zip(&frame).any(|(a, b)| a.0.len() != b.0.len())
+            }) {
+                rec.pieces.clear();
+                rec.avatar = None;
+            }
+            rec.dt = values.dt * f64::from(sim.params.frames_per_advance());
+            let moving = self.motion.motion() != Motion::None;
+            if moving || rec.avatar.is_some() {
+                let body = &avatar.mesh;
+                let still = rec.pieces.len();
+                let frames = rec.avatar.get_or_insert_with(Vec::new);
+                // the avatar started moving mid-recording: it stood still until now
+                while frames.len() < still {
+                    frames.push((triples(&body.positions), triples(&body.normals)));
+                }
+                frames.push((triples(&body.positions), triples(&body.normals)));
+            }
+            rec.pieces.push(frame);
+        }
         for (ri, view) in sim.piece_views().enumerate() {
             renderer.update_vertices(
                 MeshId(FIRST_PIECE_MESH + ri as u32),

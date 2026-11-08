@@ -808,3 +808,127 @@ fn g_and_r_move_and_turn_a_piece_in_3d() {
         assert!(off < 0.5, "Esc puts it back ({off} mm off)");
     });
 }
+
+#[test]
+fn rendered_shading_path_traces_the_viewport() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        win.root().update(cx, |app, cx| {
+            app.set_shading(azam_app::operators::Shading::Rendered);
+            cx.notify();
+        });
+        let mut samples = 0;
+        for _ in 0..400 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+            samples = win.root().read(cx).live_render_samples().unwrap_or(0);
+            if samples >= 4 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            samples >= 4,
+            "the viewport refines a path trace ({samples} samples)"
+        );
+        // switching back drops it
+        win.root().update(cx, |app, cx| {
+            app.set_shading(azam_app::operators::Shading::Solid);
+            cx.notify();
+        });
+        cx.draw(win.id);
+        assert_eq!(win.root().read(cx).live_render_samples(), None);
+    });
+}
+
+#[test]
+fn a_draped_piece_flattens_into_a_new_piece() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        win.root().update(cx, |app, _| app.set_playing(true));
+        for _ in 0..90 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+        }
+        win.root().update(cx, |app, _| app.set_playing(false));
+        let front = front_id(cx, &win);
+        let before = win.root().read(cx).session().project.pieces.len();
+        win.root().update(cx, |app, cx| {
+            app.select_piece(front.clone());
+            app.flatten_active_piece();
+            cx.notify();
+        });
+        let app = win.root().read(cx);
+        assert_eq!(app.session().project.pieces.len(), before + 1, "{}", app.status());
+        let flat = app
+            .session()
+            .project
+            .pieces
+            .values()
+            .find(|p| p.name == "Front (flattened)")
+            .expect("the flattened front");
+        let area = |pc: &azam_doc::Piece| azam_geom::signed_area(&pc.outline().poly).abs();
+        let ratio = area(flat) / area(&app.session().project.pieces[&front]);
+        assert!((0.8..1.25).contains(&ratio), "close to the draft's area: {ratio}");
+    });
+}
+
+#[test]
+fn a_recorded_simulation_exports_as_an_animated_gltf() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        win.root().update(cx, |app, _| {
+            app.toggle_recording();
+            app.set_playing(true);
+        });
+        for _ in 0..30 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+        }
+        win.root().update(cx, |app, _| {
+            app.set_playing(false);
+            app.toggle_recording();
+        });
+        let frames = win.root().read(cx).recorded_frames().expect("a recording");
+        assert!(frames >= 20, "{frames} frames recorded");
+        // stopped: playing on adds nothing
+        win.root().update(cx, |app, _| app.set_playing(true));
+        for _ in 0..5 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+        }
+        win.root().update(cx, |app, _| app.set_playing(false));
+        assert_eq!(win.root().read(cx).recorded_frames(), Some(frames));
+        let path = std::env::temp_dir().join(format!("azam-anim-{}.glb", std::process::id()));
+        win.root()
+            .read(cx)
+            .export_to(azam_app::export::ExportKind::Animation, &path)
+            .expect("exported");
+        let glb = std::fs::read(&path).expect("written");
+        let _ = std::fs::remove_file(&path);
+        let json_len = u32::from_le_bytes(glb[12..16].try_into().expect("4 bytes")) as usize;
+        let doc: serde_json::Value = serde_json::from_slice(&glb[20..20 + json_len]).expect("JSON chunk");
+        assert_eq!(
+            doc["meshes"][0]["primitives"][0]["targets"]
+                .as_array()
+                .map(Vec::len),
+            Some(frames - 1),
+            "a morph target per later frame"
+        );
+        assert!(
+            !doc["animations"][0]["channels"]
+                .as_array()
+                .expect("channels")
+                .is_empty()
+        );
+    });
+}

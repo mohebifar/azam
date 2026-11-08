@@ -180,7 +180,92 @@ impl RenderView {
     }
 }
 
+/// Resolution of Rendered shading as a share of the viewport's (it refines in place).
+const LIVE_SCALE: f32 = 0.5;
+/// Samples Rendered shading refines to.
+const LIVE_SAMPLES: u32 = 48;
+
+/// The viewport's path trace in Rendered shading, and what it was started for.
+pub struct LiveRender {
+    key: String,
+    view: RenderView,
+}
+
+impl RenderView {
+    /// The latest image, if one arrived.
+    #[must_use]
+    pub fn preview(&self) -> Option<Arc<Image>> {
+        self.preview.clone()
+    }
+}
+
 impl AzamApp {
+    /// Rendered shading: keeps a path trace of what the viewport shows refining in its place,
+    /// started again whenever the camera, the project or the drape changes; the raster frame
+    /// shows while the simulation plays. Returns whether it wants another frame.
+    pub(crate) fn update_live_render(&mut self) -> bool {
+        if self.shading != crate::operators::Shading::Rendered || self.playing || self.render_view.is_some() {
+            self.live_render = None;
+            return false;
+        }
+        let Some(b) = self.viewport.bounds else {
+            return false;
+        };
+        let key = format!(
+            "{:?}|{}|{:?}|{}|{}x{}",
+            self.viewport.camera,
+            self.session.revision,
+            self.sim_time(),
+            self.piece_drag.is_some(),
+            b.size.width.round(),
+            b.size.height.round()
+        );
+        if self.live_render.as_ref().is_none_or(|l| l.key != key) {
+            let (w, h) = (
+                (b.size.width * LIVE_SCALE).round().max(8.0) as u32,
+                (b.size.height * LIVE_SCALE).round().max(8.0) as u32,
+            );
+            let meshes = self.scene3d.trace_meshes(&self.session.project);
+            self.live_render = render_setup(meshes, &self.viewport.camera, w, h).map(|(scene, camera)| {
+                let settings = Settings {
+                    width: w,
+                    height: h,
+                    samples: LIVE_SAMPLES,
+                    ..Settings::default()
+                };
+                LiveRender {
+                    key,
+                    view: RenderView::start(scene, camera, settings),
+                }
+            });
+        }
+        let Some(live) = self.live_render.as_mut() else {
+            return false;
+        };
+        let running = live.view.poll();
+        if let Some(img) = live.view.preview() {
+            self.viewport.show_image(img);
+        }
+        running || live.view.preview().is_none()
+    }
+
+    /// The viewport shading.
+    #[must_use]
+    pub fn shading(&self) -> crate::operators::Shading {
+        self.shading
+    }
+
+    /// Switches the viewport shading.
+    pub fn set_shading(&mut self, shading: crate::operators::Shading) {
+        self.shading = shading;
+    }
+
+    /// Samples the Rendered shading has refined to, while it shows.
+    #[must_use]
+    pub fn live_render_samples(&self) -> Option<u32> {
+        self.live_render.as_ref().map(|l| l.view.samples)
+    }
+
     /// Starts a render of the 3D view (F12), replacing any render in progress.
     pub(crate) fn start_render(&mut self) {
         // The viewport's shape, or the open render's when it hides the viewport (F12 again).

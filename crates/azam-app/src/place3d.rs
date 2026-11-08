@@ -403,3 +403,86 @@ pub(crate) fn set_placement(pc: &mut azam_doc::Piece, moved: Option<[f64; 3]>, t
     pc.arr.moved = moved;
     pc.arr.turned = turned;
 }
+
+/// Turning less than this at a boundary sample, in degrees, drops it from a flattened outline.
+const FLAT_KEEP_TURN_DEG: f64 = 4.0;
+
+impl AzamApp {
+    /// Lays the active piece's drape flat as a new piece beside the pattern (unsewn, same
+    /// fabric and grain): the pattern the drape implies, to compare with the one drafted.
+    pub fn flatten_active_piece(&mut self) {
+        let Some(id) = self.session.selection.active.clone() else {
+            self.status = "Select a piece to flatten".into();
+            return;
+        };
+        let Some(sim) = self.scene3d.sim.as_ref() else {
+            self.status = "There is no drape to flatten yet".into();
+            return;
+        };
+        let Some(view) = sim.piece_views().find(|v| v.record.id == id) else {
+            self.status = "That piece is not simulated".into();
+            return;
+        };
+        let flat = azam_sim::flatten_piece(&view);
+        let ring: Vec<azam_geom::Vec2> = view
+            .record
+            .mesh
+            .boundary
+            .iter()
+            .map(|&v| flat[v as usize])
+            .collect();
+        let outline = simplify_ring(&ring, FLAT_KEEP_TURN_DEG);
+        let project = &self.session.project;
+        let Some(src) = project.pieces.get(&id).cloned() else {
+            return;
+        };
+        // beside everything on the board
+        let right = project
+            .pieces
+            .values()
+            .flat_map(|pc| pc.pts.iter().map(|p| p.pos.x))
+            .fold(f64::MIN, f64::max);
+        let left = outline.iter().map(|p| p.x).fold(f64::MAX, f64::min);
+        let shift = azam_geom::Vec2::new(right + 100.0 - left, 0.0);
+        let points: Vec<(azam_geom::Vec2, bool)> = outline.iter().map(|p| (*p + shift, false)).collect();
+        let mut made = None;
+        self.session.edit("Flatten Piece", |p| {
+            made = azam_doc::create_piece(p, &points);
+            if let Some(pc) = made.as_ref().and_then(|m| p.pieces.get_mut(m)) {
+                pc.name = format!("{} (flattened)", src.name);
+                pc.fabric = src.fabric.clone();
+                pc.grain = src.grain;
+                pc.sa = src.sa;
+            }
+        });
+        let area = |pts: &[azam_geom::Vec2]| azam_geom::signed_area(pts).abs();
+        let drafted = area(&src.outline().poly);
+        self.status = match made {
+            Some(m) => {
+                self.session.selection.select_only(m);
+                format!(
+                    "Flattened {}: {:+.1} % area against the draft",
+                    src.name,
+                    (area(&outline) / drafted.max(1e-9) - 1.0) * 100.0
+                )
+            }
+            None => "Could not flatten the piece".into(),
+        };
+        self.framed = false;
+    }
+}
+
+/// `ring` (a closed polygon) without the points where it turns by less than `deg` degrees.
+fn simplify_ring(ring: &[azam_geom::Vec2], deg: f64) -> Vec<azam_geom::Vec2> {
+    let n = ring.len();
+    if n < 4 {
+        return ring.to_vec();
+    }
+    let keep = |i: usize| {
+        let (a, b, c) = (ring[(i + n - 1) % n], ring[i], ring[(i + 1) % n]);
+        let (u, v) = ((b - a).normalize_or_zero(), (c - b).normalize_or_zero());
+        u.dot(v).clamp(-1.0, 1.0).acos().to_degrees() >= deg
+    };
+    let kept: Vec<azam_geom::Vec2> = (0..n).filter(|&i| keep(i)).map(|i| ring[i]).collect();
+    if kept.len() >= 3 { kept } else { ring.to_vec() }
+}

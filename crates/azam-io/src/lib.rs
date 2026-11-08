@@ -27,7 +27,7 @@ mod svg;
 mod techpack;
 
 pub use dxf::{DxfError, ImportedLine, ImportedPiece, export_dxf, import_dxf};
-pub use gltf::export_glb;
+pub use gltf::{Animation, MeshFrame, export_glb, export_glb_animated};
 pub use model::Bounds;
 pub use obj::{
     MTL_FILE_NAME, ObjExport, ObjImport, ObjImportError, ObjMaterial, ObjMesh, ObjPiece, export_obj,

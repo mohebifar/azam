@@ -152,7 +152,7 @@ pub struct AzamApp {
     pub(crate) area_bounds: std::collections::BTreeMap<crate::areas::AreaId, Bounds<f32>>,
     workspace: Workspace,
     pub(crate) tool: Tool,
-    shading: Shading,
+    pub(crate) shading: Shading,
     /// What the fit map shading shows.
     fit_mode: azam_sim::FitMode,
     pub(crate) playing: bool,
@@ -187,6 +187,8 @@ pub struct AzamApp {
     pub(crate) scene3d: Scene3d,
     /// The Render window (F12), while open.
     pub(crate) render_view: Option<crate::render_view::RenderView>,
+    /// The viewport's own path trace in Rendered shading.
+    pub(crate) live_render: Option<crate::render_view::LiveRender>,
     pub(crate) tooltip: Option<crate::tooltip::Tooltip>,
     pub(crate) open_submenu: Option<&'static str>,
     submenu_anchor: (f32, f32),
@@ -305,6 +307,7 @@ impl AzamApp {
             framed_size: None,
             scene3d: Scene3d::default(),
             render_view: None,
+            live_render: None,
             tooltip: None,
             open_submenu: None,
             submenu_anchor: (0.0, 0.0),
@@ -563,6 +566,9 @@ impl AzamApp {
                 self.save_prefs();
             }
             Operator::Preferences => self.prefs_view = Some(crate::prefs::PrefsView::default()),
+            Operator::FlattenPiece => self.flatten_active_piece(),
+            Operator::RecordAnimation => self.toggle_recording(),
+            Operator::ExportAnimation => self.export(ExportKind::Animation),
             Operator::ToggleAvatar => self
                 .session
                 .edit("Show Avatar", |p| p.avatar.show = !p.avatar.show),
@@ -1484,11 +1490,17 @@ impl AzamApp {
                         )
                         .class("first"),
                     )
+                    .child(self.header_button(
+                        "SHADING_TEXTURE",
+                        self.shading == Shading::FitMap,
+                        Operator::SetShading(Shading::FitMap),
+                        cx,
+                    ))
                     .child(
                         self.header_button(
-                            "SHADING_TEXTURE",
-                            self.shading == Shading::FitMap,
-                            Operator::SetShading(Shading::FitMap),
+                            "SHADING_RENDERED",
+                            self.shading == Shading::Rendered,
+                            Operator::SetShading(Shading::Rendered),
                             cx,
                         )
                         .class("last"),
@@ -1941,6 +1953,7 @@ impl AzamApp {
             .draws(&self.session.project, &self.session.selection, self.shading);
         self.tint_collaborator_pieces(&mut draws);
         self.viewport.render(&draws, window.scale_factor());
+        pending |= self.update_live_render();
         if pending {
             window.request_animation_frame();
         }

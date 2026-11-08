@@ -494,3 +494,36 @@ fn a_zipper_holds_its_edge_and_weighs_on_it() {
         "the zipper adds {added:.2} g"
     );
 }
+
+#[test]
+fn flattening_gives_back_the_pattern_or_its_stretch() {
+    let av = female_avatar();
+    let project = square_project(&["pc_sq"], SQUARE_MM);
+    let mut sim = Simulation::build(&project, &av, None, &SimParams::default());
+    let area = |pts: &[azam_geom::Vec2], sim: &Simulation| {
+        let r = &sim.records[0];
+        let poly: Vec<azam_geom::Vec2> = r.mesh.boundary.iter().map(|&v| pts[v as usize]).collect();
+        azam_geom::signed_area(&poly).abs()
+    };
+    let flat = azam_sim::flatten_piece(&sim.piece_views().next().expect("a piece"));
+    let a0 = area(&flat, &sim);
+    assert!(
+        (a0 - SQUARE_MM * SQUARE_MM).abs() < 0.01 * SQUARE_MM * SQUARE_MM,
+        "as drafted: {a0}"
+    );
+    // stretched 10 % each way about its middle: the flat shape is 21 % larger
+    let n = sim.particles.x.len() / 3;
+    let mid = (0..3)
+        .map(|k| (0..n).map(|q| sim.particles.x[q * 3 + k]).sum::<f32>() / n as f32)
+        .collect::<Vec<_>>();
+    let mut x = sim.particles.x.clone();
+    for q in 0..n {
+        for k in 0..3 {
+            x[q * 3 + k] = mid[k] + (x[q * 3 + k] - mid[k]) * 1.1;
+        }
+    }
+    sim.set_positions(&x);
+    let flat = azam_sim::flatten_piece(&sim.piece_views().next().expect("a piece"));
+    let ratio = area(&flat, &sim) / a0;
+    assert!((ratio - 1.21).abs() < 0.02, "stretched: {ratio}");
+}

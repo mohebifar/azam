@@ -213,6 +213,142 @@ fn pack(doc: &Value, bin: &[u8]) -> Vec<u8> {
     out
 }
 
+/// One mesh in one frame: vertex positions (mm) and unit normals.
+pub type MeshFrame = (Vec<[f32; 3]>, Vec<[f32; 3]>);
+
+/// The garment (and avatar) moving, as recorded frame by frame.
+#[derive(Clone, Debug, Default)]
+pub struct Animation {
+    /// Seconds between frames.
+    pub dt: f64,
+    /// Per frame, per piece (in the order of the pieces given): positions and normals.
+    pub pieces: Vec<Vec<MeshFrame>>,
+    /// Per frame, the avatar's positions and normals, when it moves.
+    pub avatar: Option<Vec<MeshFrame>>,
+}
+
+/// One mesh's frames as morph targets: per frame after the first, an accessor of position and
+/// of normal offsets from the first frame.
+fn morph_targets(b: &mut Builder, frames: &[MeshFrame]) -> Vec<Value> {
+    let Some((p0, n0)) = frames.first() else {
+        return Vec::new();
+    };
+    frames[1..]
+        .iter()
+        .map(|(p, n)| {
+            let dp: Vec<f32> = p
+                .iter()
+                .zip(p0)
+                .flat_map(|(a, z)| {
+                    [
+                        (a[0] - z[0]) * METRES_PER_MM,
+                        (a[1] - z[1]) * METRES_PER_MM,
+                        (a[2] - z[2]) * METRES_PER_MM,
+                    ]
+                })
+                .collect();
+            let dn: Vec<f32> = n
+                .iter()
+                .zip(n0)
+                .flat_map(|(a, z)| [a[0] - z[0], a[1] - z[1], a[2] - z[2]])
+                .collect();
+            json!({"POSITION": b.floats(&dp, 3, true), "NORMAL": b.floats(&dn, 3, false)})
+        })
+        .collect()
+}
+
+/// The draped pieces moving through `anim` (their geometry as in its first frame), and the
+/// avatar with them, as a binary glTF file: each mesh keeps one morph target per later frame and
+/// an animation steps its weights from one frame to the next, so any glTF viewer or Blender plays
+/// it back.
+#[must_use]
+pub fn export_glb_animated(pieces: &[ObjPiece], avatar: Option<&ObjMesh>, anim: &Animation) -> Vec<u8> {
+    let first: Vec<ObjPiece> = pieces
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let mut p = p.clone();
+            if let Some(f) = anim.pieces.first().and_then(|f| f.get(i)) {
+                p.positions = &f.0;
+                p.normals = &f.1;
+            }
+            p
+        })
+        .collect();
+    let base = export_glb(&first, avatar);
+    // take the still file apart, add the targets and the animation, and put it back together
+    let json_len = u32::from_le_bytes(base[12..16].try_into().unwrap_or_default()) as usize;
+    let Ok(mut doc) = serde_json::from_slice::<Value>(&base[20..20 + json_len]) else {
+        return base;
+    };
+    let bin_at = 20 + json_len + 8;
+    let mut b = Builder {
+        bin: base[bin_at..].to_vec(),
+        views: doc["bufferViews"].as_array().cloned().unwrap_or_default(),
+        accessors: doc["accessors"].as_array().cloned().unwrap_or_default(),
+    };
+    let frames = anim.pieces.len();
+    if frames < 2 {
+        return base;
+    }
+    let mut series: Vec<Vec<MeshFrame>> = (0..pieces.len())
+        .filter(|&i| !pieces[i].hidden)
+        .map(|i| {
+            anim.pieces
+                .iter()
+                .map(|f| f.get(i).cloned().unwrap_or_default())
+                .collect()
+        })
+        .collect();
+    if let Some(av) = &anim.avatar
+        && avatar.is_some()
+        && av.len() == frames
+    {
+        series.push(av.clone());
+    }
+    let times: Vec<f32> = (0..frames).map(|k| (k as f64 * anim.dt) as f32).collect();
+    let input = {
+        let view = b.view(&f32_bytes(&times), ARRAY_BUFFER);
+        b.accessors.push(json!({
+            "bufferView": view, "componentType": FLOAT, "count": frames, "type": "SCALAR",
+            "min": [0.0], "max": [times[frames - 1]]
+        }));
+        b.accessors.len() - 1
+    };
+    let targets = frames - 1;
+    // frame k shows target k - 1 alone (frame 0: none)
+    let weights: Vec<f32> = (0..frames)
+        .flat_map(|k| (0..targets).map(move |t| if k == t + 1 { 1.0 } else { 0.0 }))
+        .collect();
+    let output = {
+        let view = b.view(&f32_bytes(&weights), ARRAY_BUFFER);
+        b.accessors.push(json!({
+            "bufferView": view, "componentType": FLOAT, "count": weights.len(), "type": "SCALAR"
+        }));
+        b.accessors.len() - 1
+    };
+    let (mut samplers, mut channels) = (Vec::new(), Vec::new());
+    let meshes = doc["meshes"].as_array().map_or(0, Vec::len);
+    for (m, frames_of) in series.iter().enumerate().take(meshes) {
+        let t = morph_targets(&mut b, frames_of);
+        if t.len() != targets {
+            continue;
+        }
+        doc["meshes"][m]["primitives"][0]["targets"] = Value::Array(t);
+        doc["meshes"][m]["weights"] = json!(vec![0.0; targets]);
+        samplers.push(json!({"input": input, "output": output, "interpolation": "LINEAR"}));
+        channels.push(json!({"sampler": samplers.len() - 1, "target": {"node": m, "path": "weights"}}));
+    }
+    while b.bin.len() % 4 != 0 {
+        b.bin.push(0);
+    }
+    doc["animations"] = json!([{"name": "Drape", "samplers": samplers, "channels": channels}]);
+    doc["accessors"] = Value::Array(b.accessors);
+    doc["bufferViews"] = Value::Array(b.views);
+    doc["buffers"] = json!([{"byteLength": b.bin.len()}]);
+    pack(&doc, &b.bin)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +394,55 @@ mod tests {
         assert_eq!(doc["buffers"][0]["byteLength"], bin_len);
         let base = &doc["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"];
         assert!((base[0].as_f64().expect("red") - 1.0).abs() < 1e-6 && base[1].as_f64() == Some(0.0));
+    }
+
+    #[test]
+    fn recorded_frames_become_morph_targets_and_an_animation() {
+        let frame = |dz: f32| {
+            (
+                vec![[0.0, 1000.0, dz], [100.0, 1000.0, dz], [0.0, 900.0, dz]],
+                vec![[0.0, 0.0, 1.0]; 3],
+            )
+        };
+        let (p0, n0) = frame(0.0);
+        let piece = ObjPiece {
+            name: "Front",
+            material: ObjMaterial {
+                name: "m".into(),
+                color: "#808080".into(),
+                opacity: 1.0,
+            },
+            hidden: false,
+            positions: &p0,
+            normals: &n0,
+            uvs: &[[0.0, 0.0], [100.0, 0.0], [0.0, 100.0]],
+            triangles: &[[0, 1, 2]],
+        };
+        let anim = Animation {
+            dt: 1.0 / 30.0,
+            pieces: vec![vec![frame(0.0)], vec![frame(10.0)], vec![frame(20.0)]],
+            avatar: None,
+        };
+        let glb = export_glb_animated(&[piece], None, &anim);
+        let json_len = u32::from_le_bytes(glb[12..16].try_into().expect("4 bytes")) as usize;
+        assert_eq!(
+            u32::from_le_bytes(glb[8..12].try_into().expect("4 bytes")) as usize,
+            glb.len()
+        );
+        let doc: Value = serde_json::from_slice(&glb[20..20 + json_len]).expect("JSON");
+        assert_eq!(
+            doc["meshes"][0]["primitives"][0]["targets"]
+                .as_array()
+                .map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(doc["animations"][0]["channels"][0]["target"]["path"], "weights");
+        let last = &doc["accessors"][doc["meshes"][0]["primitives"][0]["targets"][1]["POSITION"]
+            .as_u64()
+            .expect("i") as usize];
+        assert!(
+            (last["max"][2].as_f64().expect("z") - 0.02).abs() < 1e-6,
+            "the last frame is 20 mm forward"
+        );
     }
 }

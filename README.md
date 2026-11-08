@@ -22,6 +22,7 @@ cargo run --release -p azam-app -- shirt.azam.json   # the window, on a saved pr
 cargo run --release -p azam-app -- --screenshot shot.png --workspace grading --template labadeh
 cargo run --release -p azam-app -- --screenshot drape.png --template dress --frames 300   # simulate first
 cargo run --release -p azam-app -- --render render.png --template dress --frames 300      # path-traced
+cargo run --release -p azam-app -- --screenshot r.png --template dress --frames 300 --shading rendered
 ```
 
 On macOS, `scripts/bundle-macos.sh` builds `target/release/azam.app` (with the MakeHuman pack inside).
@@ -60,6 +61,14 @@ holding a button: X, Y or Z locks the axis, a typed number sets mm or degrees, c
 Esc or right-click puts it back. A fabric can carry an image texture (Fabric tab ▸ Texture), tiled
 along each piece's grain in the 3D view and in renders. The Grading panel lists the selected
 point's offset in every size as an editable table.
+
+The 3D header's third shading button (or View ▸ Rendered Shading) path-traces the view in place,
+refining while nothing moves, as Blender's Rendered shading does. Garment ▸ Flatten Draped Piece lays
+the selected piece's drape flat as a new piece, each mesh edge at its length on the body, and reports
+how much larger or smaller it is than the draft. Simulation ▸ Record Animation records the frames
+while the simulation plays; File ▸ Export Animation (.glb) writes them (with a moving avatar) as an
+animated glTF that Blender and web viewers play back. FBX and Alembic are not written; glTF is the
+interchange for animation.
 
 A piece's starting place around the avatar (slot, distance, angle, height) is in the Piece tab's
 Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleeve L", "Collar"…).

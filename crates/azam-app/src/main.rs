@@ -19,6 +19,7 @@ struct Args {
     samples: u32,
     workspace: Option<String>,
     template: Option<String>,
+    shading: Option<azam_app::operators::Shading>,
     /// A project file to open (the first argument that is not an option or its value).
     open: Option<String>,
     frames: usize,
@@ -37,6 +38,7 @@ Options:
   --workspace NAME     design, grading, colorway, review or techpack
   --template NAME      tee, dress, skirt, labadeh or aba
   --frames N           simulate N frames (1/60 s each) first
+  --shading NAME       3D view shading: solid, fitmap or rendered
   --size WxH           window size for --screenshot (default 1480x900)
   --render-size WxH    image size for --render (default 1280x800)
   --samples N          samples per pixel for --render
@@ -44,7 +46,8 @@ Options:
 ";
 
 /// Options that take a value.
-const WITH_VALUE: [&str; 8] = [
+const WITH_VALUE: [&str; 9] = [
+    "--shading",
     "--screenshot",
     "--render",
     "--render-size",
@@ -78,6 +81,7 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
         samples: azam_app::render_view::RENDER_SAMPLES,
         workspace: None,
         template: None,
+        shading: None,
         open: None,
         frames: 0,
         size: WINDOW_SIZE,
@@ -113,6 +117,15 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
                     a.template = Some(value);
                 }
                 "--frames" => a.frames = parse_num(flag, &value)?,
+                "--shading" => {
+                    use azam_app::operators::Shading;
+                    a.shading = Some(match value.as_str() {
+                        "solid" => Shading::Solid,
+                        "fitmap" | "fit" => Shading::FitMap,
+                        "rendered" => Shading::Rendered,
+                        _ => return Err(format!("no shading {value:?} (solid, fitmap, rendered)")),
+                    });
+                }
                 _ => a.size = parse_size(flag, &value)?,
             }
             k += 2;
@@ -166,6 +179,39 @@ fn args_or_exit() -> Args {
     }
 }
 
+/// Switches the window's 3D view to `shading`; for Rendered shading, lets its path trace refine.
+fn apply_shading(window: &WindowHandle<AzamApp>, cx: &mut App, shading: azam_app::operators::Shading) {
+    window.root().update(cx, |app, _| app.set_shading(shading));
+    if shading == azam_app::operators::Shading::Rendered {
+        for _ in 0..3000 {
+            window.root().update(cx, |_, cx| cx.notify());
+            cx.draw(window.id);
+            if window.root().read(cx).live_render_samples().unwrap_or(0) >= 48 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+}
+
+/// Path-traces `app`'s 3D view at `size` with `samples` per pixel and writes it to `path`.
+fn write_render(app: &AzamApp, path: &str, size: (u32, u32), samples: u32) {
+    let (w, h) = size;
+    match app.render_still(w, h, samples) {
+        Ok((image, stats)) => {
+            println!(
+                "rendered {w}x{h} @ {samples} spp, {} triangles: trace {:.2} s, denoise + tone map {:.2} s",
+                stats.triangles, stats.trace_s, stats.develop_s
+            );
+            match image.write_png(std::path::Path::new(path)) {
+                Ok(()) => println!("wrote {path}"),
+                Err(e) => eprintln!("azam: could not write {path}: {e}"),
+            }
+        }
+        Err(e) => eprintln!("azam: could not render: {e}"),
+    }
+}
+
 fn main() {
     let args = args_or_exit();
     let headless = args.screenshot.is_some() || args.render.is_some();
@@ -202,7 +248,11 @@ fn main() {
                 .and_then(azam_app::operators::Template::from_key),
         );
         let open = args.open.clone();
-        let prefs = if headless { None } else { azam_app::prefs::prefs_path() };
+        let prefs = if headless {
+            None
+        } else {
+            azam_app::prefs::prefs_path()
+        };
         window.root().update(cx, |app, _| {
             if let Some(path) = prefs {
                 app.use_prefs_file(path);
@@ -244,6 +294,9 @@ fn main() {
                 }
                 window.root().update(cx, |app, _| app.set_playing(false));
             }
+            if let Some(shading) = args.shading {
+                apply_shading(&window, cx, shading);
+            }
             if let Some(path) = &args.screenshot {
                 let (w, h, pixels) = cx.draw(window.id);
                 match write_png(path, w, h, &pixels) {
@@ -252,21 +305,7 @@ fn main() {
                 }
             }
             if let Some(path) = &args.render {
-                let (w, h) = args.render_size;
-                let app = window.root().read(cx);
-                match app.render_still(w, h, args.samples) {
-                    Ok((image, stats)) => {
-                        println!(
-                            "rendered {w}x{h} @ {} spp, {} triangles: trace {:.2} s, denoise + tone map {:.2} s",
-                            args.samples, stats.triangles, stats.trace_s, stats.develop_s
-                        );
-                        match image.write_png(std::path::Path::new(path)) {
-                            Ok(()) => println!("wrote {path}"),
-                            Err(e) => eprintln!("azam: could not write {path}: {e}"),
-                        }
-                    }
-                    Err(e) => eprintln!("azam: could not render: {e}"),
-                }
+                write_render(window.root().read(cx), path, args.render_size, args.samples);
             }
         }
     });

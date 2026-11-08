@@ -19,6 +19,8 @@ pub enum ExportKind {
     Obj,
     /// The draped garment, and the avatar if it is shown, as binary glTF.
     Gltf,
+    /// The recorded simulation as an animated binary glTF.
+    Animation,
     /// The pattern as a tiled PDF to print at 1:1.
     PatternPdf,
     /// The tech pack as a PDF.
@@ -44,7 +46,7 @@ impl ExportKind {
             Self::Dxf => "dxf",
             Self::Svg => "svg",
             Self::Obj => "obj",
-            Self::Gltf => "glb",
+            Self::Gltf | Self::Animation => "glb",
             Self::PatternPdf | Self::TechPackPdf => "pdf",
         }
     }
@@ -54,6 +56,7 @@ impl ExportKind {
             Self::PatternPdf => "-pattern",
             Self::TechPackPdf => "-techpack",
             Self::Dxf | Self::Svg | Self::Obj | Self::Gltf => "",
+            Self::Animation => "-animation",
         }
     }
 
@@ -62,7 +65,7 @@ impl ExportKind {
             Self::Dxf => "DXF\t*.dxf",
             Self::Svg => "SVG\t*.svg",
             Self::Obj => "Wavefront OBJ\t*.obj",
-            Self::Gltf => "glTF Binary\t*.glb",
+            Self::Gltf | Self::Animation => "glTF Binary\t*.glb",
             Self::PatternPdf | Self::TechPackPdf => "PDF\t*.pdf",
         }
     }
@@ -135,7 +138,17 @@ impl AzamApp {
                 write(path, &pdf)
             }
             ExportKind::TechPackPdf => write(path, &azam_io::techpack_pdf(project, &TechPackInfo::default())),
-            ExportKind::Gltf => {
+            ExportKind::Gltf | ExportKind::Animation => {
+                let anim = match kind {
+                    ExportKind::Animation => Some(
+                        self.scene3d
+                            .recording
+                            .as_ref()
+                            .filter(|r| r.pieces.len() > 1)
+                            .ok_or("nothing is recorded (Simulation ▸ Record Animation, then play)")?,
+                    ),
+                    _ => None,
+                };
                 let buffers = self.garment_buffers().ok_or("there is no draped garment yet")?;
                 let pieces = piece_views(&buffers);
                 let avatar = self
@@ -167,7 +180,11 @@ impl AzamApp {
                         normals,
                         triangles,
                     });
-                write(path, &azam_io::export_glb(&pieces, mesh.as_ref()))
+                let glb = match anim {
+                    Some(a) => azam_io::export_glb_animated(&pieces, mesh.as_ref(), a),
+                    None => azam_io::export_glb(&pieces, mesh.as_ref()),
+                };
+                write(path, &glb)
             }
             ExportKind::Obj => {
                 let export = self.obj_export().ok_or("there is no draped garment yet")?;
@@ -222,4 +239,31 @@ fn piece_views(buffers: &[Buffers]) -> Vec<ObjPiece<'_>> {
             triangles: &b.triangles,
         })
         .collect()
+}
+
+impl AzamApp {
+    /// Starts recording the simulation's frames (play to record), or stops and keeps them for
+    /// File ▸ Export Animation.
+    pub fn toggle_recording(&mut self) {
+        if let Some(rec) = &self.scene3d.recording
+            && self.scene3d.record
+        {
+            self.scene3d.record = false;
+            self.status = format!(
+                "Recorded {} frames ({:.1} s): File ▸ Export Animation writes them",
+                rec.pieces.len(),
+                rec.pieces.len() as f64 * rec.dt
+            );
+        } else {
+            self.scene3d.recording = Some(azam_io::Animation::default());
+            self.scene3d.record = true;
+            self.status = "Recording: play the simulation (Space); Record Animation again stops".into();
+        }
+    }
+
+    /// Frames recorded so far, if any are kept.
+    #[must_use]
+    pub fn recorded_frames(&self) -> Option<usize> {
+        self.scene3d.recording.as_ref().map(|r| r.pieces.len())
+    }
 }

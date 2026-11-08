@@ -62,6 +62,8 @@ pub enum Shading {
     Solid,
     /// Strain map over the garment.
     FitMap,
+    /// Path-traced in place, refining while nothing moves (Blender's Rendered shading).
+    Rendered,
 }
 
 /// A tool of the 2D pattern editor or the 3D viewport.
@@ -460,6 +462,12 @@ pub enum Operator {
     About,
     /// Open the Preferences window (interface options and the keymap).
     Preferences,
+    /// Lay the selected piece's drape flat as a new piece (CLO's 3D to 2D).
+    FlattenPiece,
+    /// Start or stop recording the simulation's frames for animation export.
+    RecordAnimation,
+    /// Export the recorded frames as an animated glTF.
+    ExportAnimation,
     /// Path-trace the 3D view into an image (Blender's F12).
     RenderImage,
     /// Show a fit map (switching to fit map shading).
@@ -481,6 +489,7 @@ impl Operator {
             Self::SetTool(t) => format!("Tool: {}", t.label()),
             Self::SetShading(Shading::Solid) => "Solid Shading".into(),
             Self::SetShading(Shading::FitMap) => "Fit Map Shading".into(),
+            Self::SetShading(Shading::Rendered) => "Rendered Shading".into(),
             Self::SetFitMap(m) => format!("Fit Map: {}", fit_label(m)),
             Self::SetEditor(_, e) => e.label().into(),
             Self::View(v) => match v {
@@ -547,6 +556,9 @@ impl Operator {
             Self::Shortcuts => "Keyboard Shortcuts",
             Self::About => "About azam",
             Self::Preferences => "Preferences…",
+            Self::FlattenPiece => "Flatten Draped Piece",
+            Self::RecordAnimation => "Record Animation",
+            Self::ExportAnimation => "Export Animation (.glb)…",
             Self::RenderImage => "Render Image",
             Self::New(_)
             | Self::SetTool(_)
@@ -577,6 +589,7 @@ impl Operator {
             | Self::ExportSvg
             | Self::ExportObj
             | Self::ExportGltf
+            | Self::ExportAnimation
             | Self::ExportPatternPdf
             | Self::ExportTechPackPdf => "EXPORT",
             Self::Quit => "QUIT",
@@ -597,6 +610,7 @@ impl Operator {
             Self::StepSim => "FRAME_NEXT",
             Self::SetTool(t) => t.icon(),
             Self::SetShading(Shading::Solid) => "SHADING_SOLID",
+            Self::SetShading(Shading::Rendered) => "SHADING_RENDERED",
             Self::SetShading(Shading::FitMap) | Self::SetFitMap(_) => "SHADING_TEXTURE",
             Self::View(ViewPreset::Top) => "AXIS_TOP",
             Self::View(ViewPreset::Right | ViewPreset::Left) => "AXIS_SIDE",
@@ -613,6 +627,8 @@ impl Operator {
             Self::Shortcuts => "KEY_COMMAND",
             Self::About => "INFO",
             Self::Preferences => "PREFERENCES",
+            Self::FlattenPiece => "UV_DATA",
+            Self::RecordAnimation => "REC",
             Self::RenderImage => "RENDER_STILL",
             Self::SetEditor(_, e) => e.icon(),
             Self::SplitArea(_, crate::areas::Dir::Row) => "SPLIT_VERTICAL",
@@ -742,6 +758,7 @@ impl Operator {
             Self::StepSim,
             Self::SetShading(Shading::Solid),
             Self::SetShading(Shading::FitMap),
+            Self::SetShading(Shading::Rendered),
             Self::SetFitMap(azam_sim::FitMode::Fit),
             Self::SetFitMap(azam_sim::FitMode::Strain),
             Self::SetFitMap(azam_sim::FitMode::Stress),
@@ -763,6 +780,9 @@ impl Operator {
             Self::Shortcuts,
             Self::About,
             Self::Preferences,
+            Self::FlattenPiece,
+            Self::RecordAnimation,
+            Self::ExportAnimation,
             Self::RenderImage,
         ]);
         all.extend(
@@ -877,6 +897,7 @@ pub fn context_menus() -> Vec<Menu> {
                 Item(O::Rotate90),
                 Separator,
                 Item(O::DetectHems),
+                Item(O::FlattenPiece),
                 Separator,
                 Item(O::Delete),
             ],
@@ -906,6 +927,7 @@ pub fn context_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::SetShading(Shading::Solid)),
                 Item(O::SetShading(Shading::FitMap)),
+                Item(O::SetShading(Shading::Rendered)),
                 Item(O::ToggleArrangementPoints),
                 Separator,
                 Item(O::RenderImage),
@@ -970,6 +992,7 @@ pub fn editor_menus() -> Vec<Menu> {
                 Item(O::TogglePlay),
                 Item(O::StepSim),
                 Item(O::ResetSim),
+                Item(O::RecordAnimation),
                 Separator,
                 Item(O::SetTool(Tool::Grab)),
                 Item(O::SetTool(Tool::Pin)),
@@ -1060,6 +1083,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::ExportSvg),
         Item(O::ExportObj),
         Item(O::ExportGltf),
+        Item(O::ExportAnimation),
         Item(O::ExportPatternPdf),
         Item(O::ExportTechPackPdf),
         Separator,
@@ -1099,6 +1123,7 @@ pub fn top_menus() -> Vec<Menu> {
                     Item(O::FlipSeam),
                     Item(O::SwapSeamSides),
                     Item(O::DetectHems),
+                    Item(O::FlattenPiece),
                     Separator,
                     Item(O::FramePattern),
                 ]);
@@ -1130,6 +1155,7 @@ pub fn top_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::SetShading(Shading::Solid)),
                 Item(O::SetShading(Shading::FitMap)),
+                Item(O::SetShading(Shading::Rendered)),
                 MenuEntry::Sub("Fit Map", "SHADING_TEXTURE", FIT_MAP_MENU),
                 Item(O::ToggleAvatar),
                 Item(O::ToggleGrid),
