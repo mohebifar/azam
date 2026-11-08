@@ -13,7 +13,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Delaunator from 'delaunator';
-import { loadEngine } from './load-engine.mjs';
+import { loadEngine, templates } from './load-engine.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const AT = loadEngine(process.argv[2] || path.join(here, '../../src.js'), { Delaunator });
@@ -82,7 +82,7 @@ function settleCases() {
 
 function estimateCases() {
   const out = [];
-  for (const t of AT.TEMPLATES) {
+  for (const t of templates(AT)) {
     if (t.id === 'blank') continue;
     const doc = newDoc(t.id, t.sex || 'female');
     out.push({ template: t.id, sex: t.sex || 'female', values: [1, 0.65, 1.3, 2.5].map((s) => [s, AT.estimateParticles(doc, s)]) });
@@ -279,7 +279,7 @@ projects.push(projectCase('tee triangle contacts', newDoc('tee', 'female'), { fr
   projects.push(projectCase('dress draft', d, { frames: 6, full: [1, 6], simStep: true, fit: true }));
 }
 projects.push(projectCase('skirt', newDoc('skirt', 'female'), { frames: 0 }));
-projects.push(projectCase('aba', newDoc('aba', 'male'), { frames: 0 }));
+projects.push(projectCase('dress male', newDoc('dress', 'male'), { frames: 0 }));
 
 process.stdout.write(`${JSON.stringify({
   generator: 'tools/golden/export-sim.mjs',

@@ -11,7 +11,7 @@
 // `run` function below performs the same edit the way the src.js UI does it.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadEngine } from './load-engine.mjs';
+import { loadEngine, templates } from './load-engine.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const AT = loadEngine(process.argv[2] || path.join(here, '../../src.js'));
@@ -118,7 +118,7 @@ function queries(doc) {
 
 function templateCases() {
   const out = [];
-  for (const t of AT.TEMPLATES) {
+  for (const t of templates(AT)) {
     for (const sex of ['female', 'male']) {
       const doc = newDoc(t.id, sex);
       out.push({ template: t.id, sex, lastId: seq, doc: snap(doc), queries: queries(doc) });
@@ -320,24 +320,26 @@ const ordered = (d) => Object.values(d.pieces).sort((a, b) => a.order - b.order)
 const segSide = (p, s, rev) => AT.side({ id: p }, s, rev);
 const strip = (sd) => ({ p: sd.p, a: sd.a, b: sd.b, dir: sd.dir });
 
-function labadehEdits() {
-  return sequence('labadeh', newDoc('labadeh', 'male'), (d, step) => {
-    const [FB, FA, BK, SL, SR, CO] = ordered(d);
-    step({ SplitSegment: { piece: FB, segment: 'cfH', t: 0.37 } });
+// Every kind of edit, on the tee drafted for the male avatar.
+function fullEdits() {
+  return sequence('tee full', newDoc('tee', 'male'), (d, step) => {
+    const [FB, BK, SL, SR, CO] = ordered(d);
+    const FA = SL;
+    step({ SplitSegment: { piece: FB, segment: 'hemL', t: 0.37 } });
     step({ AddCurvePoint: { piece: BK, segment: 'shL', t: 0.4, at: [d.pieces[BK].pts.find((p) => p.id === 'shL').x - 30, 60] } });
-    const hm = d.pieces[FB].pts.find((p) => p.id === 'hm'), slB = d.pieces[FB].pts.find((p) => p.id === 'slB');
-    step({ SetCurvature: { piece: FB, segment: 'hm', through: [(hm.x + slB.x) / 2 + 25, (hm.y + slB.y) / 2] } });
+    const ua = d.pieces[FB].pts.find((p) => p.id === 'uaL'), hem = d.pieces[FB].pts.find((p) => p.id === 'hemL');
+    step({ SetCurvature: { piece: FB, segment: 'uaL', through: [(ua.x + hem.x) / 2 - 25, (ua.y + hem.y) / 2] } });
     const bb = AT.bbox(d.pieces[BK].pts);
     step({ TransformPieces: { pieces: [BK], transform: { Rotate: { center: [bb.cx, bb.cy], angle: 7 * Math.PI / 180 } } } });
     const dup = step({ DuplicatePiece: { piece: SL } });
     const mir = step({ MirrorPiece: { piece: dup, linked: true } });
     const capSeam = Object.values(d.sewing).find((sw) => sw.a[0].p === SL && sw.b.length === 2).id;
     step({ SetSeamAllowance: { seam: capSeam, mm: 15 } });
-    step({ SetSegmentAllowance: { piece: FA, segment: 'mslT', mm: 6 } });
+    step({ SetSegmentAllowance: { piece: SR, segment: 'hemL', mm: 6 } });
     step({ SetSegmentAllowance: { piece: BK, segment: 'cbk', mm: 7 } });
     step('MarkHems');
-    step({ SetHem: { piece: FA, segment: 'mhps', mm: 12 } });
-    step({ SetHem: { piece: FB, segment: 'cfN', mm: 0 } });
+    step({ SetHem: { piece: FA, segment: 'hemL', mm: 12 } });
+    step({ SetHem: { piece: FB, segment: 'hemL', mm: 0 } });
     step({ SplitSegment: { piece: dup, segment: d.pieces[dup].pts[0].id, t: 0.5 } });
     step({ SetHem: { piece: mir, segment: d.pieces[mir].pts.filter((p) => !p.c)[1].id, mm: 18 } });
     step({ DeletePieces: { pieces: [dup] } });
@@ -347,8 +349,8 @@ function labadehEdits() {
     step({ FlipPieces: { pieces: [CO], axis: 'Vertical' } });
     step({ RotatePieces90: { pieces: [CO] } });
     step({ TransformPieces: { pieces: [FB], transform: { Translate: [25, -10] } } });
-    step({ MovePoints: { piece: FB, points: ['hps', 'n1'], delta: [3, -2] } });
-    step({ AddInternalLine: { piece: FB, points: [{ x: 300, y: 400 }, { x: 320, y: 500, c: 1 }, { x: 300, y: 600 }], closed: false } });
+    step({ MovePoints: { piece: FB, points: ['hpsR', 'shR'], delta: [3, -2] } });
+    step({ AddInternalLine: { piece: FB, points: [{ x: 0, y: 200 }, { x: 20, y: 300, c: 1 }, { x: 0, y: 400 }], closed: false } });
     step({ TransformPieces: { pieces: [FB], transform: { Translate: [0, 5] } } });
     step({ MirrorPiece: { piece: CO, linked: false } });
     const sw = step({ AddSeam: { a: [strip(segSide(SL, 'hemL', false))], b: [strip(segSide(SR, 'hemL', true))] } });
@@ -374,26 +376,26 @@ function teeEdits() {
 
 // A project with every kind of stored object and fields this version does not interpret.
 function richProject() {
-  const d = newDoc('labadeh', 'male');
-  const [FB, FA, BK] = ordered(d);
+  const d = newDoc('tee', 'male');
+  const [FB, BK, FA] = ordered(d);
   d.meta.owner = 'u1';
   d.avatar.kind = 'makehuman';
   d.xray = { opacity: 0.4, layers: [1, 2] };
   d.sim = { preset: 'fine', over: { substeps: 12, gravity: 0.9 }, quality: 'normal', selfCollision: true, air: 0.4 };
-  d.techpack.designer = 'A. Designer'; d.techpack.currency = 'EUR';
+  d.techpack = { season: 'All season', ...d.techpack, designer: 'A. Designer', currency: 'EUR' };
   d.fabrics.fab_main.price = 32.5; d.fabrics.fab_main.width = 1500; d.fabrics.fab_main.texture = { path: 'tex/wool.png', w: 100 };
   d.fabrics.fab_main.phys.custom = 3;
-  d.colorways.cw_navy.thumb = 'navy.png';
+  d.colorways.cw_navy = { id: 'cw_navy', name: 'Navy', order: 1, over: { fab_main: { color: '#2b3242' } }, thumb: 'navy.png' };
   const sw = Object.values(d.sewing)[0]; sw.kind = 'fold'; sw.a[0].note = 'side extra';
   Object.values(d.poms)[0].tol = 5;
   Object.values(d.stitches)[0].hidden = true;
   const pc = d.pieces[FB];
-  pc.qty = 2; pc.elastic = { cfN: 0.8 }; pc.hide3d = true; pc.shrinkWeft = 2; pc.arr.flip = true;
+  pc.qty = 2; pc.elastic = { hemL: 0.8 }; pc.hide3d = true; pc.shrinkWeft = 2; pc.arr.flip = true;
   pc.pins = [{ x: 400, y: 500 }, { x: 410, y: 900, tag: 'p' }];
   pc.graphics = [{ id: 'g_900', path: 'logo.png', x: 380, y: 300, w: 60, h: 30, ang: 15 }];
-  pc.internals = [{ id: 'il_901', pts: [{ x: 350, y: 200 }, { x: 360, y: 400, c: 1 }, { x: 350, y: 600 }], closed: false, fold: 180, style: 'dash' }];
-  pc.notches.push({ id: 'n_902', s: 'cfN', t: 0.25, kind: 'v' });
-  d.buttons.bt_903 = { id: 'bt_903', p: FB, x: 360, y: 320, size: 15, color: '#2b2b2b', shape: 'round', holes: 4, finish: 'plastic', fasten: 'bh_904' };
+  pc.internals = [{ id: 'il_901', pts: [{ x: 0, y: 200 }, { x: 10, y: 400, c: 1 }, { x: 0, y: 600 }], closed: false, fold: 180, style: 'dash' }];
+  pc.notches.push({ id: 'n_902', s: 'hemL', t: 0.25, kind: 'v' });
+  d.buttons.bt_903 = { id: 'bt_903', p: FB, x: 40, y: 320, size: 15, color: '#2b2b2b', shape: 'round', holes: 4, finish: 'plastic', fasten: 'bh_904' };
   d.holes.bh_904 = { id: 'bh_904', p: FA, x: 200, y: 320, len: 18, ang: 0, color: '#2a2a2a' };
   d.comments.c_905 = { id: 'c_905', n: 1, p: BK, x: 1300, y: 500, text: 'Check', by: 'u1', byName: 'Ann', at: 1, resolved: false, replies: [{ text: 'ok', by: 'u2', at: 2 }] };
   d.comments.c_906 = { id: 'c_906', n: 2, text: 'Global note', resolved: true };
@@ -403,7 +405,7 @@ function richProject() {
 
 function richEdits() {
   return sequence('rich', richProject(), (d, step) => {
-    const [FB, , BK] = ordered(d);
+    const [FB, BK] = ordered(d);
     step({ TransformPieces: { pieces: [FB, BK], transform: { Rotate: { center: [500, 500], angle: -0.3 } } } });
     // Flip before copying: a src.js copy shares its grade objects with the source, so flipping the
     // source afterwards would also flip the copy's grading there.
@@ -420,6 +422,6 @@ const golden = {
   curves: curveCases(),
   normalize: normalizeCases(),
   templates: templateCases(),
-  edits: [labadehEdits(), teeEdits(), richEdits()],
+  edits: [fullEdits(), teeEdits(), richEdits()],
 };
 process.stdout.write(`${JSON.stringify(golden)}\n`);

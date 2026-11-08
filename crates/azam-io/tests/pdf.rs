@@ -1,6 +1,6 @@
 //! Compares the drawing operations of the pattern and tech-pack PDFs with recorded reference data,
 //! checks that the written files are well-formed PDF, and that text outside `WinAnsi` (the Persian
-//! names of the `labadeh` template) is embedded, shaped and extractable.
+//! names of the `persian` project, a tee named in Persian) is embedded, shaped and extractable.
 
 mod common;
 
@@ -158,7 +158,7 @@ const HEADER_LINE_START: &str = "·   size ";
 /// The recorded pattern pages with the one layout that depends on measuring text outside `WinAnsi`
 /// brought up to date, and the number of operations changed.
 ///
-/// The reference drew such text (the Persian names of the `labadeh` and `aba` templates) with the
+/// The reference drew such text (the Persian names of the `persian` project) with the
 /// base-14 fonts and so measured it with Helvetica's default glyph width, 0.53 em per UTF-16
 /// unit. The writer now draws it with an embedded Unicode font and measures it with that font's
 /// shaped advances. In the recorded cases the only drawing placed by such a measurement is the
@@ -196,7 +196,7 @@ fn pattern_pdf_operations_match() {
         let (expected, changed) = with_unicode_metrics(&case["pages"], &project);
         assert_eq!(
             changed > 0,
-            matches!(name, "labadeh" | "aba"),
+            name == "persian",
             "{name}: header operations measured with the Unicode font"
         );
         compare_pages(&expected, &pages, &format!("{name} {}", case["options"]));
@@ -323,7 +323,7 @@ fn assert_valid_pdf(bytes: &[u8], pages: usize, what: &str) {
 
 #[test]
 fn written_pdfs_are_well_formed() {
-    for name in ["tee", "labadeh", "sampler"] {
+    for name in ["tee", "persian", "sampler"] {
         let project = project_named(name);
         for case in golden()["patternPdfs"]
             .as_array()
@@ -546,15 +546,15 @@ fn right_to_left_texts(bytes: &[u8]) -> Vec<String> {
         .collect()
 }
 
-/// The labadeh pattern (one piece per page, with dimensions) and tech pack.
-fn labadeh_pdfs() -> (Project, Vec<u8>, Vec<u8>) {
-    let project = project_named("labadeh");
+/// The Persian tee's pattern (one piece per page, with dimensions) and tech pack.
+fn persian_pdfs() -> (Project, Vec<u8>, Vec<u8>) {
+    let project = project_named("persian");
     let case = golden()["patternPdfs"]
         .as_array()
         .expect("pattern pdfs")
         .iter()
-        .find(|c| c["project"] == "labadeh" && c["options"]["layout"] == "pieces")
-        .expect("labadeh pieces case");
+        .find(|c| c["project"] == "persian" && c["options"]["layout"] == "pieces")
+        .expect("persian pieces case");
     let pattern = pattern_pdf(&project, &pdf_options(&case["options"])).expect("pdf");
     let tech = techpack_pdf(&project, &TechPackInfo::default());
     (project, pattern, tech)
@@ -562,7 +562,7 @@ fn labadeh_pdfs() -> (Project, Vec<u8>, Vec<u8>) {
 
 #[test]
 fn persian_text_uses_embedded_subset_fonts() {
-    let (_, pattern, tech) = labadeh_pdfs();
+    let (_, pattern, tech) = persian_pdfs();
     for (what, bytes) in [("pattern", &pattern), ("tech pack", &tech)] {
         let objects = pdf_objects(bytes);
         let type0: Vec<String> = objects
@@ -608,7 +608,7 @@ fn persian_text_uses_embedded_subset_fonts() {
 
 #[test]
 fn persian_names_map_back_through_to_unicode() {
-    let (project, pattern, tech) = labadeh_pdfs();
+    let (project, pattern, tech) = persian_pdfs();
     let pattern_texts = right_to_left_texts(&pattern);
     let mut names: Vec<&str> = project.pieces.values().map(|p| p.name.as_str()).collect();
     names.push(&project.meta.name);
@@ -632,7 +632,7 @@ fn persian_names_map_back_through_to_unicode() {
 
 #[test]
 fn persian_names_are_not_replaced_by_question_marks() {
-    let (_, pattern, tech) = labadeh_pdfs();
+    let (_, pattern, tech) = persian_pdfs();
     for (what, bytes) in [("pattern", &pattern), ("tech pack", &tech)] {
         for pieces in drawn_text(bytes) {
             for p in pieces {
@@ -839,11 +839,11 @@ fn poppler_renders_and_extracts_persian_names() {
         eprintln!("poppler not installed; skipping");
         return;
     }
-    let (project, pattern, tech) = labadeh_pdfs();
+    let (project, pattern, tech) = persian_pdfs();
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("unicode-pdf");
     std::fs::create_dir_all(&dir).expect("temp dir");
-    let pattern_path = dir.join("labadeh-pattern.pdf");
-    let tech_path = dir.join("labadeh-tech.pdf");
+    let pattern_path = dir.join("persian-pattern.pdf");
+    let tech_path = dir.join("persian-tech.pdf");
     std::fs::write(&pattern_path, &pattern).expect("write pdf");
     std::fs::write(&tech_path, &tech).expect("write pdf");
     let path = |p: &std::path::Path| p.to_str().expect("utf-8 path").to_owned();

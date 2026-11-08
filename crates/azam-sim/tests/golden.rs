@@ -310,10 +310,8 @@ fn particle_estimates_match() {
         } else {
             azam_doc::Sex::Female
         };
-        // the reference also records templates azam no longer offers (labadeh, aba)
-        let Some(template) = azam_doc::Template::from_id(c["template"].as_str().expect("template id")) else {
-            continue;
-        };
+        let template =
+            azam_doc::Template::from_id(c["template"].as_str().expect("template id")).expect("template");
         // the recording was made from the reference engine's drafts (no azam refinements)
         let project = azam_doc::reference_template(template, sex, None, None, 0.0);
         for v in arr(&c["values"]) {

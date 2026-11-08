@@ -17,7 +17,7 @@
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { loadEngine } from './load-engine.mjs';
+import { loadEngine, templates } from './load-engine.mjs';
 
 const require = createRequire(import.meta.url);
 const { jsPDF } = require('jspdf');
@@ -188,7 +188,27 @@ function sampler() {
   return doc;
 }
 
-const projects = [...AT.TEMPLATES.map((t) => ({ name: t.id, doc: newDoc(t.id) })), { name: 'sampler', doc: sampler() }];
+// The tee named in Persian, with Persian fabric and colorway names (one with a zero-width
+// non-joiner): text outside WinAnsi, which the PDF writer embeds a Unicode font for.
+function persian() {
+  const doc = newDoc('tee');
+  doc.meta.name = 'پیراهن';
+  const names = ['جلو', 'پشت', 'آستین چپ', 'آستین راست', 'یقه'];
+  AT.asArray(doc.pieces).forEach((pc, i) => { pc.name = names[i]; });
+  const fabrics = ['فاستونی پشمی', 'کشباف'];
+  Object.values(doc.fabrics).forEach((f, i) => { f.name = fabrics[i]; });
+  doc.colorways.cw_main.name = 'طوسی ذغالی';
+  [['cw_brown', 'قهوه\u200cای', '#4b3c31'], ['cw_navy', 'سرمه\u200cای', '#2b3242']].forEach((c, i) => {
+    doc.colorways[c[0]] = { id: c[0], name: c[1], order: i + 1, over: { fab_main: { color: c[2] } } };
+  });
+  return doc;
+}
+
+const projects = [
+  ...templates(AT).map((t) => ({ name: t.id, doc: newDoc(t.id) })),
+  { name: 'persian', doc: persian() },
+  { name: 'sampler', doc: sampler() },
+];
 
 /* ---------- dimensions ---------- */
 function dimensions(doc) {
@@ -314,10 +334,10 @@ const cases = projects.map(({ name, doc }) => {
 const pdfs = [];
 for (const { name, doc } of projects) {
   PDF_CASES.forEach((o, i) => {
-    // every template in the default tiled layout; the other layouts on the tee, the labadeh and the
-    // sampler (the fully dimensioned tiles only on the tee and the sampler, to keep the file small)
-    if (i > 0 && !['tee', 'labadeh', 'sampler'].includes(name)) return;
-    if (i === 1 && name === 'labadeh') return;
+    // every template in the default tiled layout; the other layouts on the tee, the Persian tee and
+    // the sampler (the fully dimensioned tiles only on the tee and the sampler, to keep the file small)
+    if (i > 0 && !['tee', 'persian', 'sampler'].includes(name)) return;
+    if (i === 1 && name === 'persian') return;
     const pages = patternPdf(doc, o);
     if (pages) pdfs.push({ project: name, options: o, pages });
   });

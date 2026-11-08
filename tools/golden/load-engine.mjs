@@ -38,10 +38,18 @@ export function rng(seed) {
   };
 }
 
+// Templates src.js drafts that azam no longer offers: left out of every recording.
+export const REMOVED_TEMPLATES = new Set(['labadeh', 'aba']);
+
+// The garment templates azam offers, in src.js's order.
+export function templates(AT) {
+  return AT.TEMPLATES.filter((t) => !REMOVED_TEMPLATES.has(t.id));
+}
+
 // Every piece of every garment template, with a stable name.
 export function templatePieces(AT) {
   const out = [];
-  for (const t of AT.TEMPLATES) {
+  for (const t of templates(AT)) {
     const doc = AT.fromTemplate(t.id, 'female');
     Object.values(doc.pieces)
       .sort((a, b) => (a.order || 0) - (b.order || 0))

@@ -836,7 +836,8 @@ fn avatar_case(name: &str) -> &'static AvatarCase {
 #[test]
 fn female_parametric_avatar_matches() {
     let case = avatar_case("female");
-    assert!(case.pieces.len() > 20, "every template piece is arranged");
+    // the tee (5 pieces), the dress (2) and the skirt (3)
+    assert!(case.pieces.len() >= 10, "every template piece is arranged");
     check_parametric(case);
 }
 
