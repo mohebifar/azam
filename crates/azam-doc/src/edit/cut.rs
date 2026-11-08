@@ -113,6 +113,12 @@ pub fn cut_piece(project: &mut Project, piece: &PieceId, a: Vec2, b: Vec2) -> Re
     other.notches.retain(|n| moved_segs.contains(&n.s));
     other.pins.retain(|p| inside(Vec2::new(p.x, p.y)));
     other.graphics.retain(|g| inside(Vec2::new(g.x, g.y)));
+    // seams and topstitches first follow the new corners (on the whole split outline), sides
+    // that run across the cut become one side on each half, then each goes with its half
+    let full = pc.outline();
+    project.pieces.insert(piece.clone(), pc.clone());
+    remap_refs(project, piece, &old);
+    split_sides_at(project, piece, &full, &[id1.clone(), id2.clone()]);
     pc.pts = kept;
     pc.internals
         .retain(|il| !il.pts.first().is_some_and(|p| inside(p.pos)));
@@ -120,15 +126,7 @@ pub fn cut_piece(project: &mut Project, piece: &PieceId, a: Vec2, b: Vec2) -> Re
     pc.pins.retain(|p| !inside(Vec2::new(p.x, p.y)));
     pc.graphics.retain(|g| !inside(Vec2::new(g.x, g.y)));
     project.pieces.insert(piece.clone(), pc);
-    // seams and topstitches first follow the new corners, then the half they lie on
-    remap_refs(project, piece, &old);
-    for seam in project.sewing.values_mut() {
-        for side in seam.a.iter_mut().chain(seam.b.iter_mut()) {
-            if side.piece == *piece && moved_segs.contains(&side.side.a.segment) {
-                side.piece = new_id.clone();
-            }
-        }
-    }
+    assign_sides(project, piece, &full, &moved_segs, &new_id);
     for st in project.stitches.values_mut() {
         if st.p.as_ref() == Some(piece) && moved_segs.contains(&st.seg) {
             st.p = Some(new_id.clone());
@@ -148,6 +146,106 @@ pub fn cut_piece(project: &mut Project, piece: &PieceId, a: Vec2, b: Vec2) -> Re
     }
     project.add_piece(other);
     Ok(new_id)
+}
+
+/// Splits every seam side of `piece` that runs across one of the `corners` (on `outline`, the
+/// whole outline with the corners in it) into two sides meeting there, in walking order, so each
+/// lies on one side of a cut. The seam sews them end to end as before.
+fn split_sides_at(project: &mut Project, piece: &PieceId, outline: &azam_geom::Outline, corners: &[PointId]) {
+    use azam_geom::{SideDirection, SideEnd};
+    let total = outline.total;
+    let at: Vec<(PointId, f64)> = corners
+        .iter()
+        .filter_map(|c| Some((c.clone(), outline.perimeter_param(outline.segment_index(c)?, 0.0))))
+        .collect();
+    for seam in project.sewing.values_mut() {
+        for group in [&mut seam.a, &mut seam.b] {
+            let mut k = 0;
+            while k < group.len() {
+                let side = &group[k];
+                if side.piece != *piece {
+                    k += 1;
+                    continue;
+                }
+                let Some(r) = side.side.range(outline) else {
+                    k += 1;
+                    continue;
+                };
+                let forward = r.direction == SideDirection::Forward;
+                let span = if forward {
+                    (r.end - r.start).rem_euclid(total)
+                } else {
+                    (r.start - r.end).rem_euclid(total)
+                };
+                // the first cut corner the side passes strictly inside it
+                let passed = at
+                    .iter()
+                    .filter_map(|(c, p)| {
+                        let d = if forward {
+                            (p - r.start).rem_euclid(total)
+                        } else {
+                            (r.start - p).rem_euclid(total)
+                        };
+                        (d > 1e-6 && d < span - 1e-6).then_some((d, c))
+                    })
+                    .min_by(|x, y| x.0.total_cmp(&y.0))
+                    .map(|(_, c)| c.clone());
+                let Some(corner) = passed else {
+                    k += 1;
+                    continue;
+                };
+                let mid = SideEnd {
+                    segment: corner,
+                    t: 0.0,
+                };
+                let mut first = group[k].clone();
+                let mut second = group[k].clone();
+                first.side.b = mid.clone();
+                second.side.a = mid;
+                group[k] = first;
+                group.insert(k + 1, second);
+                // the second part may cross the other corner too: look at it next
+                k += 1;
+            }
+        }
+    }
+}
+
+/// Gives the new piece `new_id` every seam side of `piece` whose middle lies on one of the
+/// segments in `moved_segs` (on `outline`, the whole outline before the cut).
+fn assign_sides(
+    project: &mut Project,
+    piece: &PieceId,
+    outline: &azam_geom::Outline,
+    moved_segs: &BTreeSet<PointId>,
+    new_id: &PieceId,
+) {
+    use azam_geom::SideDirection;
+    let total = outline.total;
+    let segment_at = |param: f64| {
+        let param = param.rem_euclid(total);
+        (0..outline.segments.len()).find(|&k| {
+            let (lo, hi) = (outline.perimeter_param(k, 0.0), outline.perimeter_param(k, 1.0));
+            param >= lo - 1e-9 && param <= hi + 1e-9
+        })
+    };
+    for seam in project.sewing.values_mut() {
+        for side in seam.a.iter_mut().chain(seam.b.iter_mut()) {
+            if side.piece != *piece {
+                continue;
+            }
+            let Some(r) = side.side.range(outline) else {
+                continue;
+            };
+            let middle = match r.direction {
+                SideDirection::Forward => r.start + (r.end - r.start).rem_euclid(total) / 2.0,
+                SideDirection::Backward => r.start - (r.start - r.end).rem_euclid(total) / 2.0,
+            };
+            if segment_at(middle).is_some_and(|k| moved_segs.contains(&outline.segments[k].id)) {
+                side.piece = new_id.clone();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -188,6 +286,53 @@ mod tests {
         assert_eq!(
             cut_piece(&mut p, &pc, Vec2::new(500.0, 0.0), Vec2::new(500.0, 10.0)),
             Err(CutError::Crossings(0))
+        );
+    }
+
+    #[test]
+    fn seams_across_the_cut_split_and_still_match() {
+        let mut p =
+            crate::templates::from_template(crate::templates::Template::Tee, Sex::Female, None, None, 0.0);
+        let before = crate::measure::sew_lengths(&p);
+        let ids: Vec<PieceId> = p
+            .pieces
+            .values()
+            .filter(|pc| pc.name == "Front" || pc.name == "Back")
+            .map(|pc| pc.id.clone())
+            .collect();
+        for id in &ids {
+            let bb = azam_geom::bbox(p.pieces[id].outline().poly).expect("outline");
+            let y = bb.min.y + (bb.max.y - bb.min.y) * 0.6;
+            cut_piece(
+                &mut p,
+                id,
+                Vec2::new(bb.min.x - 50.0, y),
+                Vec2::new(bb.max.x + 50.0, y),
+            )
+            .expect("cut");
+        }
+        let after = crate::measure::sew_lengths(&p);
+        for (seam, l) in &after {
+            let was = &before[seam];
+            assert!(
+                ((l.a - l.b) - (was.a - was.b)).abs() < 1.0,
+                "{seam:?}: {:.1} vs {:.1} (was {:.1} vs {:.1})",
+                l.a,
+                l.b,
+                was.a,
+                was.b
+            );
+        }
+        let sides = |name: &str| {
+            p.sewing
+                .values()
+                .flat_map(|s| s.a.iter().chain(&s.b))
+                .filter(|side| p.pieces[&side.piece].name == name)
+                .count()
+        };
+        assert!(
+            sides("Front 2") > 0 && sides("Front") > 0,
+            "both halves keep seams"
         );
     }
 }
