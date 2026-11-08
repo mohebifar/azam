@@ -49,9 +49,17 @@ After a dart or a rectangle, an Adjust Last Operation panel changes its size. Pa
 shows the tool shelves with labels. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
 `P` add point, `H` polygon, `S` rectangle, `D` dart, `U` cut a piece along a dragged line, `F` round
 a corner (radius in the tool settings bar), `N` sew (`Shift N` free sew), `M` measure; hover a tool
-for its name and key. Edit ▸ Preferences… (`Ctrl ,`) sets tooltips and tool names and rebinds any
+for its name and key. Slash & Spread and Pleat (in the shelf and F3) take a line dragged across a
+piece: Spread turns the side to the line's left about its end, opening a wedge at its start; Pleat
+opens a knife pleat along it (opening and depth in the tool settings bar). Edit ▸ Preferences… (`Ctrl ,`) sets tooltips and tool names and rebinds any
 command's shortcut (saved next to the fabric library). The Dart tool cuts a 20 × 80 mm dart into the clicked segment and sews its
 legs; reshape it with Edit Points.
+
+Over the 3D view, G and R move or turn the piece under the pointer (or the selected one) without
+holding a button: X, Y or Z locks the axis, a typed number sets mm or degrees, click or Enter keeps,
+Esc or right-click puts it back. A fabric can carry an image texture (Fabric tab ▸ Texture), tiled
+along each piece's grain in the 3D view and in renders. The Grading panel lists the selected
+point's offset in every size as an editable table.
 
 A piece's starting place around the avatar (slot, distance, angle, height) is in the Piece tab's
 Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleeve L", "Collar"…).

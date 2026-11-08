@@ -424,6 +424,13 @@ impl FabricPreset {
     }
 }
 
+/// [`Fabric::extra`] key: path of an image tiled over the fabric (its print or weave photo).
+pub const FABRIC_TEXTURE_KEY: &str = "texture";
+/// [`Fabric::extra`] key: width of one tile of the texture on the cloth, mm.
+pub const FABRIC_TEXTURE_MM_KEY: &str = "textureMm";
+/// Tile width of a texture when the fabric gives none, mm.
+pub const DEFAULT_TEXTURE_MM: f64 = 100.0;
+
 /// A fabric of the project.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -462,6 +469,23 @@ impl Default for Fabric {
 }
 
 impl Fabric {
+    /// The image tiled over the fabric and the width of one tile in mm, if it has one.
+    #[must_use]
+    pub fn texture(&self) -> Option<(&str, f64)> {
+        let path = self
+            .extra
+            .get(FABRIC_TEXTURE_KEY)?
+            .as_str()
+            .filter(|p| !p.is_empty())?;
+        let mm = self
+            .extra
+            .get(FABRIC_TEXTURE_MM_KEY)
+            .and_then(Value::as_f64)
+            .filter(|v| *v > 0.0)
+            .unwrap_or(DEFAULT_TEXTURE_MM);
+        Some((path, mm))
+    }
+
     /// A fabric with the appearance and physics of `preset` and the default colours.
     #[must_use]
     pub fn from_preset(preset: FabricPreset, id: FabricId) -> Self {

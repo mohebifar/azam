@@ -81,6 +81,26 @@ pub struct PatternTools {
     pub dart: DartSize,
     /// The Fillet tool's settings.
     pub fillet: FilletSize,
+    /// How much the Spread tool opens and how deep the Pleat tool's pleats are, mm.
+    pub spread: SpreadSize,
+}
+
+/// The Spread and Pleat tools' sizes, set in the pattern editor's header.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpreadSize {
+    /// Opening of a spread at the start of its line, mm.
+    pub amount: f64,
+    /// Depth of a pleat, mm.
+    pub depth: f64,
+}
+
+impl Default for SpreadSize {
+    fn default() -> Self {
+        Self {
+            amount: 60.0,
+            depth: 25.0,
+        }
+    }
 }
 
 /// Radius of the rounds the Fillet tool makes, set in the pattern editor's header.
@@ -149,7 +169,7 @@ impl AzamApp {
                 self.tools.measure = Some((from, from));
                 self.pattern_drag = Some(PatternDrag::Measure { from });
             }
-            Tool::Cut => {
+            Tool::Cut | Tool::Spread | Tool::Pleat => {
                 let from = self.snap_point(press.q, None, press.alt);
                 self.pattern_drag = Some(PatternDrag::Cut { from, to: from });
             }
@@ -205,7 +225,23 @@ impl AzamApp {
                     self.status = format!("Distance {:.1} cm", from.distance(to) / 10.0);
                 }
             }
-            PatternDrag::Cut { from, to } => self.cut_along(from, to),
+            PatternDrag::Cut { from, to } => match self.tool {
+                Tool::Spread => self.spread_along(
+                    from,
+                    to,
+                    azam_doc::Spread::Fan {
+                        amount: self.tools.spread.amount,
+                    },
+                ),
+                Tool::Pleat => self.spread_along(
+                    from,
+                    to,
+                    azam_doc::Spread::Pleat {
+                        depth: self.tools.spread.depth,
+                    },
+                ),
+                _ => self.cut_along(from, to),
+            },
             _ => {}
         }
     }
@@ -390,6 +426,14 @@ impl AzamApp {
             Tool::Comment => "Click on a piece to pin a comment".into(),
             Tool::Measure => "Drag to measure (snaps to corners, Alt: free)".into(),
             Tool::Cut => "Drag a line across a piece to cut it in two (Shift: 45° steps)".into(),
+            Tool::Spread => format!(
+                "Drag a line across a piece: the side to its left turns about the line's end, opening {:.0} mm at its start",
+                self.tools.spread.amount
+            ),
+            Tool::Pleat => format!(
+                "Drag a line across a piece: a {:.0} mm knife pleat opens along it (the side to its left moves)",
+                self.tools.spread.depth
+            ),
             Tool::Fillet => format!(
                 "Click a corner to round it with a {:.0} mm radius (radius in the tool settings bar)",
                 self.tools.fillet.radius
@@ -470,6 +514,44 @@ impl AzamApp {
         if let Some(first) = cut.first() {
             self.session.selection.select_only(first.clone());
         }
+        self.force_scene();
+    }
+
+    /// Spreads the piece the line from `from` to `to` crosses (the first one found), in one undo
+    /// step.
+    fn spread_along(&mut self, from: Vec2, to: Vec2, how: azam_doc::Spread) {
+        let project = &self.session.project;
+        let target = project.pieces.iter().find_map(|(id, pc)| {
+            let ol = pc.outline();
+            (pc.mirror.is_none()
+                && (azam_geom::contains(&ol.poly, from)
+                    || azam_geom::contains(&ol.poly, to)
+                    || ol.poly.windows(2).any(|w| segments_cross(from, to, w[0], w[1]))))
+            .then(|| id.clone())
+        });
+        let Some(id) = target else {
+            self.status = "The line does not cross a piece".into();
+            return;
+        };
+        let mut result = Err(azam_doc::CutError::NoPiece);
+        self.session.edit(
+            if matches!(how, azam_doc::Spread::Pleat { .. }) {
+                "Add Pleat"
+            } else {
+                "Slash and Spread"
+            },
+            |p| {
+                result = azam_doc::spread_piece(p, &id, from, to, how);
+                if result.is_ok() {
+                    azam_doc::sync_mirrors(p);
+                }
+            },
+        );
+        self.status = match (result, how) {
+            (Ok(()), azam_doc::Spread::Pleat { depth }) => format!("Added a {depth:.0} mm knife pleat"),
+            (Ok(()), azam_doc::Spread::Fan { amount }) => format!("Spread the piece {amount:.0} mm"),
+            (Err(e), _) => format!("Not spread: {e}"),
+        };
         self.force_scene();
     }
 

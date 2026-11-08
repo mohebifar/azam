@@ -201,6 +201,13 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
              border-radius: 4px; background: #232323; border: 1px solid #111111;
              box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
 
+/* -- grade rule table --------------------------------------------------------------------------- */
+.grade-head, .grade-row { display: flex; align-items: center; gap: 4px; padding: 1px 0; }
+.grade-head { color: #9d9d9d; font-size: 11px; border-bottom: 1px solid #474747; margin-top: 4px; }
+.grade-size { width: 72px; flex-shrink: 0; color: #cfcfcf; white-space: nowrap; overflow: hidden; }
+.grade-col { flex: 1; min-width: 0; text-align: center; }
+.grade-field { flex: 1; min-width: 0; }
+
 /* -- preferences ------------------------------------------------------------------------------ */
 .prefs { position: absolute; left: 50%; top: 60px; width: 620px; margin-left: -310px; z-index: 45;
          background: #232323; border: 1px solid #111111; border-radius: 8px; padding: 8px;

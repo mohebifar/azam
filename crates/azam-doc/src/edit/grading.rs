@@ -131,6 +131,41 @@ pub fn set_grade_step_axis(
     }
 }
 
+/// Sets one grade rule: how far `point` of `piece` sits from its base position in `size`, along
+/// x (`along_x`) or y. Ignored for the base size; a rule left at zero both ways is removed.
+pub fn set_grade_delta(
+    project: &mut Project,
+    piece: &PieceId,
+    point: &PointId,
+    size: &SizeName,
+    along_x: bool,
+    value: f64,
+) {
+    if *size == project.base_size {
+        return;
+    }
+    let Some(pc) = project.pieces.get_mut(piece) else {
+        return;
+    };
+    let rules = pc.grade.get_or_insert_with(Default::default);
+    let per_size = rules.entry(point.clone()).or_default();
+    let d = per_size.entry(size.clone()).or_default();
+    if along_x {
+        d.dx = value;
+    } else {
+        d.dy = value;
+    }
+    if d.dx == 0.0 && d.dy == 0.0 {
+        per_size.remove(size);
+    }
+    if per_size.is_empty() {
+        rules.remove(point);
+    }
+    if rules.is_empty() {
+        pc.grade = None;
+    }
+}
+
 /// Grades `points` of `piece` linearly: each size moves them by `step` mm per size away from the
 /// base (one size up = `+step`, one down = `-step`). A zero step removes their rules.
 pub fn grade_points_linear(project: &mut Project, piece: &PieceId, points: &[PointId], step: Vec2) {
@@ -307,5 +342,37 @@ mod tests {
         );
         assert!(!set_sizes(&mut p, &names(&["", " "])), "an empty run is refused");
         assert_eq!(p.sizes, names(&["M"]));
+    }
+}
+
+#[cfg(test)]
+mod delta_tests {
+    use super::*;
+    use crate::avatar::Sex;
+
+    #[test]
+    fn one_grade_rule_is_set_and_cleared() {
+        let mut p =
+            crate::templates::from_template(crate::templates::Template::Skirt, Sex::Female, None, None, 0.0);
+        let id = p.pieces.keys().next().cloned().expect("a piece");
+        let point = p.pieces[&id].pts[0].id.clone();
+        let l = SizeName::from("L");
+        set_grade_delta(&mut p, &id, &point, &l, true, 7.5);
+        assert!((p.pieces[&id].grade.as_ref().expect("rules")[&point][&l].dx - 7.5).abs() < 1e-12);
+        let base = p.base_size.clone();
+        set_grade_delta(&mut p, &id, &point, &base, true, 3.0);
+        assert!(
+            !p.pieces[&id].grade.as_ref().expect("rules")[&point].contains_key(&base),
+            "the base size has no rule"
+        );
+        // the template's own rule for L, then zero both ways: the rule goes
+        set_grade_delta(&mut p, &id, &point, &l, true, 0.0);
+        set_grade_delta(&mut p, &id, &point, &l, false, 0.0);
+        assert!(
+            p.pieces[&id]
+                .grade
+                .as_ref()
+                .is_none_or(|r| r.get(&point).is_none_or(|s| !s.contains_key(&l)))
+        );
     }
 }

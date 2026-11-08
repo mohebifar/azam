@@ -40,18 +40,18 @@ pub use avatar::{DEFAULT_SKIN, FOLLOW_SIZE_KEY, Measurements, Sex, SizeSpec, siz
 pub use command::{Applied, Command, Created, EditError, apply};
 pub use edit::{
     CutError, DEFAULT_DART_DEPTH_MM, DEFAULT_DART_WIDTH_MM, DartError, DeletePointsError, DuplicateMode,
-    ELLIPSE_KAPPA, FlipAxis, MIN_CORNERS, MIN_SHAPE_MM, PieceTransform, RigidMap, Shape, add_curve_point,
-    add_dart, add_fabric, add_internal_ellipse, add_internal_line, create_piece, create_shape_piece,
-    cut_piece, de_casteljau_split, delete_colorway, delete_fabric, delete_internal_line, delete_pieces,
-    delete_points, duplicate_colorway, duplicate_fabric, duplicate_piece, fillet_corner, flip_piece,
-    grade_points_linear, grade_step, internal_fold, remap_refs, rigid_map, rotate_piece_90, seg_bez_param,
-    set_base_size, set_curvature, set_grade_step_axis, set_internal_closed, set_internal_fold,
-    set_point_curve, set_points_median, set_segment_length, set_sizes, split_segment, transform_piece,
-    translate_internal_line,
+    ELLIPSE_KAPPA, FlipAxis, MIN_CORNERS, MIN_SHAPE_MM, PieceTransform, RigidMap, Shape, Spread,
+    add_curve_point, add_dart, add_fabric, add_internal_ellipse, add_internal_line, create_piece,
+    create_shape_piece, cut_piece, de_casteljau_split, delete_colorway, delete_fabric, delete_internal_line,
+    delete_pieces, delete_points, duplicate_colorway, duplicate_fabric, duplicate_piece, fillet_corner,
+    flip_piece, grade_points_linear, grade_step, internal_fold, remap_refs, rigid_map, rotate_piece_90,
+    seg_bez_param, set_base_size, set_curvature, set_grade_delta, set_grade_step_axis, set_internal_closed,
+    set_internal_fold, set_point_curve, set_points_median, set_segment_length, set_sizes, split_segment,
+    spread_piece, transform_piece, translate_internal_line,
 };
 pub use fabric::{
-    Fabric, FabricPhysics, FabricPreset, PhysKey, PresetSpec, e2d, limit_strain, make_fabric, r_bend,
-    r_stretch, stress_kpa,
+    DEFAULT_TEXTURE_MM, FABRIC_TEXTURE_KEY, FABRIC_TEXTURE_MM_KEY, Fabric, FabricPhysics, FabricPreset,
+    PhysKey, PresetSpec, e2d, limit_strain, make_fabric, r_bend, r_stretch, stress_kpa,
 };
 pub use hems::{default_hem, detect_hems, mark_hems, set_hem};
 pub use history::{DEFAULT_HISTORY_LIMIT, History};

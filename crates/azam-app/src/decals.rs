@@ -1,6 +1,6 @@
-//! What is printed or sewn onto pieces, in 3D: a piece's graphics, topstitches, buttons and
-//! buttonholes composited into one image that the viewport and the path tracer lay over the cloth
-//! by its pattern coordinates.
+//! What is printed or sewn onto pieces, in 3D: the fabric's texture image (tiled along the grain),
+//! then a piece's graphics, topstitches, buttons and buttonholes, composited into one image that
+//! the viewport and the path tracer lay over the cloth by its pattern coordinates.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -133,8 +133,10 @@ impl<'a> Prints<'a> {
 #[must_use]
 pub fn decal_key(project: &Project, piece: &PieceId) -> String {
     let on = |p: &Option<PieceId>| p.as_ref() == Some(piece);
+    let texture = texture_of(project, piece).map(|(path, mm, grain, _)| format!("{path}@{mm}/{grain}"));
     format!(
-        "{:?}|{:?}|{:?}|{:?}|{}",
+        "{:?}|{:?}|{:?}|{:?}|{:?}|{}",
+        texture,
         project.pieces.get(piece).map(|pc| &pc.graphics),
         project.stitches.values().filter(|s| on(&s.p)).collect::<Vec<_>>(),
         project.buttons.values().filter(|b| on(&b.p)).collect::<Vec<_>>(),
@@ -237,8 +239,25 @@ fn frame(g: &Graphic) -> ([Vec2; 4], (f64, f64)) {
 /// earlier), then topstitches as dashed thread, then buttons and buttonholes. `None` if there is
 /// nothing.
 pub fn piece_decal(project: &Project, piece: &PieceId, cache: &mut ImageCache) -> Option<PieceDecal> {
-    let prints = Prints::of(project, piece)?;
-    let (min, max) = prints.bounds();
+    let texture = texture_of(project, piece);
+    let prints = Prints::of(project, piece);
+    if prints.is_none() && texture.is_none() {
+        return None;
+    }
+    let prints = prints.unwrap_or(Prints {
+        graphics: &[],
+        stitches: Vec::new(),
+        buttons: Vec::new(),
+        holes: Vec::new(),
+    });
+    let (mut min, mut max) = prints.bounds();
+    if let Some((.., outline)) = &texture {
+        // the texture covers the whole piece
+        for q in outline {
+            min = min.min(*q);
+            max = max.max(*q);
+        }
+    }
     let extent = max - min;
     if !(extent.x > 0.0 && extent.y > 0.0 && extent.x.is_finite() && extent.y.is_finite()) {
         return None;
@@ -255,6 +274,9 @@ pub fn piece_decal(project: &Project, piece: &PieceId, cache: &mut ImageCache) -
         min,
         scale,
     };
+    if let Some((path, mm, grain, _)) = &texture {
+        paint_texture(&mut canvas, path, *mm, *grain, cache);
+    }
     for g in prints.graphics {
         paint_graphic(&mut canvas, g, cache);
     }
@@ -276,6 +298,35 @@ pub fn piece_decal(project: &Project, piece: &PieceId, cache: &mut ImageCache) -
         min,
         size: Vec2::new(f64::from(width), f64::from(height)) / scale,
     })
+}
+
+/// The texture of `piece`'s fabric (in the active colorway): its image, tile width (mm), the
+/// piece's grain angle (degrees) and its outline polygon.
+fn texture_of(project: &Project, piece: &PieceId) -> Option<(String, f64, f64, Vec<Vec2>)> {
+    let pc = project.pieces.get(piece)?;
+    let fabric = project.effective_fabric(&pc.fabric)?;
+    let (path, mm) = fabric.texture()?;
+    Some((path.to_owned(), mm, pc.grain, pc.outline().poly))
+}
+
+/// The texture image at `path` tiled over the whole canvas, `mm` wide per tile, its width running
+/// along the grain (`grain` degrees). An image that cannot be read paints nothing.
+fn paint_texture(canvas: &mut Canvas, path: &str, mm: f64, grain: f64, cache: &mut ImageCache) {
+    let Some(img) = cache.get(path) else { return };
+    if img.width == 0 || img.height == 0 {
+        return;
+    }
+    let tile = Vec2::new(mm, mm * f64::from(img.height) / f64::from(img.width));
+    let (s, c) = (-grain.to_radians()).sin_cos();
+    let lo = canvas.min;
+    let hi = canvas.min + Vec2::new(f64::from(canvas.width), f64::from(canvas.height)) / canvas.scale;
+    canvas.paint(lo, hi, |q| {
+        let u = Vec2::new(q.x * c - q.y * s, q.x * s + q.y * c);
+        let x = ((u.x / tile.x).rem_euclid(1.0) * f64::from(img.width)) as u32;
+        let y = ((u.y / tile.y).rem_euclid(1.0) * f64::from(img.height)) as u32;
+        let at = ((y.min(img.height - 1) * img.width + x.min(img.width - 1)) * 4) as usize;
+        Some([img.data[at], img.data[at + 1], img.data[at + 2], 255])
+    });
 }
 
 /// Graphic `g`: its image (or a grey placeholder), turned and scaled into its frame.
@@ -407,6 +458,57 @@ fn paint_hole(canvas: &mut Canvas, h: &HoleDraw) {
 mod tests {
     use super::*;
     use azam_doc::{Project, Sex};
+
+    #[test]
+    fn a_fabric_texture_tiles_over_the_whole_piece() {
+        // a 2 × 1 texture: red on the left, blue on the right
+        let path = std::env::temp_dir().join(format!("azam-texture-{}.png", std::process::id()));
+        {
+            let file = std::fs::File::create(&path).expect("file");
+            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), 2, 1);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.write_header()
+                .and_then(|mut w| w.write_image_data(&[255, 0, 0, 255, 0, 0, 255, 255]))
+                .expect("png");
+        }
+        let mut p = azam_doc::from_template(azam_doc::Template::Tee, Sex::Female, None, None, 0.0);
+        let id = p.pieces.keys().next().cloned().expect("a piece");
+        let fid = p.pieces[&id].fabric.clone();
+        let f = p.fabrics.get_mut(&fid).expect("fabric");
+        f.extra.insert(
+            azam_doc::FABRIC_TEXTURE_KEY.to_owned(),
+            path.to_string_lossy().into_owned().into(),
+        );
+        f.extra
+            .insert(azam_doc::FABRIC_TEXTURE_MM_KEY.to_owned(), 40.0.into());
+        p.pieces.get_mut(&id).expect("piece").graphics.clear();
+        let decal = piece_decal(&p, &id, &mut ImageCache::default()).expect("a texture makes an image");
+        let _ = std::fs::remove_file(&path);
+        let px = |k: usize| &decal.image.data[k * 4..k * 4 + 4];
+        let n = (decal.image.width * decal.image.height) as usize;
+        let reds = (0..n).filter(|&k| px(k)[0] > 200 && px(k)[2] < 50).count();
+        let blues = (0..n).filter(|&k| px(k)[2] > 200 && px(k)[0] < 50).count();
+        assert!(
+            reds > n / 3 && blues > n / 3,
+            "both halves of the tile repeat: {reds} red, {blues} blue of {n}"
+        );
+        let ol = p.pieces[&id].outline().poly;
+        let bb = azam_geom::bbox(ol).expect("outline");
+        assert!(
+            decal.min.x <= bb.min.x + 1e-6 && decal.min.x + decal.size.x >= bb.max.x - 1.0,
+            "covers the piece"
+        );
+        assert_ne!(decal_key(&p, &id), {
+            let mut q = p.clone();
+            q.fabrics
+                .get_mut(&fid)
+                .expect("fabric")
+                .extra
+                .remove(azam_doc::FABRIC_TEXTURE_KEY);
+            decal_key(&q, &id)
+        });
+    }
 
     #[test]
     fn a_graphic_without_an_image_prints_a_placeholder_where_it_sits() {

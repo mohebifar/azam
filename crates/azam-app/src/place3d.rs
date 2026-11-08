@@ -1,6 +1,9 @@
 //! Placing pieces in 3D before draping, as in CLO: drag a piece to move it, Ctrl-drag to turn it
 //! around the body, or click an arrangement point on the avatar to send the selected pieces to
-//! that slot.
+//! that slot. As in Blender, G and R over the 3D view move or turn the piece under the pointer
+//! (or the selected one) without holding a button: X, Y or Z locks the move to an axis, a typed
+//! number sets it exactly (mm, or degrees for a turn), a click or Enter keeps it and Esc or a
+//! right-click puts the piece back.
 
 use blenderui::prelude::*;
 use glam::Vec3;
@@ -14,7 +17,7 @@ const TURN_PER_PX: f64 = 0.01;
 const POINT_PX: f32 = 12.0;
 
 /// A piece being moved or turned in the 3D view.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PieceDrag {
     /// Record index of the piece in the simulation.
     ri: usize,
@@ -28,6 +31,15 @@ pub struct PieceDrag {
     turn: bool,
     /// Whether the piece has moved yet.
     moved: bool,
+    /// A modal G or R (no button held): ended by a click or Enter, undone by Esc.
+    modal: bool,
+    /// How far the piece has moved and turned since the drag began.
+    total: Vec3,
+    total_turn: f64,
+    /// The axis a modal move is locked to (0 x, 1 y up, 2 z).
+    axis: Option<usize>,
+    /// A number typed during a modal move or turn.
+    typed: String,
 }
 
 impl AzamApp {
@@ -50,15 +62,172 @@ impl AzamApp {
             last_x: e.position.x.0,
             turn: e.modifiers.control,
             moved: false,
+            modal: false,
+            total: Vec3::ZERO,
+            total_turn: 0.0,
+            axis: None,
+            typed: String::new(),
         });
         true
     }
 
-    /// Follows the pointer with the piece being dragged; returns `true` if there is one.
-    pub(crate) fn piece_drag_move(&mut self, at: Point<Pixels>) -> bool {
-        let Some(mut drag) = self.piece_drag else {
+    /// Starts a modal move (or `turn`) of the piece under the pointer at `at` in the 3D view, or
+    /// of the selected piece. Returns `true` if one started.
+    pub(crate) fn begin_piece_modal(&mut self, at: Point<Pixels>, turn: bool) -> bool {
+        if self.playing || self.piece_drag.is_some() {
+            return false;
+        }
+        let Some((origin, dir)) = self.viewport.ray(at) else {
             return false;
         };
+        let hit = self.scene3d.hit(origin, dir).map(|(ri, _, depth)| (ri, depth));
+        let selected = || {
+            let id = self.session.selection.active.clone()?;
+            let ri = self
+                .scene3d
+                .sim
+                .as_ref()?
+                .records
+                .iter()
+                .position(|r| r.id == id)?;
+            let centre = Vec3::from(self.piece_position(&id)?);
+            Some((ri, (centre - origin).dot(dir).max(1.0)))
+        };
+        let Some((ri, depth)) = hit.or_else(selected) else {
+            return false;
+        };
+        self.piece_drag = Some(PieceDrag {
+            ri,
+            depth,
+            last: origin + dir * depth,
+            last_x: at.x.0,
+            turn,
+            moved: false,
+            modal: true,
+            total: Vec3::ZERO,
+            total_turn: 0.0,
+            axis: None,
+            typed: String::new(),
+        });
+        self.status = if turn {
+            "Turn around the body: type degrees · click or Enter keeps · Esc cancels".into()
+        } else {
+            "Move: X/Y/Z lock an axis · type mm · click or Enter keeps · Esc cancels".into()
+        };
+        true
+    }
+
+    /// Whether a modal 3D move or turn is running.
+    #[must_use]
+    pub fn piece_modal(&self) -> bool {
+        self.piece_drag.as_ref().is_some_and(|d| d.modal)
+    }
+
+    /// Takes a key during a modal 3D move or turn; returns `true` if one is running.
+    pub(crate) fn piece_modal_key(&mut self, key: &str, ch: Option<char>) -> bool {
+        let Some(mut drag) = self.piece_drag.clone().filter(|d| d.modal) else {
+            return false;
+        };
+        match key {
+            "escape" => self.cancel_piece_modal(),
+            "return" | "kp_enter" => {
+                self.end_piece_drag();
+            }
+            "x" | "y" | "z" if !drag.turn => {
+                let axis = usize::from(key == "y") + 2 * usize::from(key == "z");
+                drag.axis = if drag.axis == Some(axis) { None } else { Some(axis) };
+                let axis = drag.axis;
+                self.piece_drag = Some(drag);
+                self.status = match axis {
+                    Some(a) => format!("Locked to {}", ["X", "Y", "Z"][a]),
+                    None => "Free".into(),
+                };
+                self.reapply_typed_3d();
+            }
+            k => {
+                match ch {
+                    _ if k == "backspace" => {
+                        drag.typed.pop();
+                    }
+                    Some('-') => {
+                        if drag.typed.starts_with('-') {
+                            drag.typed.remove(0);
+                        } else {
+                            drag.typed.insert(0, '-');
+                        }
+                    }
+                    Some('.') if !drag.typed.contains('.') => drag.typed.push('.'),
+                    Some(c) if c.is_ascii_digit() => drag.typed.push(c),
+                    _ => return true,
+                }
+                self.piece_drag = Some(drag);
+                self.reapply_typed_3d();
+            }
+        }
+        true
+    }
+
+    /// Puts the piece of the modal drag back where it began and, if a number is typed, moves or
+    /// turns it by exactly that.
+    fn reapply_typed_3d(&mut self) {
+        let Some(mut drag) = self.piece_drag.clone() else {
+            return;
+        };
+        if drag.typed.is_empty() {
+            return;
+        }
+        let value = drag.typed.trim_end_matches('.').parse::<f64>().unwrap_or(0.0);
+        let Some(renderer) = self.viewport.renderer() else {
+            return;
+        };
+        // undo in reverse order: the turn, then the move
+        self.scene3d
+            .place_piece(drag.ri, Vec3::ZERO, -drag.total_turn, renderer);
+        self.scene3d.place_piece(drag.ri, -drag.total, 0.0, renderer);
+        if drag.turn {
+            drag.total = Vec3::ZERO;
+            drag.total_turn = value.to_radians();
+            self.scene3d
+                .place_piece(drag.ri, Vec3::ZERO, drag.total_turn, renderer);
+            self.status = format!("Turn {}°  (Enter keeps, Esc cancels)", drag.typed);
+        } else {
+            let mut d = Vec3::ZERO;
+            d[drag.axis.unwrap_or(0)] = value as f32;
+            drag.total = d;
+            drag.total_turn = 0.0;
+            self.scene3d.place_piece(drag.ri, d, 0.0, renderer);
+            self.status = format!(
+                "Move {}: {} mm  (Enter keeps, Esc cancels)",
+                ["X", "Y", "Z"][drag.axis.unwrap_or(0)],
+                drag.typed
+            );
+        }
+        drag.moved = true;
+        self.piece_drag = Some(drag);
+    }
+
+    /// Ends a modal 3D move or turn, putting the piece back where it began.
+    pub(crate) fn cancel_piece_modal(&mut self) {
+        let Some(drag) = self.piece_drag.take() else {
+            return;
+        };
+        if let Some(renderer) = self.viewport.renderer() {
+            self.scene3d
+                .place_piece(drag.ri, Vec3::ZERO, -drag.total_turn, renderer);
+            self.scene3d.place_piece(drag.ri, -drag.total, 0.0, renderer);
+        }
+        self.status = "Cancelled".into();
+    }
+
+    /// Follows the pointer with the piece being dragged; returns `true` if there is one.
+    pub(crate) fn piece_drag_move(&mut self, at: Point<Pixels>) -> bool {
+        let Some(mut drag) = self.piece_drag.clone() else {
+            return false;
+        };
+        if drag.modal && !drag.typed.is_empty() {
+            // a typed number holds the piece; the pointer does not move it
+            return true;
+        }
         let (mut delta, mut turn) = (Vec3::ZERO, 0.0);
         if drag.turn {
             turn = f64::from(at.x.0 - drag.last_x) * TURN_PER_PX;
@@ -67,7 +236,14 @@ impl AzamApp {
             let here = origin + dir * drag.depth;
             delta = here - drag.last;
             drag.last = here;
+            if let Some(a) = drag.axis {
+                let keep = delta[a];
+                delta = Vec3::ZERO;
+                delta[a] = keep;
+            }
         }
+        drag.total += delta;
+        drag.total_turn += turn;
         if delta != Vec3::ZERO || turn != 0.0 {
             drag.moved = true;
             if let Some(renderer) = self.viewport.renderer() {

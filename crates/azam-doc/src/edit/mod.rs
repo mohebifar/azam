@@ -9,12 +9,15 @@ mod pieces;
 mod refs;
 mod segment;
 mod shapes;
+mod spread;
 mod transform;
 
 pub use cut::{CutError, cut_piece};
 pub use dart::{DEFAULT_DART_DEPTH_MM, DEFAULT_DART_WIDTH_MM, DartError, add_dart};
 pub use fillet::fillet_corner;
-pub use grading::{grade_points_linear, grade_step, set_base_size, set_grade_step_axis, set_sizes};
+pub use grading::{
+    grade_points_linear, grade_step, set_base_size, set_grade_delta, set_grade_step_axis, set_sizes,
+};
 pub use library::{add_fabric, delete_colorway, delete_fabric, duplicate_colorway, duplicate_fabric};
 pub use pieces::{
     DeletePointsError, DuplicateMode, MIN_CORNERS, add_internal_line, create_piece, delete_pieces,
@@ -27,6 +30,7 @@ pub use shapes::{
     internal_fold, set_internal_closed, set_internal_fold, set_point_curve, set_points_median,
     set_segment_length, translate_internal_line,
 };
+pub use spread::{Spread, spread_piece};
 pub use transform::{
     FlipAxis, PieceTransform, RigidMap, flip_piece, rigid_map, rotate_piece_90, transform_piece,
 };

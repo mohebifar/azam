@@ -752,3 +752,59 @@ fn a_shortcut_set_in_preferences_runs_its_command() {
         assert_eq!(win.root().read(cx).current_tool(), Tool::Measure);
     });
 }
+
+#[test]
+fn g_and_r_move_and_turn_a_piece_in_3d() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        let front = front_id(cx, &win);
+        let pos = |cx: &App| win.root().read(cx).piece_position(&front).expect("front cloth");
+        let start = pos(cx);
+        let vp = cx.element_bounds(win.id, VIEWPORT_ID).expect("3D view");
+        let (x, y) = (
+            vp.origin.x + vp.size.width / 2.0,
+            vp.origin.y + vp.size.height * 0.42,
+        );
+        cx.simulate_mouse_move(win.id, x, y);
+        // G, Z, 5, 0, Enter: exactly 50 mm forwards
+        for (text, sym) in [("g", "g"), ("z", "z"), ("5", "5"), ("0", "0")] {
+            cx.simulate_key(win.id, text, sym);
+            cx.draw(win.id);
+        }
+        assert!(win.root().read(cx).piece_modal(), "G started a 3D move");
+        cx.simulate_key(win.id, "", "Return");
+        cx.draw(win.id);
+        let moved = pos(cx);
+        assert!(!win.root().read(cx).piece_modal());
+        assert!(
+            (moved[2] - start[2] - 50.0).abs() < 0.5 && (moved[0] - start[0]).abs() < 0.5,
+            "moved {:?}",
+            [moved[0] - start[0], moved[1] - start[1], moved[2] - start[2]]
+        );
+        assert!(
+            win.root().read(cx).session().project.pieces[&front]
+                .arr
+                .moved
+                .is_some(),
+            "saved"
+        );
+
+        // R, sweep, Esc: the turn is undone
+        cx.simulate_mouse_move(win.id, x, y);
+        cx.simulate_key(win.id, "r", "r");
+        cx.draw(win.id);
+        cx.simulate_mouse_move(win.id, x + 80.0, y);
+        cx.draw(win.id);
+        let turned = pos(cx);
+        let swing = (0..3).map(|k| (turned[k] - moved[k]).powi(2)).sum::<f32>().sqrt();
+        assert!(swing > 5.0, "R turned the piece ({swing} mm)");
+        cx.simulate_key(win.id, "", "Escape");
+        cx.draw(win.id);
+        let back = pos(cx);
+        let off = (0..3).map(|k| (back[k] - moved[k]).powi(2)).sum::<f32>().sqrt();
+        assert!(off < 0.5, "Esc puts it back ({off} mm off)");
+    });
+}

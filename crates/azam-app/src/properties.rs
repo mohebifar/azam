@@ -659,15 +659,77 @@ impl AzamApp {
         };
         let x_row = step_num("Step X (mm per size)", step.x, cx, true);
         let y_row = step_num("Step Y (mm per size)", step.y, cx, false);
-        self.panel(
-            "Grading",
-            vec![
-                Self::info_row("Selected", count),
-                x_row,
-                y_row,
-                Self::info_row("Per Size", per_size.join(" · ")),
-            ],
-        )
+        let mut rows = vec![
+            Self::info_row("Selected", count),
+            x_row,
+            y_row,
+            Self::info_row("Per Size", per_size.join(" · ")),
+        ];
+        rows.extend(self.grade_rule_rows(id, first, cx));
+        self.panel("Grading", rows)
+    }
+
+    /// The grade rules of `point` of piece `id` as a table to edit: for every size but the base,
+    /// how far the point sits from its base position (CLO's grading table, one point at a time).
+    fn grade_rule_rows(
+        &self,
+        id: &azam_doc::PieceId,
+        point: &azam_geom::PointId,
+        cx: &mut Context<Self>,
+    ) -> Vec<Div> {
+        let project = &self.session.project;
+        let rules = project.pieces[id].grade.as_ref().and_then(|r| r.get(point));
+        let index = project.pieces[id].point_index(point).map_or(0, |i| i + 1);
+        let mut rows = vec![
+            div()
+                .class("grade-head")
+                .child(div().class("grade-size").child(format!("Point {index}")))
+                .child(div().class("grade-col").child("X (mm)"))
+                .child(div().class("grade-col").child("Y (mm)")),
+        ];
+        for size in &project.sizes {
+            if *size == project.base_size {
+                rows.push(
+                    div()
+                        .class("grade-row")
+                        .child(div().class("grade-size").child(format!("{} (base)", size.0)))
+                        .child(div().class("grade-col").child("0"))
+                        .child(div().class("grade-col").child("0")),
+                );
+                continue;
+            }
+            let d = rules.and_then(|r| r.get(size)).copied().unwrap_or_default();
+            let field = |along_x: bool, value: f64, cx: &mut Context<Self>| {
+                let (id, point, size) = (id.clone(), point.clone(), size.clone());
+                NumberField()
+                    .value(format_num(value))
+                    .min(-500.0)
+                    .max(500.0)
+                    .step(0.5)
+                    .class("grade-field")
+                    .id(format!(
+                        "grade-{}-{}-{}",
+                        point.0,
+                        size.0,
+                        if along_x { "x" } else { "y" }
+                    ))
+                    .on_input(cx.listener(move |this, e: &ChangeEvent, _, cx| {
+                        let v = e.number.clamp(-500.0, 500.0);
+                        this.session.edit_continuous("Grade Rule", |p| {
+                            azam_doc::set_grade_delta(p, &id, &point, &size, along_x, v);
+                        });
+                        cx.notify();
+                    }))
+            };
+            rows.push(
+                div()
+                    .class("grade-row")
+                    .child(div().class("grade-size").child(size.0.clone()))
+                    .child(field(true, d.dx, cx))
+                    .child(field(false, d.dy, cx)),
+            );
+        }
+        rows
     }
 
     /// Where piece `id` starts around the avatar before simulating: its slot (front, back, an
@@ -842,6 +904,7 @@ impl AzamApp {
                 rows.extend(self.fabric_library_rows(&fid, cx));
                 rows
             }),
+            self.texture_panel(&fid, cx),
             self.panel("Stretch", stretch),
             self.panel("Bending", bending),
             self.panel("Physical Properties", other),

@@ -123,6 +123,10 @@ pub enum Tool {
     Cut,
     /// Round a corner (its radius in the tool settings).
     Fillet,
+    /// Slash and spread: drag a line across a piece to open a wedge at its start (flare).
+    Spread,
+    /// Drag a line across a piece to add a knife pleat along it.
+    Pleat,
 }
 
 impl Tool {
@@ -145,6 +149,8 @@ impl Tool {
             Self::Notch,
             Self::Dart,
             Self::Cut,
+            Self::Spread,
+            Self::Pleat,
         ],
         &[Self::Sew, Self::FreeSew, Self::EditSew],
         &[
@@ -198,6 +204,8 @@ impl Tool {
             Self::Measure => "Measure",
             Self::Cut => "Cut",
             Self::Fillet => "Fillet",
+            Self::Spread => "Slash & Spread",
+            Self::Pleat => "Pleat",
         }
     }
 
@@ -233,6 +241,8 @@ impl Tool {
             Self::Measure => "DRIVER_DISTANCE",
             Self::Cut => "MOD_EDGESPLIT",
             Self::Fillet => "MOD_BEVEL",
+            Self::Spread => "MOD_SIMPLEDEFORM",
+            Self::Pleat => "MOD_SOLIDIFY",
         }
     }
 
@@ -261,6 +271,8 @@ impl Tool {
             Self::Measure => "Measure",
             Self::Cut => "Draw Cut",
             Self::Fillet => "Round Corner",
+            Self::Spread => "Draw Spread",
+            Self::Pleat => "Draw Pleat",
         }
     }
 
@@ -295,6 +307,8 @@ impl Tool {
             | Self::Button
             | Self::Buttonhole
             | Self::FastenButton
+            | Self::Spread
+            | Self::Pleat
             | Self::Comment => {
                 return None;
             }

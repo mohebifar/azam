@@ -722,6 +722,13 @@ impl AzamApp {
             cx.notify();
             return;
         }
+        // a modal 3D move or turn takes its keys
+        if self.piece_modal() {
+            let ch = key.key_char.as_deref().and_then(|c| c.chars().next());
+            self.piece_modal_key(&key.key.to_ascii_lowercase(), ch);
+            cx.notify();
+            return;
+        }
         if key.key == "Escape" && self.modal.is_some() {
             self.cancel_modal();
             cx.notify();
@@ -783,36 +790,58 @@ impl AzamApp {
             cx.notify();
             return;
         }
-        if !key.modifiers.control && !key.modifiers.alt && !key.modifiers.shift {
-            let kind = match key.key.to_ascii_lowercase().as_str() {
-                "g" => Some(crate::modal::ModalKind::Move),
-                "r" => Some(crate::modal::ModalKind::Rotate),
-                "s" => Some(crate::modal::ModalKind::Scale),
-                _ => None,
-            };
-            if let Some(kind) = kind
-                && self.begin_modal(kind, window.mouse_position())
-            {
-                cx.notify();
-                return;
-            }
+        if self.start_transform(key, window) {
+            cx.notify();
+            return;
         }
         // N over the 3D view toggles its sidebar (Blender's per-editor keymap); elsewhere it is
         // the Sew tool
-        let over_3d = self.viewport.bounds.is_some_and(|b| {
-            let p = window.mouse_position();
-            p.x.0 >= b.origin.x
-                && p.x.0 < b.origin.x + b.size.width
-                && p.y.0 >= b.origin.y
-                && p.y.0 < b.origin.y + b.size.height
-        });
-        if over_3d && key.key.eq_ignore_ascii_case("n") && !key.modifiers.shift && !key.modifiers.control {
+        if self.over_3d(window)
+            && key.key.eq_ignore_ascii_case("n")
+            && !key.modifiers.shift
+            && !key.modifiers.control
+        {
             self.run(Operator::ToggleSidebar, window, cx);
             return;
         }
         if let Some(op) = Operator::from_key(key) {
             self.run(op, window, cx);
         }
+    }
+
+    /// Whether the pointer is over the 3D view.
+    fn over_3d(&self, window: &Window) -> bool {
+        self.viewport.bounds.is_some_and(|b| {
+            let p = window.mouse_position();
+            p.x.0 >= b.origin.x
+                && p.x.0 < b.origin.x + b.size.width
+                && p.y.0 >= b.origin.y
+                && p.y.0 < b.origin.y + b.size.height
+        })
+    }
+
+    /// G, R or S (no modifiers): a modal move or turn of a piece in the 3D view under the
+    /// pointer, else a modal transform of the selected pieces in the pattern editor. Returns
+    /// `true` if one started.
+    fn start_transform(&mut self, key: &Keystroke, window: &Window) -> bool {
+        use crate::modal::ModalKind;
+        if key.modifiers.control || key.modifiers.alt || key.modifiers.shift {
+            return false;
+        }
+        let kind = match key.key.to_ascii_lowercase().as_str() {
+            "g" => ModalKind::Move,
+            "r" => ModalKind::Rotate,
+            "s" => ModalKind::Scale,
+            _ => return false,
+        };
+        let at = window.mouse_position();
+        if self.over_3d(window)
+            && kind != ModalKind::Scale
+            && self.begin_piece_modal(at, kind == ModalKind::Rotate)
+        {
+            return true;
+        }
+        self.begin_modal(kind, at)
     }
 
     fn frame_all(&mut self) {
@@ -841,6 +870,18 @@ impl AzamApp {
     // -- viewport input ------------------------------------------------------------------------
 
     fn on_viewport_down(&mut self, e: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // a click keeps a modal 3D move or turn; a right-click undoes it
+        if self.piece_modal() {
+            match e.button {
+                MouseButton::Left => {
+                    self.end_piece_drag();
+                }
+                MouseButton::Right => self.cancel_piece_modal(),
+                MouseButton::Middle => return,
+            }
+            cx.notify();
+            return;
+        }
         if e.button == MouseButton::Left
             && let Some(axis) = self.viewport.gizmo_hit(e.position)
         {
@@ -991,7 +1032,7 @@ impl AzamApp {
         let mut ended = self.viewport.drag.take().is_some()
             | self.pattern_drag_end()
             | self.resizing.take().is_some()
-            | self.end_piece_drag();
+            | (!self.piece_modal() && self.end_piece_drag());
         if self.scene3d.grab.take().is_some() {
             if let Some(sim) = self.scene3d.sim.as_mut() {
                 sim.release_grab();
@@ -1209,6 +1250,39 @@ impl AzamApp {
             .class("hgroup tool-settings")
             .child(field("Width", size.width, 200.0, |d, v| d.width = v, cx))
             .child(field("Depth", size.depth, 400.0, |d, v| d.depth = v, cx))
+    }
+
+    /// The Spread tool's opening or the Pleat tool's depth, in the tool settings bar.
+    fn spread_settings(&mut self, cx: &mut Context<Self>) -> Div {
+        let pleat = self.tool == Tool::Pleat;
+        let (label, value) = if pleat {
+            ("Depth", self.tools.spread.depth)
+        } else {
+            ("Opening", self.tools.spread.amount)
+        };
+        if self.overlay_open() {
+            return div()
+                .class("hgroup")
+                .child(div().class("hbtn").child(format!("{label} {value:.0}")));
+        }
+        div().class("hgroup tool-settings").child(
+            NumberField()
+                .attr("label", label)
+                .value(format!("{value:.0}"))
+                .min(1.0)
+                .max(500.0)
+                .step(1.0)
+                .css("width", "120px")
+                .on_input(cx.listener(move |this, e: &ChangeEvent, _, cx| {
+                    let v = e.number.clamp(1.0, 500.0);
+                    if pleat {
+                        this.tools.spread.depth = v;
+                    } else {
+                        this.tools.spread.amount = v;
+                    }
+                    cx.notify();
+                })),
+        )
     }
 
     /// The Fillet tool's radius, in the tool settings bar.
@@ -1543,7 +1617,10 @@ impl AzamApp {
                 .child(self.icons.sized(self.tool.icon(), 14.0, None))
                 .child(div().class("mode-label").child(self.tool.label()))
                 .when(self.tool == Tool::Dart, |el| el.child(self.dart_settings(cx)))
-                .when(self.tool == Tool::Fillet, |el| el.child(self.fillet_settings(cx))),
+                .when(self.tool == Tool::Fillet, |el| el.child(self.fillet_settings(cx)))
+                .when(matches!(self.tool, Tool::Spread | Tool::Pleat), |el| {
+                    el.child(self.spread_settings(cx))
+                }),
         );
         div()
             .class("area")

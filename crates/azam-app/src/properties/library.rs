@@ -148,4 +148,86 @@ impl AzamApp {
             }),
         ])
     }
+
+    /// Fabric `fid`'s texture: an image tiled over the cloth along each piece's grain (shown in
+    /// the 3D view and in renders), and how wide one tile is.
+    pub(super) fn texture_panel(&mut self, fid: &FabricId, cx: &mut Context<Self>) -> Div {
+        let fabric = self.session.project.fabrics.get(fid);
+        let texture = fabric.and_then(|f| f.texture()).map(|(p, mm)| (p.to_owned(), mm));
+        let shown = texture.as_ref().map_or_else(
+            || "None".to_owned(),
+            |(p, _)| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .map_or_else(|| p.clone(), |n| n.to_string_lossy().into_owned())
+            },
+        );
+        let choose = {
+            let fid = fid.clone();
+            Self::action("Choose Image…", cx, move |this| {
+                let picked = blenderui::file_dialog(
+                    "Fabric Texture",
+                    blenderui::FileDialogMode::Open,
+                    None,
+                    None,
+                    &["Images\t*.png *.jpg *.jpeg *.bmp *.tga"],
+                    false,
+                );
+                if let blenderui::FileDialogResult::Chosen(paths) = picked
+                    && let Some(path) = paths.into_iter().next()
+                {
+                    this.set_fabric_texture(&fid, Some(&path.to_string_lossy()));
+                }
+            })
+        };
+        let clear = {
+            let fid = fid.clone();
+            Self::action("Clear", cx, move |this| this.set_fabric_texture(&fid, None))
+        };
+        let mut rows = vec![
+            Self::info_row("Image", shown),
+            div().class("pbuttons").child(choose).child(clear),
+        ];
+        if let Some((_, mm)) = texture {
+            let fid = fid.clone();
+            rows.push(Self::number(
+                super::field("Tile Width (mm)", 5.0, 2000.0, 5.0),
+                mm,
+                cx,
+                move |p, v| {
+                    if let Some(f) = p.fabrics.get_mut(&fid) {
+                        f.extra.insert(
+                            azam_doc::FABRIC_TEXTURE_MM_KEY.to_owned(),
+                            serde_json::Value::from(v),
+                        );
+                    }
+                },
+            ));
+        }
+        self.panel("Texture", rows)
+    }
+
+    /// Gives fabric `fid` the texture image at `path`, or none.
+    pub fn set_fabric_texture(&mut self, fid: &FabricId, path: Option<&str>) {
+        let value = path.map(str::to_owned);
+        self.session.edit("Fabric Texture", |p| {
+            if let Some(f) = p.fabrics.get_mut(fid) {
+                match &value {
+                    Some(v) => {
+                        f.extra.insert(
+                            azam_doc::FABRIC_TEXTURE_KEY.to_owned(),
+                            serde_json::Value::from(v.clone()),
+                        );
+                    }
+                    None => {
+                        f.extra.remove(azam_doc::FABRIC_TEXTURE_KEY);
+                    }
+                }
+            }
+        });
+        self.status = match path {
+            Some(p) => format!("Texture: {p}"),
+            None => "Texture cleared".into(),
+        };
+    }
 }

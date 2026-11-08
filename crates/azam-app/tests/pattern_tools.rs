@@ -803,3 +803,81 @@ fn the_cut_tool_splits_a_piece_and_the_fillet_tool_rounds_a_corner() {
         );
     });
 }
+
+#[test]
+fn pleat_and_spread_tools_add_fullness() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        let area = |cx: &App| {
+            azam_geom::signed_area(&ui.app(cx).session().project.pieces[&back].outline().poly).abs()
+        };
+        let span = |cx: &App| {
+            let pts = &ui.app(cx).session().project.pieces[&back].pts;
+            pts.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+                (lo.min(p.pos.y), hi.max(p.pos.y))
+            })
+        };
+        let drag_across = |cx: &mut App, x_mm: f64| {
+            let (lo, hi) = span(cx);
+            let (x, y0) = ui.at(cx, Vec2::new(x_mm, hi + 40.0));
+            let (_, y1) = ui.at(cx, Vec2::new(x_mm, lo - 40.0));
+            cx.simulate_drag(ui.win.id, (x, y0), (x, y1));
+            cx.draw(ui.win.id);
+        };
+        let before = area(cx);
+        let internals = ui.app(cx).session().project.pieces[&back].internals.len();
+        ui.search(cx, "pleat");
+        assert_eq!(ui.app(cx).current_tool(), azam_app::operators::Tool::Pleat);
+        drag_across(cx, ui.centre(cx, &back).x);
+        assert!(
+            area(cx) > before + 1000.0,
+            "{}: {before} → {}",
+            ui.app(cx).status(),
+            area(cx)
+        );
+        assert_eq!(
+            ui.app(cx).session().project.pieces[&back].internals.len(),
+            internals + 2,
+            "the pleat's two fold lines"
+        );
+        let pleated = area(cx);
+        ui.search(cx, "spread");
+        assert_eq!(ui.app(cx).current_tool(), azam_app::operators::Tool::Spread);
+        drag_across(cx, ui.centre(cx, &back).x - 60.0);
+        assert!(
+            area(cx) > pleated + 500.0,
+            "{}: {pleated} → {}",
+            ui.app(cx).status(),
+            area(cx)
+        );
+    });
+}
+
+#[test]
+fn the_grading_panel_shows_a_rule_table_for_the_selected_point() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        ui.key(cx, "e", "e");
+        let corner = ui.app(cx).session().project.pieces[&back].pts[0].clone();
+        ui.click(cx, corner.pos);
+        for _ in 0..3 {
+            cx.draw(ui.win.id);
+        }
+        let sizes = ui.app(cx).session().project.sizes.clone();
+        let base = ui.app(cx).session().project.base_size.clone();
+        assert!(
+            !ui.app(cx).session().selection.points.is_empty(),
+            "{}",
+            ui.app(cx).status()
+        );
+        for size in sizes.iter().filter(|s| **s != base) {
+            let id = format!("grade-{}-{}-x", corner.id.0, size.0);
+            assert!(
+                cx.element_bounds(ui.win.id, &id).is_some(),
+                "{id} is in the grading table"
+            );
+        }
+    });
+}

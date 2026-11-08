@@ -33,7 +33,7 @@ impl std::fmt::Display for CutError {
 }
 
 /// Where the line through `a` and `b` crosses the outline of `pts`: segment id and arc fraction.
-fn crossings(pts: &[OutlinePoint], a: Vec2, b: Vec2) -> Vec<(PointId, f64, Vec2)> {
+pub(crate) fn crossings(pts: &[OutlinePoint], a: Vec2, b: Vec2) -> Vec<(PointId, f64, Vec2)> {
     let ol = azam_geom::Outline::new(pts);
     let dir = b - a;
     let side = |p: Vec2| dir.perp_dot(p - a);
