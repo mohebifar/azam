@@ -3,10 +3,12 @@
 mod astm;
 mod export;
 mod import;
+mod marker;
 
 pub use astm::{AstmFiles, GradeRuleTable, RulError, export_astm, import_rul};
 pub use export::{export_dxf, export_dxf_graded};
 pub use import::{DxfError, ImportedLine, ImportedPiece, import_dxf};
+pub use marker::marker_dxf;
 
 /// Layer names of the pattern conventions.
 mod layer {

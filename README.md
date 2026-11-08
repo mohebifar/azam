@@ -96,7 +96,12 @@ File ▸ Export DXF (All Sizes)… writes the graded nest: every piece in every 
 the sizes laid over each other. File ▸ Export ASTM DXF + Rules… writes the base size as an ASTM
 D6673 DXF (turn points on layer 2, curve points on layer 3, each graded point tagged with its rule
 number) and the matching `.rul` grade-rule table next to it, which pattern CAD systems read back as
-a graded pattern. File ▸ Import DXF reads such a file back: when its boundary points carry rule
+a graded pattern. The Marker editor (in the Tech Pack workspace, or any area's editor menu) nests
+every piece, as many copies as each is cut, on the fabric with the grain along the selvedge: set the
+fabric width, the gap, whether pieces may turn 180° (not for one-way fabrics) and whether one
+garment of every size goes in, and it shows the length of fabric the lay takes and its efficiency,
+following every edit. A pair's second copy is laid flipped. File ▸ Export Marker DXF… / SVG… write
+it for the cutting room. File ▸ Import DXF reads such a file back: when its boundary points carry rule
 numbers and a `.rul` table of the same name sits next to it, the pieces come in graded (the
 project takes the table's size run and sample size; METRIC and ENGLISH tables, DELTA rules), with
 the cut line as the outline and no added allowance.

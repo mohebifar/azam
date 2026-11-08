@@ -21,6 +21,7 @@ mod dxf;
 mod fbx;
 pub mod format;
 mod gltf;
+mod marker;
 mod model;
 mod obj;
 pub mod pdf;
@@ -31,10 +32,14 @@ mod zip;
 
 pub use dxf::{
     AstmFiles, DxfError, GradeRuleTable, ImportedLine, ImportedPiece, RulError, export_astm, export_dxf,
-    export_dxf_graded, import_dxf, import_rul,
+    export_dxf_graded, import_dxf, import_rul, marker_dxf,
 };
 pub use fbx::export_fbx;
 pub use gltf::{Animation, MeshFrame, export_glb, export_glb_animated};
+pub use marker::{
+    DEFAULT_GAP_MM, DEFAULT_RESOLUTION_MM, DEFAULT_WIDTH_MM, Marker, MarkerOptions, Placement, make_marker,
+    marker_svg,
+};
 pub use model::Bounds;
 pub use obj::{
     MTL_FILE_NAME, ObjExport, ObjImport, ObjImportError, ObjMaterial, ObjMesh, ObjPiece, export_obj,

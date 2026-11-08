@@ -397,6 +397,10 @@ pub enum Operator {
     ExportDxfGraded,
     /// Export the base size with grade rules: an ASTM D6673 DXF and its rule table (`.rul`).
     ExportAstm,
+    /// Export the marker (the pattern nested on the fabric) as DXF.
+    ExportMarkerDxf,
+    /// Export the marker as SVG.
+    ExportMarkerSvg,
     /// Export the pattern as SVG.
     ExportSvg,
     /// Export the draped garment as OBJ.
@@ -579,6 +583,8 @@ impl Operator {
             Self::ExportDxf => "Export DXF…",
             Self::ExportDxfGraded => "Export DXF (All Sizes)…",
             Self::ExportAstm => "Export ASTM DXF + Rules…",
+            Self::ExportMarkerDxf => "Export Marker DXF…",
+            Self::ExportMarkerSvg => "Export Marker SVG…",
             Self::ExportSvg => "Export SVG…",
             Self::ExportObj => "Export OBJ…",
             Self::ExportGltf => "Export glTF (.glb)…",
@@ -665,6 +671,8 @@ impl Operator {
             Self::ExportDxf
             | Self::ExportDxfGraded
             | Self::ExportAstm
+            | Self::ExportMarkerDxf
+            | Self::ExportMarkerSvg
             | Self::ExportSvg
             | Self::ExportObj
             | Self::ExportGltf
@@ -829,6 +837,8 @@ impl Operator {
             Self::ExportDxf,
             Self::ExportDxfGraded,
             Self::ExportAstm,
+            Self::ExportMarkerDxf,
+            Self::ExportMarkerSvg,
             Self::ExportSvg,
             Self::ExportObj,
             Self::ExportGltf,
@@ -1260,6 +1270,8 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::ExportDxf),
         Item(O::ExportDxfGraded),
         Item(O::ExportAstm),
+        Item(O::ExportMarkerDxf),
+        Item(O::ExportMarkerSvg),
         Item(O::ExportSvg),
         Item(O::ExportObj),
         Item(O::ExportGltf),

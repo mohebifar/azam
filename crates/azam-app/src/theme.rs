@@ -202,6 +202,10 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
              box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
 
 /* -- colorways editor ---------------------------------------------------------------------------- */
+.marker-body { display: flex; flex-direction: column; min-height: 0; background: #262626; }
+.marker-controls { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 8px 10px 4px 10px; }
+.marker-controls .prow { width: 260px; }
+.marker-figures { padding: 2px 10px 6px 10px; color: #d8d8d8; }
 .cw-grid { flex: 1; display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; overflow-y: scroll; min-height: 0;
            align-content: flex-start; }
 .cw-card { display: flex; flex-direction: column; border-radius: 6px; padding: 4px; background: #282828;

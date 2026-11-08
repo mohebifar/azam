@@ -1290,6 +1290,43 @@ fn workspaces_can_be_added_duplicated_renamed_moved_and_deleted() {
 }
 
 #[test]
+fn the_marker_follows_its_settings_and_exports() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        win.root().update(cx, |app, _| {
+            let one = app.marker();
+            let pieces = app.session().project.pieces.len();
+            assert!(one.placements.len() >= pieces, "every piece of the size shown");
+            assert!(one.efficiency() > 0.5);
+            let sizes = app.session().project.sizes.len();
+            app.edit_project("Marker Sizes", |p| {
+                p.extra.insert(
+                    "marker".into(),
+                    serde_json::json!({"allSizes": true, "width": 1200.0}),
+                );
+            });
+            let all = app.marker();
+            assert_eq!(
+                all.placements.len(),
+                one.placements.len() * sizes,
+                "one garment of each size"
+            );
+            assert!((all.width_mm - 1200.0).abs() < 1e-9);
+            assert!(all.length_mm > one.length_mm * 2.0);
+            let path = std::env::temp_dir().join(format!("azam-marker-{}.svg", std::process::id()));
+            app.export_to(azam_app::export::ExportKind::MarkerSvg, &path)
+                .expect("exported");
+            let svg = std::fs::read_to_string(&path).expect("written");
+            let _ = std::fs::remove_file(&path);
+            assert_eq!(svg.matches("<polygon").count(), all.placements.len());
+        });
+    });
+}
+
+#[test]
 fn the_colorways_editor_shows_every_colorway_and_picks_one() {
     Application::headless().run(|cx| {
         let win = cx

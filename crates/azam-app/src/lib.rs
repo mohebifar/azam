@@ -17,6 +17,7 @@ pub mod fabric_library;
 pub mod garment3d;
 mod icons;
 pub mod import;
+pub mod marker_view;
 pub mod modal;
 pub mod operators;
 mod outliner;

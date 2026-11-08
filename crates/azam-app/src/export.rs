@@ -17,6 +17,10 @@ pub enum ExportKind {
     DxfGraded,
     /// ASTM D6673 DXF of the base size with grade rules, and its rule table next to it.
     Astm,
+    /// The marker as DXF.
+    MarkerDxf,
+    /// The marker as SVG.
+    MarkerSvg,
     /// SVG of the pattern.
     Svg,
     /// The draped garment as OBJ (with an MTL next to it).
@@ -41,6 +45,8 @@ impl ExportKind {
             O::ExportSvg => Self::Svg,
             O::ExportDxfGraded => Self::DxfGraded,
             O::ExportAstm => Self::Astm,
+            O::ExportMarkerDxf => Self::MarkerDxf,
+            O::ExportMarkerSvg => Self::MarkerSvg,
             O::ExportObj => Self::Obj,
             O::ExportGltf => Self::Gltf,
             O::ExportFbx => Self::Fbx,
@@ -52,8 +58,8 @@ impl ExportKind {
 
     const fn extension(self) -> &'static str {
         match self {
-            Self::Dxf | Self::DxfGraded | Self::Astm => "dxf",
-            Self::Svg => "svg",
+            Self::Dxf | Self::DxfGraded | Self::Astm | Self::MarkerDxf => "dxf",
+            Self::Svg | Self::MarkerSvg => "svg",
             Self::Obj => "obj",
             Self::Gltf | Self::Animation => "glb",
             Self::Fbx => "fbx",
@@ -68,14 +74,15 @@ impl ExportKind {
             Self::Dxf | Self::Svg | Self::Obj | Self::Gltf | Self::Fbx => "",
             Self::DxfGraded => "-graded",
             Self::Astm => "-astm",
+            Self::MarkerDxf | Self::MarkerSvg => "-marker",
             Self::Animation => "-animation",
         }
     }
 
     const fn filter(self) -> &'static str {
         match self {
-            Self::Dxf | Self::DxfGraded | Self::Astm => "DXF\t*.dxf",
-            Self::Svg => "SVG\t*.svg",
+            Self::Dxf | Self::DxfGraded | Self::Astm | Self::MarkerDxf => "DXF\t*.dxf",
+            Self::Svg | Self::MarkerSvg => "SVG\t*.svg",
             Self::Obj => "Wavefront OBJ\t*.obj",
             Self::Gltf | Self::Animation => "glTF Binary\t*.glb",
             Self::Fbx => "FBX\t*.fbx",
@@ -156,6 +163,14 @@ impl AzamApp {
                 write(&path.with_extension("rul"), files.rul.as_bytes())
             }
             ExportKind::Svg => write(path, azam_io::export_svg(project).as_bytes()),
+            ExportKind::MarkerDxf => write(
+                path,
+                azam_io::marker_dxf(&crate::marker_view::marker_for(project)).as_bytes(),
+            ),
+            ExportKind::MarkerSvg => write(
+                path,
+                azam_io::marker_svg(&crate::marker_view::marker_for(project)).as_bytes(),
+            ),
             ExportKind::PatternPdf => {
                 let pdf = azam_io::pattern_pdf(project, &PatternPdfOptions::default())
                     .map_err(|e| e.to_string())?;

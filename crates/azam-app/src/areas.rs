@@ -223,7 +223,14 @@ pub fn default_layout(workspace: Workspace, next: &mut AreaId) -> AreaNode {
         },
         Workspace::Review => leaf(Editor::View3d, fresh()),
         Workspace::Grading => leaf(Editor::Pattern, fresh()),
-        Workspace::TechPack => leaf(Editor::TechPack, fresh()),
+        // the tables above the marker they cut from
+        Workspace::TechPack => AreaNode::Split {
+            id: fresh(),
+            dir: Dir::Column,
+            ratio: 0.5,
+            a: Box::new(leaf(Editor::TechPack, fresh())),
+            b: Box::new(leaf(Editor::Marker, fresh())),
+        },
     };
     let side = AreaNode::Split {
         id: fresh(),

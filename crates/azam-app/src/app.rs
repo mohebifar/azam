@@ -169,6 +169,8 @@ pub struct AzamApp {
     pub(crate) active_tab: usize,
     /// The rename prompt's text, while it is open.
     pub(crate) rename_prompt: Option<String>,
+    /// The marker as last made, and the project revision it was made at.
+    pub(crate) marker_cache: Option<(u64, std::sync::Arc<azam_io::Marker>)>,
     /// The workspace tab last clicked and when (two quick clicks rename it).
     last_tab_click: Option<(usize, std::time::Instant)>,
     pub(crate) tool: Tool,
@@ -311,6 +313,7 @@ impl AzamApp {
             active_tab: 0,
             rename_prompt: None,
             last_tab_click: None,
+            marker_cache: None,
             tool: Tool::Select,
             shading: Shading::Solid,
             fit_mode: azam_sim::FitMode::Fit,
@@ -648,6 +651,8 @@ impl AzamApp {
             Operator::ExportDxf
             | Operator::ExportDxfGraded
             | Operator::ExportAstm
+            | Operator::ExportMarkerDxf
+            | Operator::ExportMarkerSvg
             | Operator::ExportSvg
             | Operator::ExportObj
             | Operator::ExportGltf
@@ -1370,7 +1375,13 @@ impl AzamApp {
 
     // -- editors -------------------------------------------------------------------------------
 
-    fn header_button(&mut self, icon: &'static str, on: bool, op: Operator, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn header_button(
+        &mut self,
+        icon: &'static str,
+        on: bool,
+        op: Operator,
+        cx: &mut Context<Self>,
+    ) -> Div {
         div()
             .class(if on { "hbtn on" } else { "hbtn" })
             .child(self.icons.icon(icon))

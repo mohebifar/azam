@@ -23,15 +23,18 @@ pub enum Editor {
     Properties,
     /// Every colorway rendered side by side.
     Colorways,
+    /// The pattern nested on the fabric.
+    Marker,
 }
 
 impl Editor {
     /// Every editor, in the editor-type menu's order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::View3d,
         Self::Pattern,
         Self::Colorways,
         Self::TechPack,
+        Self::Marker,
         Self::Outliner,
         Self::Properties,
     ];
@@ -46,6 +49,7 @@ impl Editor {
             Self::Outliner => "Outliner",
             Self::Properties => "Properties",
             Self::Colorways => "Colorways",
+            Self::Marker => "Marker",
         }
     }
 
@@ -59,6 +63,7 @@ impl Editor {
             Self::Outliner => "OUTLINER",
             Self::Properties => "PROPERTIES",
             Self::Colorways => "COLOR",
+            Self::Marker => "MOD_ARRAY",
         }
     }
 }
@@ -68,7 +73,10 @@ impl Editor {
     /// 3D view and pattern editor here have one camera each, so they stay unique).
     #[must_use]
     pub const fn duplicable(self) -> bool {
-        matches!(self, Self::TechPack | Self::Outliner | Self::Properties)
+        matches!(
+            self,
+            Self::TechPack | Self::Marker | Self::Outliner | Self::Properties
+        )
     }
 }
 
@@ -187,6 +195,7 @@ impl AzamApp {
             Editor::Pattern => self.pattern_area(id, cx),
             Editor::TechPack => self.techpack_area(id, cx),
             Editor::Colorways => self.colorways_area(id, cx),
+            Editor::Marker => self.marker_area(id, cx),
             Editor::Outliner => self.outliner_area(id, cx),
             Editor::Properties => self.properties_area(id, cx),
         }
