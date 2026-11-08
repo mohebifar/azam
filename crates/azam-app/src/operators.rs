@@ -99,6 +99,8 @@ pub enum Tool {
     EditSew,
     /// Topstitch a segment (Shift: the whole outline).
     Topstitch,
+    /// Put a zipper between two segments: they are sewn, and each gets a zipper half.
+    Zipper,
     /// Select topstitches.
     EditTopstitch,
     /// Place and move buttons.
@@ -142,6 +144,7 @@ impl Tool {
         &[
             Self::Topstitch,
             Self::EditTopstitch,
+            Self::Zipper,
             Self::Button,
             Self::Buttonhole,
             Self::FastenButton,
@@ -177,6 +180,7 @@ impl Tool {
             Self::FreeSew => "Free Sewing",
             Self::EditSew => "Edit Sewing",
             Self::Topstitch => "Segment Topstitch",
+            Self::Zipper => "Zipper",
             Self::EditTopstitch => "Edit Topstitch",
             Self::Button => "Button",
             Self::Buttonhole => "Buttonhole",
@@ -209,6 +213,7 @@ impl Tool {
             Self::FreeSew => "SNAP_EDGE",
             Self::EditSew => "LINKED",
             Self::Topstitch => "MOD_DASH",
+            Self::Zipper => "ALIGN_JUSTIFY",
             Self::EditTopstitch => "MOD_LINEART",
             Self::Button => "RADIOBUT_ON",
             Self::Buttonhole => "REMOVE",
@@ -233,7 +238,7 @@ impl Tool {
             Self::Rectangle | Self::Ellipse | Self::InternalEllipse => "Drag Shape",
             Self::Notch => "Add Notch",
             Self::Dart => "Add Dart",
-            Self::Sew | Self::FreeSew | Self::Topstitch => "Pick Segment",
+            Self::Sew | Self::FreeSew | Self::Topstitch | Self::Zipper => "Pick Segment",
             Self::EditSew => "Select Seam",
             Self::EditTopstitch => "Select Topstitch",
             Self::Button => "Place Button",
@@ -271,7 +276,12 @@ impl Tool {
             Self::Pin => "I",
             Self::Measure => "M",
             Self::Dart => "D",
-            Self::Notch | Self::Button | Self::Buttonhole | Self::FastenButton | Self::Comment => {
+            Self::Notch
+            | Self::Zipper
+            | Self::Button
+            | Self::Buttonhole
+            | Self::FastenButton
+            | Self::Comment => {
                 return None;
             }
         })
@@ -392,6 +402,8 @@ pub enum Operator {
     ToggleAvatar,
     /// Show or hide the floor grid.
     ToggleGrid,
+    /// Show or hide the avatar's arrangement points (click one to arrange the selected pieces).
+    ToggleArrangementPoints,
     /// Open the shading pie menu.
     ShadingPie,
     /// Open the view pie menu.
@@ -466,6 +478,7 @@ impl Operator {
             Self::FramePattern => "Frame Pattern",
             Self::ToggleAvatar => "Show Avatar",
             Self::ToggleGrid => "Show Floor Grid",
+            Self::ToggleArrangementPoints => "Show Arrangement Points",
             Self::ShadingPie => "Shading Pie",
             Self::ViewPie => "View Pie",
             Self::Shortcuts => "Keyboard Shortcuts",
@@ -517,6 +530,7 @@ impl Operator {
             Self::FrameAll | Self::FramePattern => "ZOOM_ALL",
             Self::ToggleAvatar => "USER",
             Self::ToggleGrid => "GRID",
+            Self::ToggleArrangementPoints => "PIVOT_CURSOR",
             Self::Shortcuts => "KEY_COMMAND",
             Self::About => "INFO",
             Self::RenderImage => "RENDER_STILL",
@@ -651,6 +665,7 @@ impl Operator {
             Self::FramePattern,
             Self::ToggleAvatar,
             Self::ToggleGrid,
+            Self::ToggleArrangementPoints,
             Self::Shortcuts,
             Self::About,
             Self::RenderImage,
@@ -744,6 +759,7 @@ pub fn editor_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::ToggleAvatar),
                 Item(O::ToggleGrid),
+                Item(O::ToggleArrangementPoints),
                 Separator,
                 MenuEntry::Sub("Pie Menus", "MENU_PANEL", PIE_MENU),
             ],
@@ -808,6 +824,7 @@ fn sewing_entries() -> Vec<MenuEntry> {
         Item(O::SetTool(Tool::Sew)),
         Item(O::SetTool(Tool::FreeSew)),
         Item(O::SetTool(Tool::EditSew)),
+        Item(O::SetTool(Tool::Zipper)),
         Item(O::FinishDraft),
         Separator,
         Item(O::FlipSeam),
@@ -910,6 +927,7 @@ pub fn top_menus() -> Vec<Menu> {
                 MenuEntry::Sub("Fit Map", "SHADING_TEXTURE", FIT_MAP_MENU),
                 Item(O::ToggleAvatar),
                 Item(O::ToggleGrid),
+                Item(O::ToggleArrangementPoints),
             ],
         },
         Menu {

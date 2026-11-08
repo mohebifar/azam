@@ -311,3 +311,84 @@ fn dragging_an_area_border_resizes_the_side_column() {
         );
     });
 }
+
+fn wait_for_garment(cx: &mut App, win: &WindowHandle<AzamApp>) {
+    for _ in 0..300 {
+        win.root().update(cx, |_, cx| cx.notify());
+        cx.draw(win.id);
+        if win.root().read(cx).sim_time().is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    cx.draw(win.id);
+}
+
+fn front_id(cx: &App, win: &WindowHandle<AzamApp>) -> azam_doc::PieceId {
+    let app = win.root().read(cx);
+    app.session()
+        .project
+        .pieces
+        .values()
+        .find(|p| p.name == "Front")
+        .expect("a front")
+        .id
+        .clone()
+}
+
+#[test]
+fn dragging_a_piece_in_3d_moves_it() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        let front = front_id(cx, &win);
+        let before = win.root().read(cx).piece_position(&front).expect("front cloth");
+        let vp = cx.element_bounds(win.id, VIEWPORT_ID).expect("3D view");
+        let (x, y) = (
+            vp.origin.x + vp.size.width / 2.0,
+            vp.origin.y + vp.size.height * 0.42,
+        );
+        cx.simulate_drag(win.id, (x, y), (x + 60.0, y));
+        cx.draw(win.id);
+        let app = win.root().read(cx);
+        assert_eq!(
+            app.session().selection.active.as_ref(),
+            Some(&front),
+            "the press selects the front"
+        );
+        let after = app.piece_position(&front).expect("front cloth");
+        let moved = ((after[0] - before[0]).powi(2) + (after[2] - before[2]).powi(2)).sqrt();
+        assert!(moved > 20.0, "the front moved {moved} mm sideways");
+    });
+}
+
+#[test]
+fn clicking_an_arrangement_point_reslots_the_selected_piece() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        let front = front_id(cx, &win);
+        win.root().update(cx, |app, cx| {
+            app.select_piece(front.clone());
+            app.set_show_arrangement(true);
+            cx.notify();
+        });
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let dot = cx
+            .element_bounds(win.id, "arr-left-Waist")
+            .expect("a left-side waist point");
+        cx.simulate_click(
+            win.id,
+            dot.origin.x + dot.size.width / 2.0,
+            dot.origin.y + dot.size.height / 2.0,
+        );
+        cx.draw(win.id);
+        let app = win.root().read(cx);
+        assert_eq!(app.session().project.pieces[&front].arr.slot, "left");
+    });
+}

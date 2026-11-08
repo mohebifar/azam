@@ -120,6 +120,10 @@ pub struct AzamApp {
     pub(crate) layout: crate::areas::AreaLayout,
     /// The area border being dragged.
     pub(crate) resizing: Option<crate::areas::Border>,
+    /// The piece being moved or turned in the 3D view.
+    pub(crate) piece_drag: Option<crate::place3d::PieceDrag>,
+    /// Whether the avatar's arrangement points are shown in the 3D view.
+    pub(crate) show_arrangement: bool,
     /// Where the main, side and outliner borders were laid out last frame.
     pub(crate) border_bounds: [Option<Bounds<f32>>; 3],
     /// Width of the window last frame, logical pixels.
@@ -231,6 +235,8 @@ impl AzamApp {
             menu_at_press: None,
             layout: crate::areas::AreaLayout::default(),
             resizing: None,
+            piece_drag: None,
+            show_arrangement: false,
             border_bounds: [None; 3],
             window_width: 0.0,
             menu_anchor: (0.0, 0.0),
@@ -497,6 +503,7 @@ impl AzamApp {
             Operator::View(preset) => self.viewport.camera.set_preset(preset),
             Operator::ToggleOrtho => self.viewport.camera.orthographic = !self.viewport.camera.orthographic,
             Operator::ToggleGrid => self.viewport.overlays.grid = !self.viewport.overlays.grid,
+            Operator::ToggleArrangementPoints => self.show_arrangement = !self.show_arrangement,
             Operator::ToggleAvatar => self
                 .session
                 .edit("Show Avatar", |p| p.avatar.show = !p.avatar.show),
@@ -787,7 +794,10 @@ impl AzamApp {
                 .and_then(|(origin, dir)| self.scene3d.pick(origin, dir));
             match hit {
                 Some(id) if e.modifiers.shift => self.session.selection.toggle(id),
-                Some(id) => self.session.selection.select_only(id),
+                Some(id) => {
+                    self.session.selection.select_only(id);
+                    self.begin_piece_drag(e);
+                }
                 None if !e.modifiers.shift => self.session.selection.clear(),
                 None => {}
             }
@@ -865,6 +875,10 @@ impl AzamApp {
             return;
         }
         self.publish_cursor(e.position);
+        if self.piece_drag_move(e.position) {
+            cx.notify();
+            return;
+        }
         let mut changed = self.viewport.navigate(e.position);
         changed |= self.pattern_drag_move(e.position, e.modifiers);
         if let Some(grab) = self.scene3d.grab
@@ -881,8 +895,10 @@ impl AzamApp {
     }
 
     fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let mut ended =
-            self.viewport.drag.take().is_some() | self.pattern_drag_end() | self.resizing.take().is_some();
+        let mut ended = self.viewport.drag.take().is_some()
+            | self.pattern_drag_end()
+            | self.resizing.take().is_some()
+            | self.end_piece_drag();
         if self.scene3d.grab.take().is_some() {
             if let Some(sim) = self.scene3d.sim.as_mut() {
                 sim.release_grab();
@@ -1063,6 +1079,40 @@ impl AzamApp {
         self.open_menu.is_some() || self.search.is_some() || self.file_prompt.is_some() || self.pie.is_some()
     }
 
+    /// The Dart tool's settings in the pattern editor's header, as Blender shows a tool's
+    /// settings: the width and depth of the next dart.
+    fn dart_settings(&mut self, cx: &mut Context<Self>) -> Div {
+        let size = self.tools.dart;
+        if self.overlay_open() {
+            return div().class("hgroup").child(
+                div()
+                    .class("hbtn")
+                    .child(format!("Width {:.0} · Depth {:.0}", size.width, size.depth)),
+            );
+        }
+        let field = |label: &'static str,
+                     value: f64,
+                     max: f64,
+                     set: fn(&mut crate::pattern_tools::DartSize, f64),
+                     cx: &mut Context<Self>| {
+            NumberField()
+                .attr("label", label)
+                .value(format!("{value:.0}"))
+                .min(1.0)
+                .max(max)
+                .step(1.0)
+                .css("width", "112px")
+                .on_input(cx.listener(move |this, e: &ChangeEvent, _, cx| {
+                    set(&mut this.tools.dart, e.number.clamp(1.0, max));
+                    cx.notify();
+                }))
+        };
+        div()
+            .class("hgroup tool-settings")
+            .child(field("Width", size.width, 200.0, |d, v| d.width = v, cx))
+            .child(field("Depth", size.depth, 400.0, |d, v| d.depth = v, cx))
+    }
+
     /// Which fit map the fit map shading shows (Fit, Strain, Stress, Pressure).
     fn fit_dropdown(&mut self, cx: &mut Context<Self>) -> Div {
         let current = self.fit_mode;
@@ -1181,6 +1231,12 @@ impl AzamApp {
             .child(div().class("header-spacer"))
             .child(self.header_button("ARMATURE_DATA", show_avatar, Operator::ToggleAvatar, cx))
             .child(self.header_button("GRID", self.viewport.overlays.grid, Operator::ToggleGrid, cx))
+            .child(self.header_button(
+                "PIVOT_CURSOR",
+                self.show_arrangement,
+                Operator::ToggleArrangementPoints,
+                cx,
+            ))
             .child(div().class("header-sep"))
             .child(
                 div()
@@ -1240,6 +1296,7 @@ impl AzamApp {
                     .on_scroll_wheel(cx.listener(Self::on_viewport_wheel)),
             )
             .when(self.shading == Shading::FitMap, |el| el.child(self.fit_legend()))
+            .children(self.arrangement_overlay(cx))
             .child(
                 div()
                     .class(if self.playing { "vp-badge live" } else { "vp-badge" })
@@ -1288,6 +1345,7 @@ impl AzamApp {
             .child(self.menu_title(self.top_menu_count + 3, cx))
             .child(self.menu_title(self.top_menu_count + 4, cx))
             .child(self.menu_title(self.top_menu_count + 5, cx))
+            .when(self.tool == Tool::Dart, |el| el.child(self.dart_settings(cx)))
             .child(div().class("header-spacer"))
             .child(div().class("mode-label").child(format!("Size {sizes}")))
             .child(self.header_button("ZOOM_ALL", false, Operator::FramePattern, cx));

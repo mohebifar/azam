@@ -63,10 +63,13 @@ pub struct StitchDraw {
     pub gap: f64,
     /// Thread width, mm.
     pub width: f64,
-    /// Thread colour, `0xRRGGBB`.
+    /// Thread colour, `0xRRGGBB` (a zipper's teeth).
     pub color: u32,
     /// Whether it is selected.
     pub selected: bool,
+    /// A zipper half's tape (a polyline per segment, along the middle of the tape); empty for a
+    /// topstitch.
+    pub tape: Vec<Vec<Vec2>>,
 }
 
 /// A graphic as drawn.
@@ -221,6 +224,15 @@ pub(super) fn paint_notch(
 
 pub(super) fn paint_stitch(p: &mut Painter, st: &StitchDraw, to_px: &impl Fn(Vec2) -> (f32, f32), zoom: f32) {
     let width = (st.width as f32 * zoom).max(MIN_THREAD_PX);
+    let tape = crate::scene::parse_hex(azam_doc::ZIPPER_TAPE_COLOR).unwrap_or(0x2a2a2c);
+    for line in &st.tape {
+        let px: Vec<(f32, f32)> = line.iter().map(|q| to_px(*q)).collect();
+        p.line(
+            &px,
+            rgb(tape),
+            (azam_doc::ZIPPER_TAPE_MM as f32 * zoom).max(width + 2.0),
+        );
+    }
     for row in &st.rows {
         let px: Vec<(f32, f32)> = row.iter().map(|q| to_px(*q)).collect();
         if st.selected {

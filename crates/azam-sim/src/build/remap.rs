@@ -48,6 +48,8 @@ pub(crate) fn initial_positions(
     for r in records {
         let pr = previous.and_then(|p| p.records.iter().find(|q| q.id == r.id).map(|q| (p, q)));
         match pr {
+            // a piece given a new arrangement starts there, whatever it was doing
+            Some((_, pr)) if pr.arrangement != r.arrangement => arrange(avatar, r, x),
             Some((prev, pr)) if pr.key == r.key => {
                 let src = &prev.particles.x[pr.offset * 3..(pr.offset + pr.count) * 3];
                 x[r.offset * 3..(r.offset + r.count) * 3].copy_from_slice(src);

@@ -41,11 +41,12 @@ pub use command::{Applied, Command, Created, EditError, apply};
 pub use edit::{
     DEFAULT_DART_DEPTH_MM, DEFAULT_DART_WIDTH_MM, DartError, DeletePointsError, DuplicateMode, ELLIPSE_KAPPA,
     FlipAxis, MIN_CORNERS, MIN_SHAPE_MM, PieceTransform, RigidMap, Shape, add_curve_point, add_dart,
-    add_internal_ellipse, add_internal_line, create_piece, create_shape_piece, de_casteljau_split,
-    delete_internal_line, delete_pieces, delete_points, duplicate_colorway, duplicate_fabric,
-    duplicate_piece, flip_piece, grade_points_linear, grade_step, internal_fold, remap_refs, rigid_map,
-    rotate_piece_90, seg_bez_param, set_base_size, set_curvature, set_grade_step_axis, set_internal_closed,
-    set_internal_fold, set_point_curve, set_sizes, split_segment, transform_piece, translate_internal_line,
+    add_fabric, add_internal_ellipse, add_internal_line, create_piece, create_shape_piece,
+    de_casteljau_split, delete_colorway, delete_fabric, delete_internal_line, delete_pieces, delete_points,
+    duplicate_colorway, duplicate_fabric, duplicate_piece, flip_piece, grade_points_linear, grade_step,
+    internal_fold, remap_refs, rigid_map, rotate_piece_90, seg_bez_param, set_base_size, set_curvature,
+    set_grade_step_axis, set_internal_closed, set_internal_fold, set_point_curve, set_sizes, split_segment,
+    transform_piece, translate_internal_line,
 };
 pub use fabric::{
     Fabric, FabricPhysics, FabricPreset, PhysKey, PresetSpec, e2d, limit_strain, make_fabric, r_bend,
@@ -68,9 +69,10 @@ pub use parts::{
     DEFAULT_STITCH_ROWS, DEFAULT_STITCH_WIDTH_MM, Extras, FALLBACK_STITCH_COLOR, FALLBACK_STITCH_GAP_MM,
     FALLBACK_STITCH_OFFSET_MM, FALLBACK_STITCH_WIDTH_MM, GRAPHIC_HEIGHT_KEY, GRAPHIC_NAME_KEY,
     GRAPHIC_OPACITY_KEY, GRAPHIC_PATH_KEY, GRAPHIC_ROTATION_KEY, GRAPHIC_WIDTH_KEY, HOLE_ANGLE_KEY,
-    HOLE_LENGTH_KEY, ItemKind, LINE_CLOSED_KEY, LINE_FOLD_KEY, STITCH_GAP_KEY, STITCH_LENGTH_KEY,
-    STITCH_OFFSET_KEY, STITCH_ROW_GAP_KEY, STITCH_ROWS_KEY, STITCH_WIDTH_KEY, StitchStyle, add_button,
-    add_comment, add_graphic, add_hole, add_notch, add_stitch, delete_item, fasten_button, graphic_size,
+    HOLE_LENGTH_KEY, ItemKind, LINE_CLOSED_KEY, LINE_FOLD_KEY, STITCH_GAP_KEY, STITCH_KIND_KEY,
+    STITCH_LENGTH_KEY, STITCH_OFFSET_KEY, STITCH_ROW_GAP_KEY, STITCH_ROWS_KEY, STITCH_WIDTH_KEY, StitchStyle,
+    ZIPPER_KIND, ZIPPER_TAPE_COLOR, ZIPPER_TAPE_MM, ZIPPER_TEETH_COLOR, add_button, add_comment, add_graphic,
+    add_hole, add_notch, add_stitch, add_zipper_half, delete_item, fasten_button, graphic_size, is_zipper,
     move_item,
 };
 pub use piece::{

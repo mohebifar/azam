@@ -64,6 +64,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .hbtn:hover { background: #4a4a4a; }
 .hbtn.on { background: #4772b3; color: #ffffff; }
 .hgroup { display: flex; gap: 1px; }
+.tool-settings { gap: 4px; margin-left: 8px; }
 .hgroup .hbtn { border-radius: 0; }
 .hgroup .hbtn.first { border-radius: 4px 0 0 4px; }
 .hgroup .hbtn.last { border-radius: 0 4px 4px 0; }
@@ -85,6 +86,9 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .vp-badge { position: absolute; right: 10px; bottom: 10px; padding: 3px 8px; border-radius: 4px;
             background: rgba(30,30,30,0.85); color: #d0d0d0; font-size: 11px; z-index: 4; }
 .vp-badge.live { color: #9fe07a; }
+.arr-point { position: absolute; z-index: 3; width: 12px; height: 12px; border-radius: 6px; background: #4772b3;
+             border: 2px solid #dfe8f7; box-shadow: 0 0 0 1px #111111; }
+.arr-point:hover { background: #f1a33c; }
 .fit-legend { position: absolute; left: 56px; bottom: 10px; padding: 6px 9px; border-radius: 4px;
               background: rgba(30,30,30,0.88); border: 1px solid #111111; display: flex; flex-direction: column;
               gap: 3px; font-size: 11px; color: #d0d0d0; z-index: 4; }

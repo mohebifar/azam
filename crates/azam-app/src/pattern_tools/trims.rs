@@ -57,16 +57,10 @@ impl AzamApp {
         if self.refuse_mirror(&seg.piece) {
             return;
         }
+        let dart = self.tools.dart;
         let mut result = Err(azam_doc::DartError::NoSuchSegment);
         self.session.edit("Add Dart", |p| {
-            result = azam_doc::add_dart(
-                p,
-                &seg.piece,
-                &seg.segment,
-                seg.t,
-                azam_doc::DEFAULT_DART_WIDTH_MM,
-                azam_doc::DEFAULT_DART_DEPTH_MM,
-            );
+            result = azam_doc::add_dart(p, &seg.piece, &seg.segment, seg.t, dart.width, dart.depth);
             if result.is_ok() {
                 azam_doc::sync_mirrors(p);
             }

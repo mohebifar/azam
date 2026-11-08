@@ -145,6 +145,23 @@ impl Simulation {
             }
         }
     }
+
+    /// Turns piece `ri` rigidly by `angle` radians about the vertical axis through `centre` (x and
+    /// z, mm), as a piece is turned around the body (while the simulation is paused); the turn
+    /// adds no velocity.
+    pub fn turn_piece(&mut self, ri: usize, angle: f64, centre: [f64; 2]) {
+        let Some(r) = self.records.get(ri) else { return };
+        let (s, c) = angle.sin_cos();
+        let p = &mut self.particles;
+        for q in r.particles() {
+            let k = q * 3;
+            let (x, z) = (f64::from(p.x[k]) - centre[0], f64::from(p.x[k + 2]) - centre[1]);
+            p.x[k] = (centre[0] + x * c + z * s) as f32;
+            p.x[k + 2] = (centre[1] - x * s + z * c) as f32;
+            p.prev[k] = p.x[k];
+            p.prev[k + 2] = p.x[k + 2];
+        }
+    }
 }
 
 /// Puts every pinned particle back at its pin.

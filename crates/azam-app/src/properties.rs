@@ -1,6 +1,7 @@
 //! The properties editor: Blender's icon tabs down the side and panels of fields for the project,
 //! the active piece, the selected seam or part, its fabric, the avatar and the simulation.
 
+mod library;
 mod parts;
 
 use azam_doc::{FabricPreset, PieceId, PieceState, Project, Sex};
@@ -384,6 +385,7 @@ impl AzamApp {
                 }
             })
         };
+        let active_colorway = project.active_colorway.clone();
         let name_row = Self::text_row("Name", name, cx, |p, t| t.clone_into(&mut p.meta.name));
         let file = self
             .session
@@ -405,7 +407,7 @@ impl AzamApp {
                 vec![
                     cw_row,
                     cw_name_row,
-                    Self::new_colorway_button(cx),
+                    Self::colorway_buttons(&active_colorway, cx),
                     self.colorway_grid(),
                 ],
             ),
@@ -632,57 +634,6 @@ impl AzamApp {
         self.panel("Arrangement", vec![slot_row, off_row, ang_row, h_row])
     }
 
-    /// A button that adds a copy of fabric `fid` and gives it to the selected piece, so its
-    /// colour and physics can be changed without touching the pieces that keep the original.
-    fn new_fabric_button(&self, fid: &azam_doc::FabricId, cx: &mut Context<Self>) -> Div {
-        let fid = fid.clone();
-        let piece = self.active_piece();
-        div()
-            .class("pbuttons")
-            .child(div().class("pbtn").child("New Fabric").on_click(cx.listener(
-                move |this, _: &ClickEvent, _, cx| {
-                    let (fid, piece) = (fid.clone(), piece.clone());
-                    let mut created = None;
-                    this.session.edit("New Fabric", |p| {
-                        created = azam_doc::duplicate_fabric(p, &fid);
-                        if let (Some(new), Some(pc)) =
-                            (&created, piece.as_ref().and_then(|id| p.pieces.get_mut(id)))
-                        {
-                            pc.fabric = new.clone();
-                        }
-                    });
-                    if let Some(new) = created {
-                        let name = this.session.project.fabrics[&new].name.clone();
-                        this.status = format!("Added fabric {name}");
-                    }
-                    cx.notify();
-                },
-            )))
-    }
-
-    /// A button that adds a copy of the active colorway and makes it active.
-    fn new_colorway_button(cx: &mut Context<Self>) -> Div {
-        div()
-            .class("pbuttons")
-            .child(div().class("pbtn").child("New Colorway").on_click(cx.listener(
-                |this, _: &ClickEvent, _, cx| {
-                    let mut created = None;
-                    this.session.edit("New Colorway", |p| {
-                        let active = p.active_colorway.clone();
-                        created = azam_doc::duplicate_colorway(p, &active);
-                        if let Some(id) = &created {
-                            p.active_colorway = id.clone();
-                        }
-                    });
-                    if let Some(id) = created {
-                        let name = this.session.project.colorways[&id].name.clone();
-                        this.status = format!("Added colorway {name}");
-                    }
-                    cx.notify();
-                },
-            )))
-    }
-
     #[allow(clippy::too_many_lines, reason = "the panels of one tab, read top to bottom")]
     fn fabric_panels(&mut self, cx: &mut Context<Self>) -> Vec<Div> {
         let project = &self.session.project;
@@ -794,10 +745,11 @@ impl AzamApp {
             ),
         ];
         vec![
-            self.panel(
-                "Fabric",
-                vec![name_row, preset_row, color_row, self.new_fabric_button(&fid, cx)],
-            ),
+            self.panel("Fabric", {
+                let mut rows = vec![name_row, preset_row, color_row];
+                rows.extend(self.fabric_library_rows(&fid, cx));
+                rows
+            }),
             self.panel("Stretch", stretch),
             self.panel("Bending", bending),
             self.panel("Physical Properties", other),

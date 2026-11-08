@@ -347,3 +347,48 @@ fn a_saved_pin_holds_its_spot_through_build_and_reset() {
         "a reset keeps it there, not at the arrangement"
     );
 }
+
+#[test]
+fn a_new_arrangement_moves_only_that_piece_on_rebuild() {
+    let av = female_avatar();
+    let mut project = square_project(&["pc_a", "pc_b"], SQUARE_MM);
+    let first = Simulation::build(&project, &av, None, &SimParams::default());
+    let mut moved = first.clone();
+    moved.translate_piece(0, [0.0, 0.0, 50.0]);
+    moved.translate_piece(1, [0.0, 0.0, 50.0]);
+    project.pieces.get_mut(&PieceId::new("pc_b")).expect("b").arr.slot = "back".into();
+    let rebuilt = Simulation::build(&project, &av, Some(&moved), &SimParams::default());
+    let span = |s: &Simulation, ri: usize| {
+        let r = &s.records[ri];
+        s.particles.x[r.offset * 3..(r.offset + r.count) * 3].to_vec()
+    };
+    let ri = |s: &Simulation, id: &str| s.records.iter().position(|r| r.id.0 == id).expect("record");
+    assert_eq!(
+        span(&rebuilt, ri(&rebuilt, "pc_a")),
+        span(&moved, ri(&moved, "pc_a")),
+        "an untouched piece keeps its place"
+    );
+    let fresh = Simulation::build(&project, &av, None, &SimParams::default());
+    assert_eq!(
+        span(&rebuilt, ri(&rebuilt, "pc_b")),
+        span(&fresh, ri(&fresh, "pc_b")),
+        "the re-slotted piece starts at its new arrangement"
+    );
+}
+
+#[test]
+fn turning_a_piece_keeps_its_height_and_distance_from_the_axis() {
+    let av = female_avatar();
+    let project = square_project(&["pc_sq"], SQUARE_MM);
+    let mut sim = Simulation::build(&project, &av, None, &SimParams::default());
+    let before = sim.particles.position(0);
+    sim.turn_piece(0, std::f64::consts::FRAC_PI_2, [0.0, 0.0]);
+    let after = sim.particles.position(0);
+    assert!((after[1] - before[1]).abs() < 1e-4, "same height");
+    let r = |p: [f32; 3]| f64::from(p[0]).hypot(f64::from(p[2]));
+    assert!((r(after) - r(before)).abs() < 1e-3, "same distance from the axis");
+    assert!(
+        (f64::from(after[0]) - f64::from(before[2])).abs() < 1e-3,
+        "a quarter turn moves z onto x"
+    );
+}

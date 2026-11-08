@@ -41,6 +41,16 @@ pub const DEFAULT_STITCH_COLOR: &str = "#3b3a36";
 pub const DEFAULT_STITCH_ROWS: u32 = 1;
 /// Row spacing of a new topstitch, mm.
 pub const DEFAULT_STITCH_ROW_GAP_MM: f64 = 6.0;
+/// Stitch field: what kind of trim the stitch is (absent: a topstitch).
+pub const STITCH_KIND_KEY: &str = "kind";
+/// [`STITCH_KIND_KEY`] of a zipper half: tape and teeth along a sewn edge.
+pub const ZIPPER_KIND: &str = "zipper";
+/// Width of a zipper half's tape, mm.
+pub const ZIPPER_TAPE_MM: f64 = 12.0;
+/// Colour of a zipper's tape.
+pub const ZIPPER_TAPE_COLOR: &str = "#2a2a2c";
+/// Colour of a zipper's teeth.
+pub const ZIPPER_TEETH_COLOR: &str = "#b8963e";
 /// Distance from the edge of a topstitch that does not store one, mm.
 pub const FALLBACK_STITCH_OFFSET_MM: f64 = 3.0;
 /// Gap of a topstitch that does not store one, mm.
@@ -287,6 +297,29 @@ pub fn add_stitch(project: &mut Project, piece: &PieceId, segment: Option<&Point
     Some(id)
 }
 
+/// Whether `stitch` is a zipper half rather than a topstitch.
+#[must_use]
+pub fn is_zipper(stitch: &Stitch) -> bool {
+    stitch.text(STITCH_KIND_KEY) == Some(ZIPPER_KIND)
+}
+
+/// Adds a zipper half along segment `segment` of `piece`: a tape [`ZIPPER_TAPE_MM`] wide inside
+/// the edge with teeth along the edge (a topstitch of kind [`ZIPPER_KIND`]). Returns its id, or `None`
+/// if there is no such piece or segment.
+pub fn add_zipper_half(project: &mut Project, piece: &PieceId, segment: &PointId) -> Option<StitchId> {
+    let id = add_stitch(project, piece, Some(segment))?;
+    let st = project.stitches.get_mut(&id)?;
+    st.set(STITCH_KIND_KEY, ZIPPER_KIND);
+    // teeth: a 3.5 mm row at the edge; the tape runs inward from the edge
+    st.set(STITCH_OFFSET_KEY, 1.75);
+    st.set(STITCH_LENGTH_KEY, 1.6);
+    st.set(STITCH_GAP_KEY, 1.0);
+    st.set(STITCH_WIDTH_KEY, 3.5);
+    st.set(COLOR_KEY, ZIPPER_TEETH_COLOR);
+    st.set(STITCH_ROWS_KEY, 1);
+    Some(id)
+}
+
 /// A new item of `kind` on `piece` at `pos`, with a fresh id and no fields.
 fn new_item(project: &mut Project, kind: ItemKind, piece: &PieceId, pos: Vec2) -> Option<Item> {
     if !project.pieces.contains_key(piece) {
@@ -454,6 +487,18 @@ mod tests {
 
     fn first_segment(p: &Project, id: &PieceId) -> PointId {
         p.pieces[id].pts[0].id.clone()
+    }
+
+    #[test]
+    fn a_zipper_half_is_a_stitch_of_its_own_kind() {
+        let (mut p, id) = project_with_square();
+        let seg = first_segment(&p, &id);
+        let z = add_zipper_half(&mut p, &id, &seg).expect("zipper");
+        let plain = add_stitch(&mut p, &id, Some(&seg)).expect("topstitch");
+        assert!(is_zipper(&p.stitches[&z]));
+        assert!(!is_zipper(&p.stitches[&plain]));
+        assert_eq!(StitchStyle::of(&p.stitches[&z]).color, ZIPPER_TEETH_COLOR);
+        assert!(add_zipper_half(&mut p, &id, &PointId::new("nope")).is_none());
     }
 
     #[test]

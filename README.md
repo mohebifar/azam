@@ -41,7 +41,14 @@ Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleev
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
 per size for the selected points). View ▸ Fit Map (or the 3D header in fit map shading) switches
 between the Fit, Strain, Stress and Pressure maps. Graphics placed on pieces are printed on the cloth
-in the 3D view and in renders (F12), and pins set with the 3D Pin tool are saved with the project.
+in the 3D view and in renders (F12), together with topstitches, buttons, buttonholes and zippers
+(the Zipper tool sews two edges and gives each a zipper half). Pins set with the 3D Pin tool are saved
+with the project. In the 3D view, drag a piece to move it before draping, Ctrl-drag to turn it around
+the body, or show the arrangement points (header button or View menu) and click one to send the
+selected pieces there. The Dart tool's width and depth sit in the pattern editor's header while it
+is active. Fabrics can be deleted, saved to a fabric library shared by all projects
+(`~/Library/Application Support/azam/fabrics` on macOS, or `$AZAM_LIBRARY/fabrics`) and added from
+it; DXF import also brings notches and grain lines.
 
 ## Layout
 

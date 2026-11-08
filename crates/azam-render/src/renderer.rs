@@ -208,6 +208,51 @@ struct DrawUniform {
     decal: [f32; 4],
 }
 
+/// `rgba` (`width` × `height`, sRGB, straight alpha) and its mip levels down to 1 × 1, each half
+/// the size of the one before (a 2 × 2 box, averaged in linear light and weighted by alpha, so
+/// thin marks fade instead of vanishing or turning dark at their edges).
+fn mip_chain(width: u32, height: u32, rgba: &[u8]) -> Vec<(u32, u32, std::borrow::Cow<'_, [u8]>)> {
+    let mut levels = vec![(width, height, std::borrow::Cow::Borrowed(rgba))];
+    while let Some((w, h, data)) = levels.last()
+        && (*w > 1 || *h > 1)
+    {
+        let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+        let mut next = vec![0u8; (nw * nh * 4) as usize];
+        for y in 0..nh {
+            for x in 0..nw {
+                let mut sum = [0.0f32; 4];
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    let (sx, sy) = ((2 * x + dx).min(w - 1), (2 * y + dy).min(h - 1));
+                    let at = ((sy * w + sx) * 4) as usize;
+                    let a = f32::from(data[at + 3]) / 255.0;
+                    for k in 0..3 {
+                        sum[k] += srgb_to_linear(f32::from(data[at + k]) / 255.0) * a;
+                    }
+                    sum[3] += a;
+                }
+                let at = ((y * nw + x) * 4) as usize;
+                if sum[3] > 0.0 {
+                    for k in 0..3 {
+                        next[at + k] = (linear_to_srgb(sum[k] / sum[3]) * 255.0).round() as u8;
+                    }
+                }
+                next[at + 3] = (sum[3] / 4.0 * 255.0).round() as u8;
+            }
+        }
+        levels.push((nw, nh, std::borrow::Cow::Owned(next)));
+    }
+    levels
+}
+
+/// Converts one linear channel to sRGB.
+fn linear_to_srgb(c: f32) -> f32 {
+    if c <= 0.003_130_8 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
 /// Converts one sRGB channel to linear.
 #[must_use]
 pub fn srgb_to_linear(c: f32) -> f32 {
@@ -406,6 +451,8 @@ impl Renderer {
             label: Some("decal"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            anisotropy_clamp: 8,
             ..Default::default()
         });
         let no_decal = Self::decal_group(
@@ -487,6 +534,7 @@ impl Renderer {
         height: u32,
         rgba: &[u8],
     ) -> wgpu::BindGroup {
+        let levels = mip_chain(width, height, rgba);
         let size = wgpu::Extent3d {
             width,
             height,
@@ -495,28 +543,34 @@ impl Renderer {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("decal"),
             size,
-            mip_level_count: 1,
+            mip_level_count: levels.len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
+        for (level, (w, h, data)) in levels.iter().enumerate() {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: level as u32,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w * 4),
+                    rows_per_image: Some(*h),
+                },
+                wgpu::Extent3d {
+                    width: *w,
+                    height: *h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("decal"),

@@ -210,29 +210,25 @@ impl Scene3d {
         self.pending.is_some()
     }
 
-    /// Composites the graphics of pieces whose graphics changed and uploads them; forgets those of
-    /// pieces that no longer have any.
+    /// Composites what is printed or sewn onto each piece whose prints changed and uploads it;
+    /// forgets the images of pieces that are gone or have nothing printed any more.
     fn sync_decals(&mut self, project: &Project, renderer: &mut Renderer) {
-        let stale: Vec<PieceId> = self
-            .decals
-            .keys()
-            .filter(|id| project.pieces.get(*id).is_none_or(|pc| pc.graphics.is_empty()))
-            .cloned()
-            .collect();
-        for id in stale {
-            if let Some((_, decal, _)) = self.decals.remove(&id) {
-                renderer.remove_decal(decal);
+        self.decals.retain(|id, (_, decal, _)| {
+            let keep = project.pieces.contains_key(id);
+            if !keep {
+                renderer.remove_decal(*decal);
             }
-        }
-        for (id, piece) in &project.pieces {
-            if piece.graphics.is_empty() {
-                continue;
-            }
-            let key = crate::decals::decal_key(piece);
+            keep
+        });
+        for id in project.pieces.keys() {
+            let key = crate::decals::decal_key(project, id);
             if self.decals.get(id).is_some_and(|(k, _, _)| *k == key) {
                 continue;
             }
-            let Some(image) = crate::decals::piece_decal(piece, &mut self.decal_images) else {
+            let Some(image) = crate::decals::piece_decal(project, id, &mut self.decal_images) else {
+                if let Some((_, decal, _)) = self.decals.remove(id) {
+                    renderer.remove_decal(decal);
+                }
                 continue;
             };
             let decal = self.decals.get(id).map_or_else(
@@ -371,6 +367,30 @@ impl Scene3d {
             self.auto_stop.update(sim.time, sim.energy, sim.sew_gap, &values)
         } else {
             None
+        }
+    }
+
+    /// Moves piece record `ri` rigidly by `delta` mm, or turns it by `turn` radians around the
+    /// body's vertical axis, between simulation frames (placing pieces before draping): the CPU
+    /// state, the GPU solver's copy and the drawn mesh all follow.
+    pub fn place_piece(&mut self, ri: usize, delta: Vec3, turn: f64, renderer: &mut Renderer) {
+        let Some(sim) = self.sim.as_mut() else { return };
+        if delta != Vec3::ZERO {
+            sim.translate_piece(ri, [f64::from(delta.x), f64::from(delta.y), f64::from(delta.z)]);
+        }
+        if turn != 0.0 {
+            sim.turn_piece(ri, turn, [0.0, 0.0]);
+        }
+        sim.compute_normals();
+        if let Some(gpu) = self.gpu_sim.as_mut() {
+            gpu.upload_positions(true);
+        }
+        if let Some(view) = sim.piece_views().nth(ri) {
+            renderer.update_vertices(
+                MeshId(FIRST_PIECE_MESH + ri as u32),
+                &triples(view.positions),
+                &triples(view.normals),
+            );
         }
     }
 

@@ -19,6 +19,7 @@ const fn segment_tool(tool: Tool) -> bool {
     matches!(
         tool,
         Tool::Sew
+            | Tool::Zipper
             | Tool::FreeSew
             | Tool::AddPoint
             | Tool::CurvePoint
@@ -140,7 +141,7 @@ impl AzamApp {
                 o.hover_edge = Some(s.poly.clone());
             }
             o.hover_dot = Some(seg.pos);
-            if self.tool == Tool::Sew {
+            if matches!(self.tool, Tool::Sew | Tool::Zipper) {
                 o.hover_start = Some(s.point_at(if seg.t > 0.5 { 1.0 } else { 0.0 }).pos);
             }
             if length_tool(self.tool)

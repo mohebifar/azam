@@ -33,6 +33,10 @@ pub struct ImportedPiece {
     pub points: Vec<OutlinePoint>,
     /// Internal lines (layer 8).
     pub internals: Vec<ImportedLine>,
+    /// Notch positions (layer 4): the end of each notch line nearest the outline, in mm.
+    pub notches: Vec<Vec2>,
+    /// Grain line angle (layer 7) in degrees from vertical, -90..90, if the block has one.
+    pub grain: Option<f64>,
 }
 
 /// Why a DXF file could not be imported.
@@ -356,6 +360,34 @@ fn make_piece(arena: &[Entity], block_name: &str, items: &[usize]) -> Option<Imp
             closed: e.closed,
         })
         .collect();
+    let lines = || {
+        items
+            .iter()
+            .map(|&i| &arena[i])
+            .filter(|e| e.pts.len() >= 2 && !e.is_shape())
+    };
+    let notches = lines()
+        .filter(|e| e.layer == layer::NOTCH)
+        .filter_map(|e| {
+            let (a, b) = (e.pts[0], e.pts[e.pts.len() - 1]);
+            let gap = |q: Vec2| distance_to_polygon(q, &pts);
+            Some(if gap(a) <= gap(b) { a } else { b })
+        })
+        .collect();
+    let grain = lines().find(|e| e.layer == layer::GRAIN).and_then(|e| {
+        let d = e.pts[e.pts.len() - 1] - e.pts[0];
+        (d.length() > 0.0).then(|| {
+            // export draws the line from top to bottom of the piece turned by the grain angle
+            let deg = (-d.x).atan2(d.y).to_degrees();
+            if deg > 90.0 {
+                deg - 180.0
+            } else if deg <= -90.0 {
+                deg + 180.0
+            } else {
+                deg
+            }
+        })
+    });
     Some(ImportedPiece {
         name,
         points: pts
@@ -364,7 +396,16 @@ fn make_piece(arena: &[Entity], block_name: &str, items: &[usize]) -> Option<Imp
             .map(|(i, p)| OutlinePoint::corner(format!("p{i}"), p.x, p.y))
             .collect(),
         internals,
+        notches,
+        grain,
     })
+}
+
+/// Distance from `q` to the closed polygon `pts`.
+fn distance_to_polygon(q: Vec2, pts: &[Vec2]) -> f64 {
+    (0..pts.len())
+        .map(|i| distance_to_segment(q, pts[i], pts[(i + 1) % pts.len()]).distance)
+        .fold(f64::INFINITY, f64::min)
 }
 
 /// Index of the polyline with the largest area (the first of equals).
@@ -447,6 +488,28 @@ mod tests {
             Vec2::new(10.0, 10.0),
         ];
         assert_eq!(simplify(&pts, 0.4), vec![pts[0], pts[2], pts[3]]);
+    }
+
+    #[test]
+    fn notches_and_grain_survive_a_round_trip() {
+        let mut p = azam_doc::Project::new(None, azam_doc::Sex::Female, 0.0);
+        let square =
+            [(0.0, 0.0), (200.0, 0.0), (200.0, 300.0), (0.0, 300.0)].map(|(x, y)| (Vec2::new(x, y), false));
+        let id = azam_doc::create_piece(&mut p, &square).expect("piece");
+        let top = p.pieces[&id].pts[0].id.clone();
+        azam_doc::add_notch(&mut p, &id, &top, 0.25).expect("notch");
+        p.pieces.get_mut(&id).expect("piece").grain = 30.0;
+        let pieces = import_dxf(&crate::export_dxf(&p)).expect("imports");
+        assert_eq!(pieces.len(), 1);
+        let back = &pieces[0];
+        assert_eq!(back.notches.len(), 1);
+        assert!(
+            back.notches[0].distance(Vec2::new(50.0, 0.0)) < 0.5,
+            "notch at {:?}",
+            back.notches[0]
+        );
+        let grain = back.grain.expect("grain line");
+        assert!((grain - 30.0).abs() < 0.01, "grain {grain}°");
     }
 
     #[test]

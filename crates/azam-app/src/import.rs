@@ -38,7 +38,19 @@ pub fn add_imported_pieces(project: &mut Project, pieces: &[ImportedPiece]) -> V
         if let Some(s) = slot {
             taken.push(s);
         }
+        let outline = project.pieces.get(&id).map(azam_doc::Piece::outline);
+        for &q in &piece.notches {
+            if let Some((segment, t)) = outline
+                .as_ref()
+                .and_then(|ol| ol.nearest(q).map(|n| (ol.segments[n.segment].id.clone(), n.t)))
+            {
+                azam_doc::add_notch(project, &id, &segment, t);
+            }
+        }
         if let Some(pc) = project.pieces.get_mut(&id) {
+            if let Some(g) = piece.grain {
+                pc.grain = g;
+            }
             pc.name.clone_from(&piece.name);
             if let Some(slot) = slot {
                 slot.clone_into(&mut pc.arr.slot);
@@ -80,6 +92,8 @@ mod tests {
                 points: vec![Vec2::new(x + 50.0, 10.0), Vec2::new(x + 50.0, 90.0)],
                 closed: false,
             }],
+            notches: vec![Vec2::new(x + 30.0, 0.0)],
+            grain: Some(15.0),
         }
     }
 
@@ -112,5 +126,10 @@ mod tests {
             "the internal line comes along"
         );
         assert_eq!(project.pieces[&ids[0]].name, "Back");
+        assert_eq!(project.pieces[&ids[0]].notches.len(), 1, "the notch comes along");
+        assert!(
+            (project.pieces[&ids[0]].grain - 15.0).abs() < 1e-9,
+            "and the grain line"
+        );
     }
 }

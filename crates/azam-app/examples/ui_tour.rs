@@ -82,6 +82,11 @@ fn main() {
             cx.simulate_click(win.id, 1162.0, 325.0 + 28.0 * i as f32);
             shot(cx, name);
         }
+        // the Dart tool's settings in the pattern editor's header
+        cx.simulate_mouse_move(win.id, 860.0, 650.0);
+        cx.simulate_key(win.id, "d", "d");
+        shot(cx, "10b-dart-tool");
+        cx.simulate_key(win.id, "w", "w");
         // a logo printed on the front, draped, in the viewport and the path tracer
         let logo = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -106,6 +111,40 @@ fn main() {
             }
             win.root().update(cx, |app, _| app.set_playing(false));
             shot(cx, "11-graphic-3d");
+            // a zipper down a side seam of the front and back
+            win.root().update(cx, |app, _| {
+                app.edit_project("Add Zipper", |p| {
+                    let sides: Vec<_> = p
+                        .pieces
+                        .values()
+                        .filter(|pc| pc.name == "Front" || pc.name == "Back")
+                        .map(|pc| {
+                            let ol = pc.outline();
+                            // the side seam: the most upright long segment
+                            let side = ol
+                                .segments
+                                .iter()
+                                .filter(|s| s.len > 150.0)
+                                .max_by(|a, b| {
+                                    let upright = |s: &azam_geom::Segment| {
+                                        let d = s.ctrl[s.ctrl.len() - 1] - s.ctrl[0];
+                                        d.y.abs() / d.length().max(1e-9)
+                                    };
+                                    upright(a).total_cmp(&upright(b))
+                                })
+                                .expect("segments");
+                            (pc.id.clone(), side.id.clone())
+                        })
+                        .collect();
+                    for (piece, seg) in sides {
+                        azam_doc::add_zipper_half(p, &piece, &seg);
+                    }
+                });
+            });
+            shot(cx, "11c-zipper");
+            win.root().update(cx, |app, _| app.set_show_arrangement(true));
+            shot(cx, "12-arrangement-points");
+            win.root().update(cx, |app, _| app.set_show_arrangement(false));
             let rendered = win.root().read(cx).render_still(640, 400, 32);
             if let Ok((image, _)) = rendered {
                 let _ = image.write_png(&out.join("11b-graphic-render.png"));

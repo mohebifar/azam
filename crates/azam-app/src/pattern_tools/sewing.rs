@@ -103,8 +103,14 @@ impl AzamApp {
             return;
         };
         let mut seam = None;
-        self.session.edit("Sew", |p| {
+        let zipper = self.tool == crate::operators::Tool::Zipper;
+        self.session.edit(if zipper { "Add Zipper" } else { "Sew" }, |p| {
             seam = Some(p.add_seam(draft.a.clone(), draft.b.clone()));
+            if zipper {
+                for side in draft.a.iter().chain(&draft.b) {
+                    azam_doc::add_zipper_half(p, &side.piece, &side.side.a.segment);
+                }
+            }
         });
         let Some(seam) = seam else {
             return;
@@ -117,6 +123,7 @@ impl AzamApp {
                     (l.a - l.b).abs() / 10.0
                 )
             }
+            _ if zipper => "Added a zipper (the edges are sewn; each has a zipper half)".into(),
             _ => format!("Sewed {ratio}"),
         };
         self.show_seam(seam);

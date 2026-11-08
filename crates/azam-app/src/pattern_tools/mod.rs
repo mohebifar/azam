@@ -77,6 +77,27 @@ pub struct PatternTools {
     pub measure: Option<(Vec2, Vec2)>,
     /// Where the last press was, canvas-local: a double click must land there again.
     pub last_press: Option<Vec2>,
+    /// The Dart tool's settings.
+    pub dart: DartSize,
+}
+
+/// Size of the darts the Dart tool cuts, set in the pattern editor's header (Blender's tool
+/// settings).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DartSize {
+    /// Width at the edge, mm.
+    pub width: f64,
+    /// Depth from the edge to the apex, mm.
+    pub depth: f64,
+}
+
+impl Default for DartSize {
+    fn default() -> Self {
+        Self {
+            width: azam_doc::DEFAULT_DART_WIDTH_MM,
+            depth: azam_doc::DEFAULT_DART_DEPTH_MM,
+        }
+    }
 }
 
 impl AzamApp {
@@ -98,7 +119,7 @@ impl AzamApp {
             Tool::Rectangle | Tool::Ellipse | Tool::InternalEllipse => self.shape_press(press),
             Tool::Notch => self.notch_press(press),
             Tool::Dart => self.dart_press(press),
-            Tool::Sew => self.sew_press(press, false),
+            Tool::Sew | Tool::Zipper => self.sew_press(press, false),
             Tool::FreeSew => self.sew_press(press, true),
             Tool::EditSew => self.edit_sew_press(press),
             Tool::Topstitch => self.stitch_press(press),
@@ -321,11 +342,11 @@ impl AzamApp {
             Tool::InternalEllipse => "Drag inside a piece".into(),
             Tool::Notch => "Click a segment to add a notch".into(),
             Tool::Dart => format!(
-                "Click a segment to cut a {:.0} × {:.0} mm dart there; move its points with Edit Points",
-                azam_doc::DEFAULT_DART_WIDTH_MM,
-                azam_doc::DEFAULT_DART_DEPTH_MM
+                "Click a segment to cut a {:.0} × {:.0} mm dart there (size in the header)",
+                self.tools.dart.width, self.tools.dart.depth
             ),
             Tool::Sew | Tool::FreeSew => SewDraft::hint(sewing, self.tool == Tool::FreeSew),
+            Tool::Zipper => format!("Zipper: {}", SewDraft::hint(sewing, false)),
             Tool::EditSew => {
                 "Click a seam to select it · flip, swap or delete it from the Sewing menu".into()
             }

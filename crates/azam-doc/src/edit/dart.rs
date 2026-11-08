@@ -189,7 +189,7 @@ fn grade_dart(pc: &mut Piece, ends: &[PointId; 2], [p1, apex, p2]: [&PointId; 3]
     };
     rules.insert(p1.clone(), lerp(ts[0]));
     rules.insert(p2.clone(), lerp(ts[1]));
-    rules.insert(apex.clone(), lerp((ts[0] + ts[1]) / 2.0));
+    rules.insert(apex.clone(), lerp(f64::midpoint(ts[0], ts[1])));
 }
 
 /// Distance from `from` along unit `dir` to the nearest edge of the polygon `poly` ahead of it.

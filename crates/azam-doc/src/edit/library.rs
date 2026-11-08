@@ -1,5 +1,7 @@
-//! Adding fabrics and colorways: each starts as a copy of an existing one.
+//! The project's fabrics and colorways: adding (as a copy of one, or from a library) and
+//! deleting them.
 
+use crate::fabric::Fabric;
 use crate::ids::{ColorwayId, FabricId, prefix};
 use crate::project::{Colorway, Project};
 
@@ -35,6 +37,54 @@ pub fn duplicate_fabric(project: &mut Project, source: &FabricId) -> Option<Fabr
     }
     project.fabrics.insert(id.clone(), fabric);
     Some(id)
+}
+
+/// Adds `fabric` (from a fabric library, say) under a new id and, if a fabric of that name exists,
+/// a `.001`-style name. Returns the new id.
+pub fn add_fabric(project: &mut Project, mut fabric: Fabric) -> FabricId {
+    let id = FabricId::new(project.fresh_id(prefix::FABRIC));
+    let names: Vec<&str> = project.fabrics.values().map(|f| f.name.as_str()).collect();
+    if names.contains(&fabric.name.as_str()) {
+        fabric.name = next_name(&fabric.name, &names);
+    }
+    fabric.id = id.clone();
+    project.fabrics.insert(id.clone(), fabric);
+    id
+}
+
+/// Removes fabric `id`. Pieces made of it switch to the first remaining fabric, and colorways
+/// forget their overrides of it. Returns the fabric that took its place, or `None` (changing
+/// nothing) if there is no such fabric or it is the last one.
+pub fn delete_fabric(project: &mut Project, id: &FabricId) -> Option<FabricId> {
+    if !project.fabrics.contains_key(id) || project.fabrics.len() < 2 {
+        return None;
+    }
+    project.fabrics.shift_remove(id);
+    let heir = project.fabrics.keys().next()?.clone();
+    for piece in project.pieces.values_mut() {
+        if piece.fabric == *id {
+            piece.fabric = heir.clone();
+        }
+    }
+    for cw in project.colorways.values_mut() {
+        cw.over.shift_remove(id);
+    }
+    Some(heir)
+}
+
+/// Removes colorway `id`; if it was the active one, the first remaining becomes active. Returns
+/// `false` (changing nothing) if there is no such colorway or it is the last one.
+pub fn delete_colorway(project: &mut Project, id: &ColorwayId) -> bool {
+    if !project.colorways.contains_key(id) || project.colorways.len() < 2 {
+        return false;
+    }
+    project.colorways.shift_remove(id);
+    if project.active_colorway == *id
+        && let Some(first) = project.colorways.keys().next()
+    {
+        project.active_colorway = first.clone();
+    }
+    true
 }
 
 /// Adds a copy of colorway `source` with its fabric overrides, last in the list, and returns its
@@ -86,6 +136,42 @@ mod tests {
             p.fabrics[&src].color, "#ff0000",
             "editing the copy leaves the source alone"
         );
+    }
+
+    #[test]
+    fn deleting_a_fabric_moves_its_pieces_to_another() {
+        let mut p = project();
+        let first = p.fabrics.keys().next().cloned().expect("a fabric");
+        assert!(delete_fabric(&mut p, &first).is_none(), "the last fabric stays");
+        let second = duplicate_fabric(&mut p, &first).expect("copy");
+        let pts =
+            [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)].map(|(x, y)| (azam_geom::Vec2::new(x, y), false));
+        let piece = crate::create_piece(&mut p, &pts).expect("piece");
+        p.pieces.get_mut(&piece).expect("piece").fabric = second.clone();
+        assert_eq!(delete_fabric(&mut p, &second), Some(first.clone()));
+        assert_eq!(p.pieces[&piece].fabric, first);
+        assert_eq!(p.fabrics.len(), 1);
+    }
+
+    #[test]
+    fn deleting_the_active_colorway_activates_another() {
+        let mut p = project();
+        let first = p.active_colorway.clone();
+        assert!(!delete_colorway(&mut p, &first), "the last colorway stays");
+        let second = duplicate_colorway(&mut p, &first).expect("copy");
+        p.active_colorway = second.clone();
+        assert!(delete_colorway(&mut p, &second));
+        assert_eq!(p.active_colorway, first);
+    }
+
+    #[test]
+    fn a_library_fabric_gets_a_fresh_id_and_a_free_name() {
+        let mut p = project();
+        let existing = p.fabrics.values().next().cloned().expect("a fabric");
+        let id = add_fabric(&mut p, existing.clone());
+        assert_ne!(id, existing.id);
+        assert_eq!(p.fabrics[&id].name, format!("{}.001", existing.name));
+        assert_eq!(p.fabrics[&id].phys, existing.phys);
     }
 
     #[test]

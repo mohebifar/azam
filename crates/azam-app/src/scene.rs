@@ -286,31 +286,57 @@ fn stitch_draws(project: &Project, selection: &Selection) -> Vec<StitchDraw> {
         .stitches
         .values()
         .filter_map(|st| {
-            let piece = project.pieces.get(st.p.as_ref()?)?;
-            let outline = piece.graded_outline(&project.active_size, &project.base_size);
-            let style = StitchStyle::of(st);
-            let inward = inward_sign(&outline.poly);
-            let segments: Vec<&azam_geom::Segment> = if st.seg.0 == azam_doc::WHOLE_OUTLINE {
-                outline.segments.iter().collect()
-            } else {
-                vec![&outline.segments[outline.segment_index(&st.seg)?]]
-            };
-            let rows = (0..style.rows)
-                .flat_map(|r| {
-                    let off = style.row_offset(r) * inward;
-                    segments.iter().map(move |s| offset_polyline(&s.poly, off))
-                })
-                .collect();
-            Some(StitchDraw {
-                rows,
-                length: style.length,
-                gap: style.gap,
-                width: style.width,
-                color: parse_hex(&style.color).unwrap_or(0x333333),
-                selected: selection.part.as_ref() == Some(&Part::Stitch(st.id.clone())),
-            })
+            stitch_draw(
+                project,
+                st,
+                selection.part.as_ref() == Some(&Part::Stitch(st.id.clone())),
+            )
         })
         .collect()
+}
+
+/// The topstitches on `piece`, as drawn (for printing them on the cloth in 3D).
+pub(crate) fn piece_stitches(project: &Project, piece: &PieceId) -> Vec<StitchDraw> {
+    project
+        .stitches
+        .values()
+        .filter(|st| st.p.as_ref() == Some(piece))
+        .filter_map(|st| stitch_draw(project, st, false))
+        .collect()
+}
+
+/// Topstitch `st` with its rows offset into its piece.
+fn stitch_draw(project: &Project, st: &azam_doc::Stitch, selected: bool) -> Option<StitchDraw> {
+    let piece = project.pieces.get(st.p.as_ref()?)?;
+    let outline = piece.graded_outline(&project.active_size, &project.base_size);
+    let style = StitchStyle::of(st);
+    let inward = inward_sign(&outline.poly);
+    let segments: Vec<&azam_geom::Segment> = if st.seg.0 == azam_doc::WHOLE_OUTLINE {
+        outline.segments.iter().collect()
+    } else {
+        vec![&outline.segments[outline.segment_index(&st.seg)?]]
+    };
+    let rows = (0..style.rows)
+        .flat_map(|r| {
+            let off = style.row_offset(r) * inward;
+            segments.iter().map(move |s| offset_polyline(&s.poly, off))
+        })
+        .collect();
+    let tape = if azam_doc::is_zipper(st) {
+        let off = azam_doc::ZIPPER_TAPE_MM / 2.0 * inward;
+        segments.iter().map(|s| offset_polyline(&s.poly, off)).collect()
+    } else {
+        Vec::new()
+    };
+    Some(StitchDraw {
+        rows,
+        length: style.length,
+        gap: style.gap,
+        width: style.width,
+        color: parse_hex(&style.color).unwrap_or(0x333333),
+        selected,
+        tape,
+    })
 }
 
 /// Buttons, buttonholes and comments.
@@ -319,29 +345,12 @@ fn add_items(scene: &mut PatternScene, project: &Project, selection: &Selection)
     let selected =
         |kind, id: &azam_doc::ItemId| selection.part.as_ref() == Some(&Part::Item(kind, id.clone()));
     for b in project.buttons.values() {
-        let Some(pos) = at(b) else { continue };
-        scene.buttons.push(ButtonDraw {
-            at: pos,
-            diameter: b.num(azam_doc::BUTTON_SIZE_KEY, azam_doc::DEFAULT_BUTTON_SIZE_MM),
-            color: b
-                .text(azam_doc::COLOR_KEY)
-                .and_then(parse_hex)
-                .unwrap_or(0x333333),
-            selected: selected(ItemKind::Button, &b.id),
-            fastened_to: b
-                .text(azam_doc::BUTTON_FASTEN_KEY)
-                .and_then(|h| project.holes.get(&azam_doc::ItemId::new(h)))
-                .and_then(at),
-        });
+        scene
+            .buttons
+            .extend(button_draw(project, b, selected(ItemKind::Button, &b.id)));
     }
     for h in project.holes.values() {
-        let Some(pos) = at(h) else { continue };
-        scene.holes.push(HoleDraw {
-            at: pos,
-            length: h.num(azam_doc::HOLE_LENGTH_KEY, azam_doc::DEFAULT_HOLE_LENGTH_MM),
-            angle: h.num(azam_doc::HOLE_ANGLE_KEY, 0.0),
-            selected: selected(ItemKind::Hole, &h.id),
-        });
+        scene.holes.extend(hole_draw(h, selected(ItemKind::Hole, &h.id)));
     }
     for c in project.comments.values() {
         let Some(pos) = at(c) else { continue };
@@ -353,6 +362,53 @@ fn add_items(scene: &mut PatternScene, project: &Project, selection: &Selection)
             selected: selected(ItemKind::Comment, &c.id),
         });
     }
+}
+
+/// Button `b` as drawn, if it has a position.
+fn button_draw(project: &Project, b: &azam_doc::Item, selected: bool) -> Option<ButtonDraw> {
+    let at = |it: &azam_doc::Item| Some(Vec2::new(it.x?, it.y?));
+    Some(ButtonDraw {
+        at: at(b)?,
+        diameter: b.num(azam_doc::BUTTON_SIZE_KEY, azam_doc::DEFAULT_BUTTON_SIZE_MM),
+        color: b
+            .text(azam_doc::COLOR_KEY)
+            .and_then(parse_hex)
+            .unwrap_or(0x333333),
+        selected,
+        fastened_to: b
+            .text(azam_doc::BUTTON_FASTEN_KEY)
+            .and_then(|h| project.holes.get(&azam_doc::ItemId::new(h)))
+            .and_then(at),
+    })
+}
+
+/// Buttonhole `h` as drawn, if it has a position.
+fn hole_draw(h: &azam_doc::Item, selected: bool) -> Option<HoleDraw> {
+    Some(HoleDraw {
+        at: Vec2::new(h.x?, h.y?),
+        length: h.num(azam_doc::HOLE_LENGTH_KEY, azam_doc::DEFAULT_HOLE_LENGTH_MM),
+        angle: h.num(azam_doc::HOLE_ANGLE_KEY, 0.0),
+        selected,
+    })
+}
+
+/// The buttons and buttonholes on `piece`, as drawn (for printing them on the cloth in 3D).
+pub(crate) fn piece_trims(project: &Project, piece: &PieceId) -> (Vec<ButtonDraw>, Vec<HoleDraw>) {
+    let on = |it: &&azam_doc::Item| it.p.as_ref() == Some(piece);
+    (
+        project
+            .buttons
+            .values()
+            .filter(on)
+            .filter_map(|b| button_draw(project, b, false))
+            .collect(),
+        project
+            .holes
+            .values()
+            .filter(on)
+            .filter_map(|h| hole_draw(h, false))
+            .collect(),
+    )
 }
 
 /// Colour of size `i` of `n` in the nested grading view: blue for the smallest through red for
