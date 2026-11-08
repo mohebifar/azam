@@ -1,7 +1,4 @@
 //! Compares azam-mesh with recorded reference data for every garment template piece.
-//!
-//! Regenerate the data with
-//! `(cd tools/golden && npm install) && node tools/golden/export-mesh.mjs > crates/azam-mesh/tests/golden/mesh.json`.
 
 use azam_geom::{OutlinePoint, PointId, Vec2};
 use azam_mesh::{DEFAULT_SPACING_MM, InternalLine, MeshOptions, PieceMesh, mesh_piece};

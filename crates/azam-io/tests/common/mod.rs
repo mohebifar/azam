@@ -1,6 +1,4 @@
 //! Shared loading and comparison helpers for the golden tests.
-//!
-//! Regenerate the data with `node tools/golden/export-io.mjs > crates/azam-io/tests/golden/io.json`.
 
 #![allow(dead_code, reason = "each test binary uses a different subset")]
 

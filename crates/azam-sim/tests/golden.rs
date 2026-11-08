@@ -3,8 +3,6 @@
 //! sewing, pins, particle properties, initial positions, colour batches), solver frames, rebuilds
 //! that reuse the previous drape, fit maps, the untangler and skin-vs-cloth collision.
 //!
-//! Regenerate the data with `node tools/golden/export-sim.mjs > crates/azam-sim/tests/golden/sim.json`.
-//!
 //! Tolerances: the port performs the same operations in the same order and the same precision as
 //! the reference (single-precision storage, double-precision arithmetic), and matches it bit for
 //! bit. Builds are still compared with a small relative tolerance because they go through `sin`,

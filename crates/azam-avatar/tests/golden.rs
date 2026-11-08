@@ -1,9 +1,6 @@
 //! Compares azam-avatar with recorded reference data: presets, numeric helpers, three parametric
 //! avatars (torso profile, primitives, joints, distance grid, display mesh, arrangement of every
 //! garment template piece) and a morph-target avatar built from a small synthetic body pack.
-//!
-//! Regenerate the data (and the synthetic pack) with
-//! `node tools/golden/export-avatar.mjs > crates/azam-avatar/tests/golden/avatar.json`.
 
 #![allow(clippy::float_cmp)]
 

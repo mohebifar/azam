@@ -1,8 +1,6 @@
 //! Compares azam-doc with recorded reference data: fabrics, curve helpers, loading, every garment
 //! template, measurements, scripted edit sequences and a file round trip.
 //!
-//! Regenerate the data with `node tools/golden/export-doc.mjs > crates/azam-doc/tests/golden/doc.json`.
-//!
 //! Generated ids are compared exactly: the recorded data was produced with the same `<prefix>_<n>`
 //! id scheme as [`IdGen`], so the same edits give the same ids.
 

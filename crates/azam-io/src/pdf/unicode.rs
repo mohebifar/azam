@@ -657,7 +657,7 @@ mod tests {
     #[test]
     fn mixed_lines_keep_left_to_right_order() {
         // The name comes first, at the left, as the line was composed.
-        let runs = layout("لباده  ·  base size M", FontStyle::Normal).expect("embedded");
+        let runs = layout("پیراهن  ·  base size M", FontStyle::Normal).expect("embedded");
         assert!(matches!(&runs[0], Run::Embedded(FontId(0), _)), "{runs:?}");
         assert!(matches!(runs.last(), Some(Run::Base(c)) if Run::base_text(c).ends_with("base size M")));
     }

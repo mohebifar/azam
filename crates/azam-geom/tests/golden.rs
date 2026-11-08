@@ -1,6 +1,4 @@
 //! Compares azam-geom with recorded reference data for every garment template piece.
-//!
-//! Regenerate the data with `node tools/golden/export-geom.mjs > crates/azam-geom/tests/golden/geom.json`.
 
 use std::collections::BTreeMap;
 

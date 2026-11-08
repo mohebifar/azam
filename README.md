@@ -200,8 +200,6 @@ claude mcp add azam-headless -- "$PWD/scripts/azam-mcp.sh"
 | `crates/azam-mcp` | The MCP tools over stdio on a headless window (the app serves them over HTTP itself, from `azam-app`'s `mcp` module). Binary `azam-mcp`. |
 | `tools/mhpack` | Builds `assets/makehuman/makehuman-cc0.bin` from MakeHuman's CC0 assets (see `assets/makehuman/README.md`). |
 | `third_party/bui` | The BUI fork, created by `scripts/setup-bui.sh` (git-ignored): upstream BUI at `third_party/bui-base-commit.txt` plus `third_party/bui-azam.patch`. After changing the fork, regenerate the patch with `cd third_party/bui && git add -N . && git diff --binary > ../bui-azam.patch`. |
-| `tools/golden` | Node scripts that run the reference JavaScript engine (`src.js`) and record golden data for the Rust tests. |
-| `src.js` | The original JavaScript app, kept as the reference implementation. |
 
 ### Changes in the BUI fork
 
@@ -228,9 +226,4 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt-azam                               # formats azam only (not the vendored BUI)
 ```
 
-Building needs CMake and a C compiler (BUI's kit is C). Golden data is regenerated with the scripts
-in `tools/golden` (run `npm install` there first), for example:
-
-```bash
-node tools/golden/export-geom.mjs > crates/azam-geom/tests/golden/geom.json
-```
+Building needs CMake and a C compiler (BUI's kit is C).
