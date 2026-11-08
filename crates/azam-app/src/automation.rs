@@ -46,10 +46,10 @@ impl AzamApp {
         &mut self.session
     }
 
-    /// Whether the preferences ask for the MCP endpoint.
+    /// Whether the preferences ask for the Claude Code server to start on launch.
     #[must_use]
-    pub fn mcp_enabled(&self) -> bool {
-        self.prefs.mcp_server
+    pub fn mcp_autostart(&self) -> bool {
+        self.prefs.mcp_autostart
     }
 
     /// The 3D view's camera.

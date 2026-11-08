@@ -147,6 +147,8 @@ pub struct AzamApp {
     pub(crate) tool_labels: bool,
     /// Whether the 3D view's sidebar (N) is shown.
     pub(crate) show_sidebar: bool,
+    /// Port the Claude Code server listens on when started.
+    pub(crate) mcp_port: u16,
     /// The last dart cut, for Adjust Last Operation.
     pub(crate) last_op: Option<crate::redo_panel::LastOp>,
     /// When the project was last auto saved.
@@ -313,6 +315,7 @@ impl AzamApp {
             fabric_library: None,
             tool_labels: false,
             show_sidebar: false,
+            mcp_port: crate::mcp::http::DEFAULT_PORT,
             last_op: None,
             modal: None,
             prefs: crate::prefs::Prefs::default(),
@@ -662,6 +665,7 @@ impl AzamApp {
             }
             Operator::ToggleArrangementPoints => self.show_arrangement = !self.show_arrangement,
             Operator::ToggleSidebar => self.toggle_sidebar(),
+            Operator::ClaudeServer => self.toggle_claude_server(cx),
             Operator::ToggleCurvePoint => self.toggle_curve_points(),
             Operator::ToggleToolLabels => {
                 self.toggle_tool_labels();

@@ -1,17 +1,19 @@
 //! The app's MCP endpoint: Streamable HTTP (plain JSON responses, no event stream) at
 //! `http://127.0.0.1:7465/mcp`, so an agent drives the window the person has open.
 //!
-//! A background thread accepts connections on the loopback interface only; each request's tool
-//! call runs on the UI thread (through a [`UiSender`]) against the window's [`Server`], so edits
-//! land between frames like the person's own. Requests from web pages (an `Origin` that is not
-//! local) and other host names (DNS rebinding) are refused. Preferences turn it off.
+//! It runs only on demand: the person starts it (the Claude Code panel in the 3D view's sidebar,
+//! File ▸ Claude Code Server, or Preferences to start it on launch) and can stop it any time.
+//! While it runs, a background thread accepts connections on the loopback interface only; each
+//! request's tool call runs on the UI thread (through a [`UiSender`]) against the window's
+//! [`Server`], so edits land between frames like the person's own. Requests from web pages (an
+//! `Origin` that is not local) and other host names (DNS rebinding) are refused.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use blenderui::UiSender;
@@ -33,11 +35,25 @@ const SIM_LIMIT: Duration = Duration::from_secs(180);
 const LAYOUT_WAIT: Duration = Duration::from_millis(300);
 /// How often a playing `simulate` call checks the simulated time.
 const SIM_POLL: Duration = Duration::from_millis(100);
+/// How often the listening thread checks for connections and for being stopped.
+const ACCEPT_POLL: Duration = Duration::from_millis(30);
 
-/// Whether the endpoint should listen (the Preferences switch).
-static ENABLED: AtomicBool = AtomicBool::new(false);
-/// What the endpoint is doing, for the Preferences window.
-static STATE: Mutex<String> = Mutex::new(String::new());
+/// Bumped by every start and stop: a listening thread whose run is no longer current ends, and
+/// requests are refused while it is even (stopped).
+static RUN: AtomicU64 = AtomicU64::new(0);
+/// Who is connected and what they did last.
+static ACTIVITY: Mutex<Activity> = Mutex::new(Activity {
+    client: None,
+    last: None,
+});
+
+/// Who is connected and what they did last.
+struct Activity {
+    /// The client's name, from its `initialize`.
+    client: Option<String>,
+    /// The last tool called, and when.
+    last: Option<(String, Instant)>,
+}
 
 thread_local! {
     /// The tools' server, on the UI thread (where the window lives).
@@ -50,69 +66,95 @@ pub fn url(port: u16) -> String {
     format!("http://127.0.0.1:{port}/mcp")
 }
 
-/// Turns the endpoint on or off (it opens or closes its port within a moment).
-pub fn set_enabled(on: bool) {
-    ENABLED.store(on, Ordering::Relaxed);
-    if !on {
-        set_state("Off".into());
-    }
-}
-
-/// What the endpoint is doing: listening where, off, or why it cannot listen.
+/// The command that connects Claude Code to the endpoint on `port`.
 #[must_use]
-pub fn state() -> String {
-    STATE.lock().map(|s| s.clone()).unwrap_or_default()
+pub fn claude_command(port: u16) -> String {
+    format!("claude mcp add --transport http azam {}", url(port))
 }
 
-fn set_state(s: String) {
-    if let Ok(mut state) = STATE.lock() {
-        *state = s;
-    }
-}
-
-/// Serves the tools for `window` at [`url`]`(port)`, listening while `enabled` (see
-/// [`set_enabled`]). Call once, on the UI thread.
-pub fn start(cx: &mut App, window: WindowHandle<AzamApp>, port: u16, enabled: bool) {
+/// Lets the endpoint act on `window` once it is started. Call once, on the UI thread; nothing
+/// listens yet.
+pub fn install(window: WindowHandle<AzamApp>) {
     SERVER.with(|s| *s.borrow_mut() = Some(Server::new(window, true)));
-    set_enabled(enabled);
-    let ui = cx.ui_sender();
-    let spawned = std::thread::Builder::new()
+}
+
+/// Whether the endpoint is running.
+#[must_use]
+pub fn is_running() -> bool {
+    RUN.load(Ordering::SeqCst) % 2 == 1
+}
+
+/// Starts listening on `port` (a no-op while running), running tool calls through `ui`.
+///
+/// # Errors
+/// Fails when the port cannot be opened (another azam has it, say).
+pub fn start(ui: UiSender, port: u16) -> Result<(), String> {
+    if is_running() {
+        return Ok(());
+    }
+    // a thread just stopped may still hold the port for a moment
+    let mut tries = 0;
+    let listener = loop {
+        match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(l) => break l,
+            Err(_) if tries < 10 => {
+                tries += 1;
+                std::thread::sleep(ACCEPT_POLL);
+            }
+            Err(e) => return Err(format!("cannot listen on port {port}: {e}")),
+        }
+    };
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
+    let run = RUN.fetch_add(1, Ordering::SeqCst) + 1;
+    if let Ok(mut a) = ACTIVITY.lock() {
+        *a = Activity {
+            client: None,
+            last: None,
+        };
+    }
+    std::thread::Builder::new()
         .name("azam-mcp".into())
-        .spawn(move || listen(port, &ui));
-    if let Err(e) = spawned {
-        set_state(format!("Could not start: {e}"));
+        .spawn(move || listen(&listener, run, port, &ui))
+        .map(|_| ())
+        .map_err(|e| {
+            RUN.fetch_add(1, Ordering::SeqCst);
+            format!("could not start: {e}")
+        })
+}
+
+/// Stops listening and refuses requests on connections still open.
+pub fn stop() {
+    if is_running() {
+        RUN.fetch_add(1, Ordering::SeqCst);
     }
 }
 
-/// Accepts connections while enabled; opens and closes the port as the switch moves.
-fn listen(port: u16, ui: &UiSender) {
-    let mut listener: Option<TcpListener> = None;
-    loop {
-        let on = ENABLED.load(Ordering::Relaxed);
-        if on && listener.is_none() {
-            match TcpListener::bind(("127.0.0.1", port)).and_then(|l| l.set_nonblocking(true).map(|()| l)) {
-                Ok(l) => {
-                    set_state(format!("Listening on {}", url(port)));
-                    listener = Some(l);
-                }
-                Err(e) => {
-                    // another azam has the port: try again now and then
-                    set_state(format!("Cannot listen on port {port}: {e}"));
-                    std::thread::sleep(Duration::from_secs(2));
-                    continue;
-                }
-            }
-        } else if !on && listener.is_some() {
-            listener = None;
-        }
-        match listener.as_ref().map(TcpListener::accept) {
-            Some(Ok((stream, _))) => {
+/// Who is connected and what they last did, while running: `(client, last tool, seconds ago)`.
+#[must_use]
+pub fn activity() -> (Option<String>, Option<(String, f64)>) {
+    ACTIVITY.lock().map_or((None, None), |a| {
+        (
+            a.client.clone(),
+            a.last
+                .as_ref()
+                .map(|(t, at)| (t.clone(), at.elapsed().as_secs_f64())),
+        )
+    })
+}
+
+/// Accepts connections until run `run` is no longer current.
+fn listen(listener: &TcpListener, run: u64, port: u16, ui: &UiSender) {
+    while RUN.load(Ordering::SeqCst) == run {
+        match listener.accept() {
+            Ok((stream, _)) => {
                 let ui = ui.clone();
                 let _ = std::thread::Builder::new()
                     .name("azam-mcp-conn".into())
                     .spawn(move || serve(stream, port, &ui));
             }
-            _ => std::thread::sleep(Duration::from_millis(30)),
+            Err(_) => std::thread::sleep(ACCEPT_POLL),
         }
     }
 }
@@ -310,8 +352,8 @@ fn is_loopback(host: &str) -> bool {
 
 /// Answers one request.
 fn handle(request: &Request, port: u16, ui: &UiSender) -> Response {
-    if !ENABLED.load(Ordering::Relaxed) {
-        return Response::text(503, "the MCP server is turned off in azam's Preferences");
+    if !is_running() {
+        return Response::text(503, "azam's Claude Code server was stopped");
     }
     // DNS rebinding: a page on another name must not reach the port through this address
     if request.header("host").is_some_and(|h| !is_loopback(h)) {
@@ -341,6 +383,11 @@ fn handle(request: &Request, port: u16, ui: &UiSender) -> Response {
             );
         }
     };
+    if msg["method"] == "initialize"
+        && let Ok(mut a) = ACTIVITY.lock()
+    {
+        a.client = msg["params"]["clientInfo"]["name"].as_str().map(str::to_owned);
+    }
     let mut call = |name: &str, args: &Map<String, Value>| dispatch(ui, name, args);
     match super::respond_any(&msg, true, &mut call) {
         Some(answer) => Response::json(200, &answer),
@@ -370,6 +417,9 @@ fn on_ui<R: Send + 'static>(
 /// now and then, so the window keeps drawing while it runs.
 fn dispatch(ui: &UiSender, name: &str, args: &Map<String, Value>) -> Output {
     let started = Instant::now();
+    if let Ok(mut a) = ACTIVITY.lock() {
+        a.last = Some((name.to_owned(), started));
+    }
     let (name, args) = (name.to_owned(), args.clone());
     let out = if name == "simulate" {
         let a = args.clone();

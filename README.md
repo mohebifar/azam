@@ -138,19 +138,24 @@ closed shapes (curves kept).
 
 ## Designing with an AI agent (MCP)
 
-azam serves the [Model Context Protocol](https://modelcontextprotocol.io) so an agent such as
-Claude Code can design in the window you have open: it reads and edits the pattern with CAD tools,
+azam can serve the [Model Context Protocol](https://modelcontextprotocol.io) so an agent such as
+Claude Code designs in the window you have open: it reads and edits the pattern with CAD tools,
 drapes the garment and takes screenshots, and you watch every edit land (the status bar says what
-it just did) and can keep working alongside it. Open azam, then in Claude Code:
+it just did) and can keep working alongside it.
+
+The server runs only when you start it: press N over the 3D view and click Start Server in the
+sidebar's Claude Code panel (or File ▸ Claude Code Server, also in F3). The panel shows whether it
+runs, which client is connected and what it did last, and Copy Setup Command puts the command that
+connects Claude Code on the clipboard:
 
 ```bash
 claude mcp add --transport http azam http://127.0.0.1:7465/mcp
 ```
 
-(this repository's `.mcp.json` already registers it for Claude Code run here). Start azam before
-Claude Code, or reconnect from `/mcp`. The endpoint listens on the loopback interface only and
-refuses web pages and other host names; Edit ▸ Preferences turns it off (Claude Code Server), and
-`--mcp-port N` (or `AZAM_MCP_PORT`) and `--no-mcp` set it from the command line.
+(this repository's `.mcp.json` already registers it for Claude Code run here; if Claude Code
+started before the server, reconnect from `/mcp`). It listens on the loopback interface only and
+refuses web pages and other host names. Edit ▸ Preferences can start it whenever azam opens;
+`--mcp` starts it from the command line and `--mcp-port N` (or `AZAM_MCP_PORT`) moves it.
 
 Then ask, for example, "make this a bias-cut silk slip dress with a cowl back". The tools:
 

@@ -7,6 +7,7 @@
 pub mod describe;
 pub mod http;
 pub mod image;
+mod panel;
 pub mod tools;
 
 use serde_json::{Map, Value, json};

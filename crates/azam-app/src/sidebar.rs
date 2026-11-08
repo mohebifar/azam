@@ -1,5 +1,5 @@
-//! The 3D view's sidebar (Blender's N panel): the selected piece's placement as numbers, and the
-//! view's overlays.
+//! The 3D view's sidebar (Blender's N panel): the selected piece's placement as numbers, the
+//! view's overlays, and the Claude Code server.
 
 use blenderui::prelude::*;
 
@@ -116,11 +116,13 @@ impl AzamApp {
                 ))
                 .child(toggle("Points", points, Operator::ToggleArrangementPoints, cx)),
         ];
+        let claude = self.claude_panel_rows(cx);
         Some(
             div()
                 .class("sidebar")
                 .child(self.panel("Item", item))
-                .child(self.panel("View", view)),
+                .child(self.panel("View", view))
+                .child(self.panel("Claude Code", claude)),
         )
     }
 }

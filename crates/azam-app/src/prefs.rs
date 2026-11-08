@@ -12,15 +12,17 @@ use serde::{Deserialize, Serialize};
 use crate::app::AzamApp;
 use crate::operators::Operator;
 
-/// What the Preferences window says about the MCP endpoint in `state`.
-fn mcp_note(state: &str) -> String {
-    match state.strip_prefix("Listening on ") {
-        Some(url) => {
-            format!("Listening on {url}. Connect Claude Code: claude mcp add --transport http azam {url}")
-        }
-        None if state.is_empty() => "Not running (headless or turned off).".to_owned(),
-        None => state.to_owned(),
-    }
+/// What the Preferences window says about the Claude Code server on `port`.
+fn mcp_note(port: u16) -> String {
+    let state = if crate::mcp::http::is_running() {
+        format!("Running on {}", crate::mcp::http::url(port))
+    } else {
+        "Off: start it from the 3D view's sidebar (N) or File ▸ Claude Code Server".to_owned()
+    };
+    format!(
+        "{state}. Connect Claude Code with: {}",
+        crate::mcp::http::claude_command(port)
+    )
 }
 
 /// File name of the preferences in the data folder.
@@ -47,8 +49,8 @@ pub struct Prefs {
     pub workspaces: Vec<crate::workspaces::WorkspaceTab>,
     /// Quick Favorites (Q): operators by label, in order.
     pub favorites: Vec<String>,
-    /// Serve the MCP endpoint for AI agents such as Claude Code (on the loopback interface).
-    pub mcp_server: bool,
+    /// Start the Claude Code server (MCP over HTTP, loopback only) when azam opens.
+    pub mcp_autostart: bool,
 }
 
 impl Default for Prefs {
@@ -62,7 +64,7 @@ impl Default for Prefs {
             layouts: BTreeMap::new(),
             workspaces: Vec::new(),
             favorites: Vec::new(),
-            mcp_server: true,
+            mcp_autostart: false,
         }
     }
 }
@@ -376,15 +378,12 @@ impl AzamApp {
                 ),
             )
             .child(check(
-                "Claude Code Server (MCP)",
-                self.prefs.mcp_server,
-                |a, v| {
-                    a.prefs.mcp_server = v;
-                    crate::mcp::http::set_enabled(v);
-                },
+                "Start Claude Code Server on Launch",
+                self.prefs.mcp_autostart,
+                |a, v| a.prefs.mcp_autostart = v,
                 cx,
             ))
-            .child(div().class("pnote").child(mcp_note(&crate::mcp::http::state())))
+            .child(div().class("pnote").child(mcp_note(self.mcp_port)))
             .child(div().class("pnote").child(match &self.prefs_path {
                 Some(p) => format!("Saved in {}", p.display()),
                 None => "Not saved (no data folder).".to_owned(),

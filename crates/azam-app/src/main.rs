@@ -24,10 +24,10 @@ struct Args {
     open: Option<String>,
     /// A live session to join (`host:port` or a share code).
     join: Option<String>,
-    /// Port of the MCP endpoint for AI agents.
+    /// Port of the Claude Code server.
     mcp_port: Option<u16>,
-    /// Leave the MCP endpoint off.
-    no_mcp: bool,
+    /// Start the Claude Code server on opening.
+    mcp: bool,
     frames: usize,
     size: (f32, f32),
 }
@@ -49,8 +49,8 @@ Options:
   --render-size WxH    image size for --render (default 1280x800)
   --samples N          samples per pixel for --render
   --join TARGET        join a live session (host:port or a share code) on opening
-  --mcp-port N         port of the MCP endpoint for AI agents (default 7465, or AZAM_MCP_PORT)
-  --no-mcp             leave the MCP endpoint off
+  --mcp                start the Claude Code server (MCP over HTTP) on opening
+  --mcp-port N         its port (default 7465, or AZAM_MCP_PORT)
   -h, --help           show this help
 ";
 
@@ -96,7 +96,7 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
         open: None,
         join: None,
         mcp_port: None,
-        no_mcp: false,
+        mcp: false,
         frames: 0,
         size: WINDOW_SIZE,
     };
@@ -149,8 +149,8 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
             k += 2;
             continue;
         }
-        if flag == "--no-mcp" {
-            a.no_mcp = true;
+        if flag == "--mcp" {
+            a.mcp = true;
             k += 1;
             continue;
         }
@@ -235,15 +235,21 @@ fn write_render(app: &AzamApp, path: &str, size: (u32, u32), samples: u32) {
     }
 }
 
-/// Opens the window's links to the outside: the MCP endpoint for AI agents, and the live session
-/// `--join` names.
+/// Opens the window's links to the outside: the Claude Code server (started now only with `--mcp`
+/// or when Preferences ask for it), and the live session `--join` names.
 fn connect(window: &WindowHandle<AzamApp>, cx: &mut App, args: &Args) {
     let port = args
         .mcp_port
         .or_else(|| std::env::var("AZAM_MCP_PORT").ok()?.parse().ok())
         .unwrap_or(azam_app::mcp::http::DEFAULT_PORT);
-    let enabled = !args.no_mcp && window.root().read(cx).mcp_enabled();
-    azam_app::mcp::http::start(cx, window.clone(), port, enabled);
+    azam_app::mcp::http::install(window.clone());
+    let start = args.mcp || window.root().read(cx).mcp_autostart();
+    window.root().update(cx, |app, cx| {
+        app.set_mcp_port(port);
+        if start {
+            app.start_claude_server(cx);
+        }
+    });
     if let Some(target) = args.join.clone() {
         window.root().update(cx, |app, cx| {
             if let Err(e) = app.join_session(&target, cx) {
