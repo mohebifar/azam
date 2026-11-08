@@ -46,6 +46,12 @@ impl AzamApp {
         &mut self.session
     }
 
+    /// Whether the preferences ask for the MCP endpoint.
+    #[must_use]
+    pub fn mcp_enabled(&self) -> bool {
+        self.prefs.mcp_server
+    }
+
     /// The 3D view's camera.
     #[must_use]
     pub fn camera(&self) -> OrbitCamera {
@@ -130,6 +136,14 @@ impl AzamApp {
             stopped,
             fit: self.scene3d.fit_summary.map(|f| (f.tight, f.over_limit)),
         })
+    }
+
+    /// Share of the garment that is tight and that is over its fabric's limit, as it hangs now.
+    pub fn fit_summary(&mut self) -> Option<(f64, f64)> {
+        let renderer = renderer_of(&mut self.viewport).ok()?;
+        self.scene3d
+            .update_fit(&self.session.project, Some(azam_sim::FitMode::Fit), renderer);
+        self.scene3d.fit_summary.map(|f| (f.tight, f.over_limit))
     }
 
     /// Renders the 3D view off screen from `camera` at `width` x `height` pixels in `shading`

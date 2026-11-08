@@ -20,6 +20,7 @@ pub mod history_view;
 mod icons;
 pub mod import;
 pub mod marker_view;
+pub mod mcp;
 pub mod modal;
 pub mod operators;
 mod outliner;

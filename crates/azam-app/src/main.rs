@@ -24,6 +24,10 @@ struct Args {
     open: Option<String>,
     /// A live session to join (`host:port` or a share code).
     join: Option<String>,
+    /// Port of the MCP endpoint for AI agents.
+    mcp_port: Option<u16>,
+    /// Leave the MCP endpoint off.
+    no_mcp: bool,
     frames: usize,
     size: (f32, f32),
 }
@@ -45,12 +49,15 @@ Options:
   --render-size WxH    image size for --render (default 1280x800)
   --samples N          samples per pixel for --render
   --join TARGET        join a live session (host:port or a share code) on opening
+  --mcp-port N         port of the MCP endpoint for AI agents (default 7465, or AZAM_MCP_PORT)
+  --no-mcp             leave the MCP endpoint off
   -h, --help           show this help
 ";
 
 /// Options that take a value.
-const WITH_VALUE: [&str; 10] = [
+const WITH_VALUE: [&str; 11] = [
     "--join",
+    "--mcp-port",
     "--shading",
     "--screenshot",
     "--render",
@@ -88,6 +95,8 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
         shading: None,
         open: None,
         join: None,
+        mcp_port: None,
+        no_mcp: false,
         frames: 0,
         size: WINDOW_SIZE,
     };
@@ -106,6 +115,7 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
                 "--screenshot" => a.screenshot = Some(value),
                 "--render" => a.render = Some(value),
                 "--join" => a.join = Some(value),
+                "--mcp-port" => a.mcp_port = Some(parse_num(flag, &value)?),
                 "--render-size" => a.render_size = parse_size(flag, &value)?,
                 "--samples" => a.samples = parse_num(flag, &value)?,
                 "--workspace" => {
@@ -137,6 +147,11 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
                 _ => a.size = parse_size(flag, &value)?,
             }
             k += 2;
+            continue;
+        }
+        if flag == "--no-mcp" {
+            a.no_mcp = true;
+            k += 1;
             continue;
         }
         if flag.starts_with("-psn_") {
@@ -220,6 +235,24 @@ fn write_render(app: &AzamApp, path: &str, size: (u32, u32), samples: u32) {
     }
 }
 
+/// Opens the window's links to the outside: the MCP endpoint for AI agents, and the live session
+/// `--join` names.
+fn connect(window: &WindowHandle<AzamApp>, cx: &mut App, args: &Args) {
+    let port = args
+        .mcp_port
+        .or_else(|| std::env::var("AZAM_MCP_PORT").ok()?.parse().ok())
+        .unwrap_or(azam_app::mcp::http::DEFAULT_PORT);
+    let enabled = !args.no_mcp && window.root().read(cx).mcp_enabled();
+    azam_app::mcp::http::start(cx, window.clone(), port, enabled);
+    if let Some(target) = args.join.clone() {
+        window.root().update(cx, |app, cx| {
+            if let Err(e) = app.join_session(&target, cx) {
+                eprintln!("azam: could not join {target}: {e}");
+            }
+        });
+    }
+}
+
 fn main() {
     let args = args_or_exit();
     let headless = args.screenshot.is_some() || args.render.is_some();
@@ -277,12 +310,8 @@ fn main() {
                 app.set_workspace(w);
             }
         });
-        if let Some(target) = args.join.clone().filter(|_| !headless) {
-            window.root().update(cx, |app, cx| {
-                if let Err(e) = app.join_session(&target, cx) {
-                    eprintln!("azam: could not join {target}: {e}");
-                }
-            });
+        if !headless {
+            connect(&window, cx, &args);
         }
         if headless {
             // The first frame lays out the areas; the second renders the viewport at its size.

@@ -12,13 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 azam-app = { path = "../azam-app" }
-azam-doc.workspace = true
-azam-geom.workspace = true
-azam-render.workspace = true
-azam-sync = { path = "../azam-sync" }
 blenderui.workspace = true
-glam.workspace = true
-png = "0.17"
 serde_json = { workspace = true, features = ["preserve_order"] }
 
 [lints]

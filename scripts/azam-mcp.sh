@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
-# Starts azam's MCP server (stdio) for an AI agent such as Claude Code, building it first.
+# Starts azam's headless MCP server (stdio), building it first. The azam window serves the same
+# tools over HTTP itself (http://127.0.0.1:7465/mcp); this is for when no window is open.
 # Builds the azam app too, so the server's open_window tool can show the design live.
 # Build output goes to stderr: stdout carries the MCP protocol only.
 set -eu

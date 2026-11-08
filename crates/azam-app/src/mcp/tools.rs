@@ -6,10 +6,10 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
-use azam_app::AzamApp;
-use azam_app::automation::SimReport;
-use azam_app::editors::Editor;
-use azam_app::operators::{Shading, Template};
+use crate::app::AzamApp;
+use crate::automation::SimReport;
+use crate::editors::Editor;
+use crate::operators::{Shading, Template};
 use azam_doc::{
     Command, Created, FabricId, FabricPreset, FlipAxis, PieceId, PieceTransform, PointId, Project, SeamId,
     SeamSide,
@@ -20,8 +20,8 @@ use blenderui::prelude::*;
 use glam::DAffine2;
 use serde_json::{Map, Value, json};
 
-use crate::describe;
-use crate::image::{base64, png_rgba, xrgb_to_rgba};
+use super::describe;
+use super::image::{base64, png_rgba, shrink_rgba, xrgb_to_rgba};
 
 /// Tool arguments.
 type Args = Map<String, Value>;
@@ -32,6 +32,8 @@ pub type Output = Result<Vec<Value>, String>;
 const MAX_SIM_FRAMES: usize = 20_000;
 /// Size of a 3D screenshot when none is asked for: portrait, a whole dress in frame.
 const VIEW3D_SIZE: (u32, u32) = (800, 1000);
+/// Widest a window screenshot is sent (a Retina window is halved).
+const MAX_WINDOW_WIDTH: u32 = 1600;
 /// Largest image side a tool makes.
 const MAX_SIDE: u32 = 2400;
 
@@ -251,7 +253,7 @@ const POINT: &str = "{\"x\": mm, \"y\": mm}";
 /// Every tool, for `tools/list`.
 #[allow(clippy::too_many_lines, reason = "one entry per tool")]
 #[must_use]
-pub fn list() -> Vec<Value> {
+pub fn list(interactive: bool) -> Vec<Value> {
     let piece = json!({"type": "string", "description": "Piece id or name"});
     let pieces = json!({"type": "array", "items": {"type": "string"}, "description": "Piece ids or names"});
     let segment = json!({"type": ["string", "integer"], "description": "Segment: the id of its start corner, or its index (get_piece lists segments)"});
@@ -267,7 +269,7 @@ pub fn list() -> Vec<Value> {
         "required": ["piece", "segment"],
     });
     let camera = json!({
-        "angle": {"type": "string", "enum": ["front", "back", "left", "right", "top", "three-quarter"], "description": "Camera direction (default three-quarter)"},
+        "angle": {"type": "string", "enum": ["current", "front", "back", "left", "right", "top", "three-quarter"], "description": "Camera direction. current: the person's own 3D view as they left it (the default in the app; three-quarter otherwise)"},
         "yaw": {"type": "number", "description": "Degrees about the vertical axis; 0 faces the avatar's front (overrides angle)"},
         "pitch": {"type": "number", "description": "Degrees of elevation; positive looks down"},
         "zoom": {"type": "number", "description": "Above 1 moves closer (default 1: the whole avatar in frame)"},
@@ -289,7 +291,7 @@ pub fn list() -> Vec<Value> {
     if let (Value::Object(m), Value::Object(c)) = (&mut render_props, camera) {
         m.extend(c);
     }
-    vec![
+    let mut tools = vec![
         tool(
             "new_project",
             "Start a new garment from a template drafted to the avatar's measurements: dress, tee, skirt, labadeh, aba or blank (empty). Replaces the open project (save it first if needed).",
@@ -543,24 +545,49 @@ pub fn list() -> Vec<Value> {
             &json!({"target": {"type": "string", "description": "Share code or host:port"}}),
             &["target"],
         ),
-    ]
+    ];
+    if interactive {
+        // in the app the person's own window is the live view: nothing to open, share or join
+        tools.retain(|t| !LIVE_TOOLS.contains(&t["name"].as_str().unwrap_or_default()));
+    }
+    tools
 }
+
+/// Tools that link a headless server to windows; the app itself leaves them out.
+const LIVE_TOOLS: [&str; 3] = ["open_window", "share_session", "join_session"];
+
+/// Tools that only look: they leave the status bar alone.
+const READ_ONLY: [&str; 6] = [
+    "get_project",
+    "get_piece",
+    "get_json",
+    "history",
+    "screenshot",
+    "render",
+];
 
 // -- the server -------------------------------------------------------------------------------
 
 /// The app the tools act on, and what the server started.
 pub struct Server {
     window: WindowHandle<AzamApp>,
+    /// Whether the window is the person's own (the app's HTTP endpoint) rather than a headless
+    /// one: tools then keep the person's view (camera, workspace, pattern framing) as it was.
+    interactive: bool,
+    /// A window screenshot begun and not yet taken.
+    pending_shot: Option<PendingShot>,
     /// Windows opened with `open_window`.
     children: Vec<std::process::Child>,
 }
 
 impl Server {
-    /// A server acting on `window`.
+    /// A server acting on `window` (`interactive`: the person's own window).
     #[must_use]
-    pub fn new(window: WindowHandle<AzamApp>) -> Self {
+    pub fn new(window: WindowHandle<AzamApp>, interactive: bool) -> Self {
         Self {
             window,
+            interactive,
+            pending_shot: None,
             children: Vec::new(),
         }
     }
@@ -570,7 +597,12 @@ impl Server {
     }
 
     fn with<R>(&self, cx: &mut App, f: impl FnOnce(&mut AzamApp, &mut Context<AzamApp>) -> R) -> R {
-        self.window.root().update(cx, f)
+        self.window.root().update(cx, |app, cx| {
+            let out = f(app, cx);
+            // the window redraws with what changed
+            cx.notify();
+            out
+        })
     }
 
     /// Changes the project with `f` as one undo step named `label`. When `f` fails the project
@@ -609,16 +641,27 @@ impl Server {
     ///
     /// # Errors
     /// Why the tool could not run; the project is left unchanged.
-    #[allow(clippy::too_many_lines, reason = "one arm per tool")]
     pub fn call(&mut self, cx: &mut App, name: &str, args: &Args) -> Output {
         // take in what collaborators (a live window) did since the last call
         self.with(cx, |app, _| app.pull_collaborators());
+        let out = self.run(cx, name, args);
+        if self.interactive && out.is_ok() && !READ_ONLY.contains(&name) {
+            // the person sees what the agent just did in the status bar
+            self.with(cx, |app, _| {
+                app.status = format!("Claude Code: {}", name.replace('_', " "));
+            });
+        }
+        out
+    }
+
+    #[allow(clippy::too_many_lines, reason = "one arm per tool")]
+    fn run(&mut self, cx: &mut App, name: &str, args: &Args) -> Output {
         match name {
             "new_project" => self.new_project(cx, args),
             "open_project" => {
                 let path = PathBuf::from(req_str(args, "path")?);
                 if self.is_live(cx) {
-                    let project = azam_app::session::Session::load(&path)?;
+                    let project = crate::session::Session::load(&path)?;
                     self.replace_live(cx, "Open", project, Some(path));
                 } else {
                     self.with(cx, |app, _| app.open_file(&path))?;
@@ -909,7 +952,7 @@ impl Server {
         let template = Template::from_key(key).ok_or_else(|| format!("no template {key:?}"))?;
         let name = opt_str(args, "name").map(str::to_owned);
         if self.is_live(cx) {
-            let mut project = azam_app::app::new_project(template);
+            let mut project = crate::app::new_project(template);
             if let Some(name) = name {
                 project.meta.name = name;
             }
@@ -971,7 +1014,7 @@ impl Server {
     }
 
     fn export(&self, cx: &mut App, args: &Args) -> Output {
-        use azam_app::export::ExportKind as K;
+        use crate::export::ExportKind as K;
         let kind = match req_str(args, "format")? {
             "svg" => K::Svg,
             "dxf" => K::Dxf,
@@ -1362,8 +1405,56 @@ impl Server {
             }
             app.simulate(seconds, MAX_SIM_FRAMES)
         })?;
+        self.sim_output(cx, args, &report)
+    }
+
+    /// Starts the simulation playing in the person's window (`reset` first, if asked) and returns
+    /// the simulated time to stop at. [`Self::poll_simulation`] finishes it, so the window keeps
+    /// drawing the drape while it runs.
+    ///
+    /// # Errors
+    /// Fails before the avatar exists or without a renderer.
+    pub fn start_simulation(&self, cx: &mut App, args: &Args) -> Result<f64, String> {
+        let seconds = opt_f64(args, "seconds")?.unwrap_or(5.0).clamp(0.0, 120.0);
+        let reset = opt_bool(args, "reset").unwrap_or(false);
+        self.with(cx, |app, _| {
+            if reset {
+                app.reset_simulation()?;
+            } else {
+                app.prepare_scene()?;
+            }
+            let until = app.sim_time().unwrap_or(0.0) + seconds;
+            app.set_playing(true);
+            Ok(until)
+        })
+    }
+
+    /// Whether the simulation started by [`Self::start_simulation`] reached `until` (or stopped,
+    /// or `give_up` is set): then it pauses and returns the tool's result.
+    pub fn poll_simulation(&self, cx: &mut App, args: &Args, until: f64, give_up: bool) -> Option<Output> {
+        let app = self.app(cx);
+        let done = give_up || !app.is_playing() || app.sim_time().unwrap_or(0.0) >= until;
+        if !done {
+            return None;
+        }
+        let stopped = (!app.is_playing()).then(|| app.status().to_owned());
+        let fit = self.with(cx, |app, _| {
+            app.set_playing(false);
+            app.fit_summary()
+        });
+        let time = self.app(cx).sim_time().unwrap_or(0.0);
+        let report = SimReport {
+            frames: 0,
+            time,
+            stopped: stopped.or_else(|| give_up.then(|| "took too long; paused".to_owned())),
+            fit,
+        };
+        Some(self.sim_output(cx, args, &report))
+    }
+
+    /// The `simulate` tool's result for `report`.
+    fn sim_output(&self, cx: &mut App, args: &Args, report: &SimReport) -> Output {
         let mut out = vec![json_text(&json!({
-            "framesStepped": report.frames,
             "simulatedSeconds": (report.time * 100.0).round() / 100.0,
             "stoppedBecause": report.stopped,
             "tightShare": report.fit.map(|f| f.0),
@@ -1383,7 +1474,13 @@ impl Server {
         if let Some((lo, hi)) = self.app(cx).scene_bounds() {
             camera.frame(lo, hi);
         }
-        match opt_str(args, "angle").unwrap_or("three-quarter") {
+        let default = if self.interactive {
+            "current"
+        } else {
+            "three-quarter"
+        };
+        match opt_str(args, "angle").unwrap_or(default) {
+            "current" => camera = self.app(cx).camera(),
             "front" => camera.set_preset(ViewPreset::Front),
             "back" => camera.set_preset(ViewPreset::Back),
             "left" => camera.set_preset(ViewPreset::Left),
@@ -1433,7 +1530,22 @@ impl Server {
         png_rgba(w, h, &rgba)
     }
 
-    fn screenshot(&self, cx: &mut App, args: &Args) -> Output {
+    fn screenshot(&mut self, cx: &mut App, args: &Args) -> Output {
+        if self.begin_screenshot(cx, args)? {
+            self.finish_screenshot(cx)
+        } else {
+            Ok(vec![png_block(&self.view3d(cx, args)?)])
+        }
+    }
+
+    /// Prepares the window for a screenshot of `view` pattern or window (maximizes the pattern
+    /// editor, switches workspace). Returns `false` for the 3D view, which needs no window.
+    /// A person's window lays the change out on its next frames: let it draw a few before
+    /// [`Self::finish_screenshot`].
+    ///
+    /// # Errors
+    /// Fails for an unknown view, workspace or piece.
+    pub fn begin_screenshot(&mut self, cx: &mut App, args: &Args) -> Result<bool, String> {
         if let Some(piece) = get(args, "select") {
             let id = piece_id(self.project(cx), piece)?;
             self.with(cx, |app, _| {
@@ -1443,38 +1555,75 @@ impl Server {
                 sel.active = Some(id);
             });
         }
-        match opt_str(args, "view").unwrap_or("3d") {
-            "3d" => Ok(vec![png_block(&self.view3d(cx, args)?)]),
-            "pattern" => {
-                let area = self.with(cx, |app, _| {
-                    if app.area_with(Editor::Pattern).is_none() {
-                        app.set_workspace(azam_app::app::Workspace::Design);
-                    }
-                    let area = app.area_with(Editor::Pattern);
-                    if let Some(id) = area {
-                        app.toggle_maximize(id);
-                    }
-                    area
-                });
-                let shot = self.draw_window(cx);
-                if let Some(id) = area {
-                    self.with(cx, |app, _| {
-                        app.toggle_maximize(id);
-                        app.reframe_pattern();
-                    });
+        let keep = self.keep_view(cx);
+        let area = match opt_str(args, "view").unwrap_or("3d") {
+            "3d" => return Ok(false),
+            "pattern" => self.with(cx, |app, _| {
+                if app.area_with(Editor::Pattern).is_none() {
+                    app.set_workspace(crate::app::Workspace::Design);
                 }
-                Ok(vec![png_block(&shot?)])
-            }
+                let area = app.area_with(Editor::Pattern);
+                if let Some(id) = area {
+                    app.toggle_maximize(id);
+                }
+                area
+            }),
             "window" => {
                 if let Some(name) = opt_str(args, "workspace") {
-                    let ws = azam_app::app::Workspace::from_name(name)
+                    let ws = crate::app::Workspace::from_name(name)
                         .ok_or_else(|| format!("no workspace {name:?}"))?;
                     self.with(cx, |app, _| app.set_workspace(ws));
                 }
-                Ok(vec![png_block(&self.draw_window(cx)?)])
+                None
             }
-            other => Err(format!("no view {other:?} (3d, pattern, window)")),
+            other => return Err(format!("no view {other:?} (3d, pattern, window)")),
+        };
+        self.pending_shot = Some(PendingShot { keep, area });
+        Ok(true)
+    }
+
+    /// Captures the window [`Self::begin_screenshot`] prepared and puts the person's view back.
+    ///
+    /// # Errors
+    /// Fails when no screenshot was begun or the image cannot be encoded.
+    pub fn finish_screenshot(&mut self, cx: &mut App) -> Output {
+        let pending = self.pending_shot.take().ok_or("no screenshot was begun")?;
+        let shot = self.draw_window(cx);
+        if let Some(id) = pending.area {
+            self.with(cx, |app, _| {
+                app.toggle_maximize(id);
+                app.reframe_pattern();
+            });
         }
+        self.restore_view(cx, pending.keep);
+        Ok(vec![png_block(&shot?)])
+    }
+
+    /// What a screenshot may change in the person's window, to put back afterwards.
+    fn keep_view(&self, cx: &App) -> Option<KeptView> {
+        let app = self.app(cx);
+        self.interactive.then(|| KeptView {
+            tab: app.active_tab,
+            pattern: app.pattern_view,
+            framed: app.framed,
+            framed_size: app.framed_size,
+            status: app.status.clone(),
+        })
+    }
+
+    /// Puts back what [`Self::keep_view`] kept.
+    fn restore_view(&self, cx: &mut App, kept: Option<KeptView>) {
+        let Some(kept) = kept else { return };
+        self.with(cx, |app, _| {
+            if app.active_tab != kept.tab {
+                app.activate_tab(kept.tab);
+            }
+            app.pattern_view = kept.pattern;
+            // a view not framed yet (a window just opened) still frames itself
+            app.framed = kept.framed;
+            app.framed_size = kept.framed_size;
+            app.status = kept.status;
+        });
     }
 
     /// The whole window as a PNG, after the frames it takes to lay out and draw.
@@ -1485,7 +1634,8 @@ impl Server {
             cx.draw(id);
         }
         let (w, h, pixels) = cx.draw(id);
-        png_rgba(w as u32, h as u32, &xrgb_to_rgba(&pixels))
+        let (w, h, rgba) = shrink_rgba(w as u32, h as u32, &xrgb_to_rgba(&pixels), MAX_WINDOW_WIDTH);
+        png_rgba(w, h, &rgba)
     }
 
     fn render(&self, cx: &mut App, args: &Args) -> Output {
@@ -1571,6 +1721,23 @@ impl Server {
     }
 }
 
+/// A window screenshot begun and not yet taken.
+struct PendingShot {
+    /// The person's view, to put back.
+    keep: Option<KeptView>,
+    /// The area maximized for it.
+    area: Option<crate::areas::AreaId>,
+}
+
+/// The person's view as a screenshot found it.
+struct KeptView {
+    tab: usize,
+    pattern: crate::pattern::PatternView,
+    framed: bool,
+    framed_size: Option<(f32, f32)>,
+    status: String,
+}
+
 /// The `azam` app binary: `AZAM_BIN`, else next to this server, else on the `PATH`.
 fn azam_binary() -> PathBuf {
     if let Some(bin) = std::env::var_os("AZAM_BIN") {
@@ -1608,7 +1775,7 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_schema_and_a_unique_name() {
-        let tools = list();
+        let tools = list(false);
         let mut names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert_eq!(names.len(), tools.len());
         names.sort_unstable();

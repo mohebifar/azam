@@ -1,37 +1,20 @@
-//! `azam-mcp`: an MCP server (stdio) that lets an AI agent design garments in azam.
+//! `azam-mcp`: azam's MCP tools over stdio, on a headless window of its own.
 //!
-//! It runs the azam app headless in this process: the agent drafts and edits pattern pieces with
-//! CAD tools, sews them, drapes the garment on the avatar and looks at the result with
-//! screenshots. `open_window` shows the same project live in an azam window.
+//! The app itself serves the same tools over HTTP on the window the person has open
+//! (`azam_app::mcp::http`); this binary is for when no window is: scripts, CI, or an agent working
+//! alone. `open_window` shows its project live in an azam window.
 //!
 //! ```text
 //! azam-mcp [--template dress] [--size 1480x900] [PROJECT.azam.json]
 //! claude mcp add azam -- /path/to/azam-mcp
 //! ```
 
-mod describe;
-mod image;
-mod tools;
-
 use std::io::{BufRead, Write};
 
 use azam_app::AzamApp;
+use azam_app::mcp;
 use blenderui::prelude::*;
-use serde_json::{Value, json};
-
-/// Protocol versions this server speaks, newest first.
-const PROTOCOL_VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
-
-/// What the agent is told about the server when it connects.
-const INSTRUCTIONS: &str = "azam is a garment CAD app: 2D pattern pieces are sewn together and draped \
-on a 3D avatar by a cloth simulation. All lengths are millimetres; pattern coordinates have x to the \
-right and y down. A typical loop: new_project (the dress template is a good start) -> get_project / \
-get_piece to read ids and coordinates -> edit with the CAD tools (move_points, curve_segment, \
-add_dart, spread_piece, sew…) -> simulate -> screenshot (view 3d from several angles, or view \
-pattern) -> repeat. Each tool call is one undo step. Segments are named by the id of their start \
-corner. Seams join edges of equal length: check `mismatch` in get_project after reshaping. \
-open_window shows the design live in an azam window for the person you are working with. Save \
-with save_project.";
+use serde_json::Value;
 
 /// Command-line options.
 struct Options {
@@ -83,65 +66,6 @@ fn options() -> Options {
     o
 }
 
-/// A JSON-RPC response to request `id`.
-#[allow(clippy::needless_pass_by_value, reason = "results are built in place")]
-fn reply(id: &Value, result: Value) -> Value {
-    json!({"jsonrpc": "2.0", "id": id, "result": result})
-}
-
-/// A JSON-RPC error response.
-fn error(id: &Value, code: i64, message: &str) -> Value {
-    json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
-}
-
-/// Handles one JSON-RPC message; returns the response, if it needs one.
-fn handle(server: &mut tools::Server, cx: &mut App, msg: &Value) -> Option<Value> {
-    let method = msg.get("method").and_then(Value::as_str);
-    let Some(id) = msg.get("id").cloned() else {
-        // a notification (initialized, cancelled…): nothing to answer
-        return None;
-    };
-    let Some(method) = method else {
-        // a response to a request we never send
-        return None;
-    };
-    let params = msg.get("params").cloned().unwrap_or(Value::Null);
-    Some(match method {
-        "initialize" => {
-            let asked = params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSIONS[0]);
-            let version = PROTOCOL_VERSIONS
-                .iter()
-                .find(|v| **v == asked)
-                .unwrap_or(&PROTOCOL_VERSIONS[0]);
-            reply(
-                &id,
-                json!({
-                    "protocolVersion": version,
-                    "capabilities": {"tools": {"listChanged": false}},
-                    "serverInfo": {"name": "azam", "title": "azam garment CAD", "version": env!("CARGO_PKG_VERSION")},
-                    "instructions": INSTRUCTIONS,
-                }),
-            )
-        }
-        "ping" => reply(&id, json!({})),
-        "tools/list" => reply(&id, json!({"tools": tools::list()})),
-        "tools/call" => {
-            let name = params["name"].as_str().unwrap_or_default();
-            let args = params["arguments"].as_object().cloned().unwrap_or_default();
-            let started = std::time::Instant::now();
-            let result = match server.call(cx, name, &args) {
-                Ok(content) => json!({"content": content, "isError": false}),
-                Err(e) => json!({"content": [{"type": "text", "text": e}], "isError": true}),
-            };
-            eprintln!("azam-mcp: {name} took {:.2} s", started.elapsed().as_secs_f64());
-            reply(&id, result)
-        }
-        "resources/list" => reply(&id, json!({"resources": []})),
-        "prompts/list" => reply(&id, json!({"prompts": []})),
-        other => error(&id, -32601, &format!("no method {other}")),
-    })
-}
-
 fn main() {
     let options = options();
     Application::headless().run(move |cx| {
@@ -178,7 +102,7 @@ fn main() {
         });
         // lay the window out once, so the first screenshot is quick
         cx.draw(window.id);
-        let mut server = tools::Server::new(window);
+        let mut server = mcp::Server::new(window, false);
         let stdin = std::io::stdin();
         let mut stdout = std::io::stdout().lock();
         for line in stdin.lock().lines() {
@@ -186,13 +110,15 @@ fn main() {
             if line.trim().is_empty() {
                 continue;
             }
+            let mut call = |name: &str, args: &serde_json::Map<String, Value>| {
+                let started = std::time::Instant::now();
+                let out = server.call(cx, name, args);
+                eprintln!("azam-mcp: {name} took {:.2} s", started.elapsed().as_secs_f64());
+                out
+            };
             let response = match serde_json::from_str::<Value>(&line) {
-                Ok(Value::Array(batch)) => {
-                    let out: Vec<Value> = batch.iter().filter_map(|m| handle(&mut server, cx, m)).collect();
-                    (!out.is_empty()).then(|| Value::Array(out))
-                }
-                Ok(msg) => handle(&mut server, cx, &msg),
-                Err(e) => Some(error(&Value::Null, -32700, &format!("parse error: {e}"))),
+                Ok(msg) => mcp::respond_any(&msg, false, &mut call),
+                Err(e) => Some(mcp::error(&Value::Null, -32700, &format!("parse error: {e}"))),
             };
             if let Some(response) = response {
                 let text = serde_json::to_string(&response).unwrap_or_default();

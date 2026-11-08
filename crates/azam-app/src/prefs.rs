@@ -12,12 +12,24 @@ use serde::{Deserialize, Serialize};
 use crate::app::AzamApp;
 use crate::operators::Operator;
 
+/// What the Preferences window says about the MCP endpoint in `state`.
+fn mcp_note(state: &str) -> String {
+    match state.strip_prefix("Listening on ") {
+        Some(url) => {
+            format!("Listening on {url}. Connect Claude Code: claude mcp add --transport http azam {url}")
+        }
+        None if state.is_empty() => "Not running (headless or turned off).".to_owned(),
+        None => state.to_owned(),
+    }
+}
+
 /// File name of the preferences in the data folder.
 pub const PREFS_FILE: &str = "prefs.json";
 
 /// The user's preferences.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools, reason = "independent switches, as saved")]
 pub struct Prefs {
     /// Show tooltips when the pointer rests on a control.
     pub tooltips: bool,
@@ -35,6 +47,8 @@ pub struct Prefs {
     pub workspaces: Vec<crate::workspaces::WorkspaceTab>,
     /// Quick Favorites (Q): operators by label, in order.
     pub favorites: Vec<String>,
+    /// Serve the MCP endpoint for AI agents such as Claude Code (on the loopback interface).
+    pub mcp_server: bool,
 }
 
 impl Default for Prefs {
@@ -48,6 +62,7 @@ impl Default for Prefs {
             layouts: BTreeMap::new(),
             workspaces: Vec::new(),
             favorites: Vec::new(),
+            mcp_server: true,
         }
     }
 }
@@ -360,6 +375,16 @@ impl AzamApp {
                         })),
                 ),
             )
+            .child(check(
+                "Claude Code Server (MCP)",
+                self.prefs.mcp_server,
+                |a, v| {
+                    a.prefs.mcp_server = v;
+                    crate::mcp::http::set_enabled(v);
+                },
+                cx,
+            ))
+            .child(div().class("pnote").child(mcp_note(&crate::mcp::http::state())))
             .child(div().class("pnote").child(match &self.prefs_path {
                 Some(p) => format!("Saved in {}", p.display()),
                 None => "Not saved (no data folder).".to_owned(),

@@ -48,6 +48,33 @@ pub fn xrgb_to_rgba(pixels: &[u32]) -> Vec<u8> {
         .collect()
 }
 
+/// `rgba` (`width` x `height`) shrunk by a whole factor (a box filter) until it is at most
+/// `max_width` wide: a Retina window's pixels at about the size an agent looks at.
+#[must_use]
+pub fn shrink_rgba(width: u32, height: u32, rgba: &[u8], max_width: u32) -> (u32, u32, Vec<u8>) {
+    let k = width.div_ceil(max_width.max(1)).max(1);
+    if k == 1 {
+        return (width, height, rgba.to_vec());
+    }
+    let (w, h) = (width / k, height / k);
+    let mut out = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let mut sum = [0u32; 4];
+            for dy in 0..k {
+                for dx in 0..k {
+                    let i = (((y * k + dy) * width + x * k + dx) * 4) as usize;
+                    for (c, s) in sum.iter_mut().enumerate() {
+                        *s += u32::from(rgba[i + c]);
+                    }
+                }
+            }
+            out.extend(sum.map(|s| (s / (k * k)) as u8));
+        }
+    }
+    (w, h, out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,5 +86,12 @@ mod tests {
         assert_eq!(base64(b"fo"), "Zm8=");
         assert_eq!(base64(b"foo"), "Zm9v");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn shrinking_averages_blocks() {
+        let rgba = [0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255];
+        assert_eq!(shrink_rgba(2, 2, &rgba, 1), (1, 1, vec![127, 127, 127, 255]));
+        assert_eq!(shrink_rgba(2, 2, &rgba, 4).0, 2);
     }
 }

@@ -138,17 +138,21 @@ closed shapes (curves kept).
 
 ## Designing with an AI agent (MCP)
 
-`azam-mcp` is an [MCP](https://modelcontextprotocol.io) server (stdio) that lets an agent such as
-Claude Code design garments: it runs azam headless and offers pattern CAD tools, draping and
-screenshots. The repository's `.mcp.json` registers it for Claude Code in this folder (it runs
-`scripts/azam-mcp.sh`, which builds the server and the app first). Elsewhere:
+azam serves the [Model Context Protocol](https://modelcontextprotocol.io) so an agent such as
+Claude Code can design in the window you have open: it reads and edits the pattern with CAD tools,
+drapes the garment and takes screenshots, and you watch every edit land (the status bar says what
+it just did) and can keep working alongside it. Open azam, then in Claude Code:
 
 ```bash
-cargo build --release -p azam-app -p azam-mcp
-claude mcp add azam -- "$PWD/target/release/azam-mcp"
+claude mcp add --transport http azam http://127.0.0.1:7465/mcp
 ```
 
-Then ask, for example, "design a bias-cut silk slip dress with a cowl back". The tools:
+(this repository's `.mcp.json` already registers it for Claude Code run here). Start azam before
+Claude Code, or reconnect from `/mcp`. The endpoint listens on the loopback interface only and
+refuses web pages and other host names; Edit ▸ Preferences turns it off (Claude Code Server), and
+`--mcp-port N` (or `AZAM_MCP_PORT`) and `--no-mcp` set it from the command line.
+
+Then ask, for example, "make this a bias-cut silk slip dress with a cowl back". The tools:
 
 - Project: `new_project` (from a template), `open_project`, `save_project`, `export` (SVG, DXF,
   ASTM, PDF, tech pack, OBJ, glTF, FBX), `get_project`, `get_piece` (every point and segment with
@@ -160,13 +164,18 @@ Then ask, for example, "design a bias-cut silk slip dress with a cowl back". The
   `set_allowance`, `set_hem`, `set_piece` (name, fabric, grain, arrangement around the avatar).
 - Materials and body: `set_fabric` (colour and preset), `set_avatar` (measurements).
 - Anything else: `patch_project` (a JSON merge patch on the project file) and `apply_command` (a raw
-  `azam_doc::Command`); `undo`, `redo` and `history`, one step per tool call.
-- Seeing it: `simulate` (drapes and reports the fit), `screenshot` (the 3D view from any angle in
-  solid or fit-map shading, the pattern editor, or the whole window), `render` (path-traced).
-- Live: `open_window` opens an azam window joined live to the agent's project (it runs
-  `azam --join 127.0.0.1:PORT`; `AZAM_BIN` points it at another binary), so you watch each edit
-  land and can edit alongside. `share_session` and `join_session` link it with a window you already
-  have open (File ▸ Share / Join Session).
+  `azam_doc::Command`); `undo`, `redo` and `history`, one step per tool call (Ctrl Z works too).
+- Seeing it: `simulate` (plays the drape in the window and reports the fit), `screenshot` (your 3D
+  view or any angle, in solid or fit-map shading; the pattern editor; or the whole window, of any
+  workspace, put back as it was afterwards), `render` (path-traced).
+
+Without a window (scripts, CI, an agent working alone), `azam-mcp` serves the same tools over stdio
+on a headless azam of its own, plus `open_window` (an azam window joined live to it) and
+`share_session` / `join_session`:
+
+```bash
+claude mcp add azam-headless -- "$PWD/scripts/azam-mcp.sh"
+```
 
 ## Layout
 
@@ -183,7 +192,7 @@ Then ask, for example, "design a bias-cut silk slip dress with a cowl back". The
 | `crates/azam-sync` | Live collaboration: a yrs CRDT of the project, peer-to-peer over TCP with mDNS discovery, or an update log next to the project file (File ▸ Share / Join Session). |
 | `crates/azam-render` | Offscreen wgpu renderer for the 3D viewport: studio lighting, key-light shadow map with a shadow-catching floor, procedural fabric weaves, Blender's floor grid. |
 | `crates/azam-app` | The application: Blender-style window, editors, operators. Binary `azam`. |
-| `crates/azam-mcp` | MCP server for AI agents: pattern CAD tools, draping and screenshots over the headless app. Binary `azam-mcp`. |
+| `crates/azam-mcp` | The MCP tools over stdio on a headless window (the app serves them over HTTP itself, from `azam-app`'s `mcp` module). Binary `azam-mcp`. |
 | `tools/mhpack` | Builds `assets/makehuman/makehuman-cc0.bin` from MakeHuman's CC0 assets (see `assets/makehuman/README.md`). |
 | `third_party/bui` | The BUI fork, created by `scripts/setup-bui.sh` (git-ignored): upstream BUI at `third_party/bui-base-commit.txt` plus `third_party/bui-azam.patch`. After changing the fork, regenerate the patch with `cd third_party/bui && git add -N . && git diff --binary > ../bui-azam.patch`. |
 | `tools/golden` | Node scripts that run the reference JavaScript engine (`src.js`) and record golden data for the Rust tests. |
