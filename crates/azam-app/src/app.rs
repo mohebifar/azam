@@ -579,6 +579,7 @@ impl AzamApp {
             | Operator::ExportSvg
             | Operator::ExportObj
             | Operator::ExportGltf
+            | Operator::ExportFbx
             | Operator::ExportPatternPdf
             | Operator::ExportTechPackPdf => self.export(ExportKind::for_operator(op)),
             Operator::ImportDxf => self.import_file(crate::import::ImportFormat::Dxf),

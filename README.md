@@ -67,8 +67,10 @@ refining while nothing moves, as Blender's Rendered shading does. Garment ▸ Fl
 the selected piece's drape flat as a new piece, each mesh edge at its length on the body, and reports
 how much larger or smaller it is than the draft. Simulation ▸ Record Animation records the frames
 while the simulation plays; File ▸ Export Animation (.glb) writes them (with a moving avatar) as an
-animated glTF that Blender and web viewers play back. FBX and Alembic are not written; glTF is the
-interchange for animation.
+animated glTF that Blender and web viewers play back (sampled at 30 fps, frame offsets stored as
+16-bit values with `KHR_mesh_quantization`). File ▸ Export FBX… writes the draped garment and the
+avatar as binary FBX 7.4 (centimetres, +Y up), as Blender, Maya and game engines import it. Alembic
+is not written; animated glTF carries the motion.
 
 A piece's starting place around the avatar (slot, distance, angle, height) is in the Piece tab's
 Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleeve L", "Collar"…).

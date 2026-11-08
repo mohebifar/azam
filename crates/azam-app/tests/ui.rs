@@ -921,8 +921,8 @@ fn a_recorded_simulation_exports_as_an_animated_gltf() {
             doc["meshes"][0]["primitives"][0]["targets"]
                 .as_array()
                 .map(Vec::len),
-            Some(frames - 1),
-            "a morph target per later frame"
+            Some(frames.div_ceil(2) - 1),
+            "a morph target per later frame, sampled at 30 fps"
         );
         assert!(
             !doc["animations"][0]["channels"]

@@ -386,6 +386,8 @@ pub enum Operator {
     ExportObj,
     /// Export the draped garment (and the avatar, if shown) as binary glTF.
     ExportGltf,
+    /// Export the draped garment (and the avatar, if shown) as binary FBX.
+    ExportFbx,
     /// Export the pattern as a PDF to print at 1:1.
     ExportPatternPdf,
     /// Export the tech pack as a PDF.
@@ -521,6 +523,7 @@ impl Operator {
             Self::ExportSvg => "Export SVG…",
             Self::ExportObj => "Export OBJ…",
             Self::ExportGltf => "Export glTF (.glb)…",
+            Self::ExportFbx => "Export FBX…",
             Self::ExportPatternPdf => "Export Pattern PDF…",
             Self::ExportTechPackPdf => "Export Tech Pack PDF…",
             Self::Quit => "Quit",
@@ -589,6 +592,7 @@ impl Operator {
             | Self::ExportSvg
             | Self::ExportObj
             | Self::ExportGltf
+            | Self::ExportFbx
             | Self::ExportAnimation
             | Self::ExportPatternPdf
             | Self::ExportTechPackPdf => "EXPORT",
@@ -739,6 +743,7 @@ impl Operator {
             Self::ExportSvg,
             Self::ExportObj,
             Self::ExportGltf,
+            Self::ExportFbx,
             Self::ExportPatternPdf,
             Self::ExportTechPackPdf,
             Self::Undo,
@@ -1083,6 +1088,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::ExportSvg),
         Item(O::ExportObj),
         Item(O::ExportGltf),
+        Item(O::ExportFbx),
         Item(O::ExportAnimation),
         Item(O::ExportPatternPdf),
         Item(O::ExportTechPackPdf),
@@ -1136,6 +1142,7 @@ pub fn top_menus() -> Vec<Menu> {
                 Item(O::TogglePlay),
                 Item(O::StepSim),
                 Item(O::ResetSim),
+                Item(O::RecordAnimation),
                 Separator,
                 Item(O::SetTool(Tool::Grab)),
                 Item(O::SetTool(Tool::Pin)),

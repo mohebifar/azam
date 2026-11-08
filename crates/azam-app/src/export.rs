@@ -21,6 +21,8 @@ pub enum ExportKind {
     Gltf,
     /// The recorded simulation as an animated binary glTF.
     Animation,
+    /// The draped garment, and the avatar if it is shown, as binary FBX.
+    Fbx,
     /// The pattern as a tiled PDF to print at 1:1.
     PatternPdf,
     /// The tech pack as a PDF.
@@ -35,6 +37,7 @@ impl ExportKind {
             O::ExportSvg => Self::Svg,
             O::ExportObj => Self::Obj,
             O::ExportGltf => Self::Gltf,
+            O::ExportFbx => Self::Fbx,
             O::ExportPatternPdf => Self::PatternPdf,
             O::ExportTechPackPdf => Self::TechPackPdf,
             _ => Self::Dxf,
@@ -47,6 +50,7 @@ impl ExportKind {
             Self::Svg => "svg",
             Self::Obj => "obj",
             Self::Gltf | Self::Animation => "glb",
+            Self::Fbx => "fbx",
             Self::PatternPdf | Self::TechPackPdf => "pdf",
         }
     }
@@ -55,7 +59,7 @@ impl ExportKind {
         match self {
             Self::PatternPdf => "-pattern",
             Self::TechPackPdf => "-techpack",
-            Self::Dxf | Self::Svg | Self::Obj | Self::Gltf => "",
+            Self::Dxf | Self::Svg | Self::Obj | Self::Gltf | Self::Fbx => "",
             Self::Animation => "-animation",
         }
     }
@@ -66,6 +70,7 @@ impl ExportKind {
             Self::Svg => "SVG\t*.svg",
             Self::Obj => "Wavefront OBJ\t*.obj",
             Self::Gltf | Self::Animation => "glTF Binary\t*.glb",
+            Self::Fbx => "FBX\t*.fbx",
             Self::PatternPdf | Self::TechPackPdf => "PDF\t*.pdf",
         }
     }
@@ -138,7 +143,7 @@ impl AzamApp {
                 write(path, &pdf)
             }
             ExportKind::TechPackPdf => write(path, &azam_io::techpack_pdf(project, &TechPackInfo::default())),
-            ExportKind::Gltf | ExportKind::Animation => {
+            ExportKind::Gltf | ExportKind::Animation | ExportKind::Fbx => {
                 let anim = match kind {
                     ExportKind::Animation => Some(
                         self.scene3d
@@ -180,11 +185,12 @@ impl AzamApp {
                         normals,
                         triangles,
                     });
-                let glb = match anim {
-                    Some(a) => azam_io::export_glb_animated(&pieces, mesh.as_ref(), a),
-                    None => azam_io::export_glb(&pieces, mesh.as_ref()),
+                let bytes = match (kind, anim) {
+                    (ExportKind::Fbx, _) => azam_io::export_fbx(&pieces, mesh.as_ref()),
+                    (_, Some(a)) => azam_io::export_glb_animated(&pieces, mesh.as_ref(), a),
+                    _ => azam_io::export_glb(&pieces, mesh.as_ref()),
                 };
-                write(path, &glb)
+                write(path, &bytes)
             }
             ExportKind::Obj => {
                 let export = self.obj_export().ok_or("there is no draped garment yet")?;

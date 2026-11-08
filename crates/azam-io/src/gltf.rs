@@ -11,6 +11,9 @@ use crate::obj::{ObjMesh, ObjPiece};
 const METRES_PER_MM: f32 = 0.001;
 /// glTF component types and buffer targets.
 const FLOAT: u32 = 5126;
+const SHORT: u32 = 5122;
+/// Frames per second an exported animation is sampled at (at most).
+const ANIMATION_FPS: f64 = 30.0;
 const UNSIGNED_INT: u32 = 5125;
 const ARRAY_BUFFER: u32 = 34962;
 const ELEMENT_ARRAY_BUFFER: u32 = 34963;
@@ -62,6 +65,43 @@ impl Builder {
             acc["max"] = json!(hi);
         }
         self.accessors.push(acc);
+        self.accessors.len() - 1
+    }
+
+    /// A VEC3 accessor over `data` stored as normalized 16-bit integers (`KHR_mesh_quantization`):
+    /// each value clamped to −1..1 and kept to 1/32767. Bounds are the values as read back.
+    fn shorts(&mut self, data: &[f32]) -> usize {
+        let q: Vec<i16> = data
+            .iter()
+            .map(|v| (v.clamp(-1.0, 1.0) * 32767.0).round() as i16)
+            .collect();
+        let mut bytes: Vec<u8> = q.iter().flat_map(|v| v.to_le_bytes()).collect();
+        // vertex attributes keep 4-byte strides: a VEC3 of shorts is padded to 8 bytes
+        let padded: Vec<u8> = bytes
+            .chunks_exact(6)
+            .flat_map(|c| c.iter().copied().chain([0, 0]))
+            .collect();
+        bytes = padded;
+        while self.bin.len() % 4 != 0 {
+            self.bin.push(0);
+        }
+        let offset = self.bin.len();
+        self.bin.extend_from_slice(&bytes);
+        self.views.push(json!({
+            "buffer": 0, "byteOffset": offset, "byteLength": bytes.len(), "byteStride": 8, "target": ARRAY_BUFFER
+        }));
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for e in q.chunks_exact(3) {
+            for k in 0..3 {
+                let v = f32::from(e[k]) / 32767.0;
+                lo[k] = lo[k].min(v);
+                hi[k] = hi[k].max(v);
+            }
+        }
+        self.accessors.push(json!({
+            "bufferView": self.views.len() - 1, "componentType": SHORT, "normalized": true,
+            "count": q.len() / 3, "type": "VEC3", "min": lo, "max": hi
+        }));
         self.accessors.len() - 1
     }
 
@@ -228,7 +268,7 @@ pub struct Animation {
 }
 
 /// One mesh's frames as morph targets: per frame after the first, an accessor of position and
-/// of normal offsets from the first frame.
+/// of normal offsets from the first frame, as 16-bit integers (offsets up to a metre, to 0.03 mm).
 fn morph_targets(b: &mut Builder, frames: &[MeshFrame]) -> Vec<Value> {
     let Some((p0, n0)) = frames.first() else {
         return Vec::new();
@@ -252,7 +292,7 @@ fn morph_targets(b: &mut Builder, frames: &[MeshFrame]) -> Vec<Value> {
                 .zip(n0)
                 .flat_map(|(a, z)| [a[0] - z[0], a[1] - z[1], a[2] - z[2]])
                 .collect();
-            json!({"POSITION": b.floats(&dp, 3, true), "NORMAL": b.floats(&dn, 3, false)})
+            json!({"POSITION": b.shorts(&dp), "NORMAL": b.shorts(&dn)})
         })
         .collect()
 }
@@ -275,6 +315,20 @@ pub fn export_glb_animated(pieces: &[ObjPiece], avatar: Option<&ObjMesh>, anim: 
             p
         })
         .collect();
+    // every k-th frame, so the animation runs at no more than ANIMATION_FPS
+    let k = if anim.dt > 0.0 {
+        ((1.0 / ANIMATION_FPS) / anim.dt).round().max(1.0) as usize
+    } else {
+        1
+    };
+    let anim = &Animation {
+        dt: anim.dt * k as f64,
+        pieces: anim.pieces.iter().step_by(k).cloned().collect(),
+        avatar: anim
+            .avatar
+            .as_ref()
+            .map(|a| a.iter().step_by(k).cloned().collect()),
+    };
     let base = export_glb(&first, avatar);
     // take the still file apart, add the targets and the animation, and put it back together
     let json_len = u32::from_le_bytes(base[12..16].try_into().unwrap_or_default()) as usize;
@@ -343,6 +397,8 @@ pub fn export_glb_animated(pieces: &[ObjPiece], avatar: Option<&ObjMesh>, anim: 
         b.bin.push(0);
     }
     doc["animations"] = json!([{"name": "Drape", "samplers": samplers, "channels": channels}]);
+    doc["extensionsUsed"] = json!(["KHR_mesh_quantization"]);
+    doc["extensionsRequired"] = json!(["KHR_mesh_quantization"]);
     doc["accessors"] = Value::Array(b.accessors);
     doc["bufferViews"] = Value::Array(b.views);
     doc["buffers"] = json!([{"byteLength": b.bin.len()}]);
@@ -441,8 +497,10 @@ mod tests {
             .as_u64()
             .expect("i") as usize];
         assert!(
-            (last["max"][2].as_f64().expect("z") - 0.02).abs() < 1e-6,
+            (last["max"][2].as_f64().expect("z") - 0.02).abs() < 1e-4,
             "the last frame is 20 mm forward"
         );
+        assert_eq!(last["componentType"], SHORT, "stored as 16-bit offsets");
+        assert_eq!(doc["extensionsRequired"][0], "KHR_mesh_quantization");
     }
 }

@@ -450,6 +450,8 @@ impl AzamApp {
             made = azam_doc::create_piece(p, &points);
             if let Some(pc) = made.as_ref().and_then(|m| p.pieces.get_mut(m)) {
                 pc.name = format!("{} (flattened)", src.name);
+                // a pattern to compare, not cloth to drape over the one it came from
+                pc.state = azam_doc::PieceState::Off;
                 pc.fabric = src.fabric.clone();
                 pc.grain = src.grain;
                 pc.sa = src.sa;

@@ -18,6 +18,7 @@
 
 pub mod dimensions;
 mod dxf;
+mod fbx;
 pub mod format;
 mod gltf;
 mod model;
@@ -27,6 +28,7 @@ mod svg;
 mod techpack;
 
 pub use dxf::{DxfError, ImportedLine, ImportedPiece, export_dxf, import_dxf};
+pub use fbx::export_fbx;
 pub use gltf::{Animation, MeshFrame, export_glb, export_glb_animated};
 pub use model::Bounds;
 pub use obj::{
