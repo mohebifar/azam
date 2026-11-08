@@ -237,6 +237,103 @@ index 0000000..5dcc7ce
 +        assert!(!needs_shaping("Front 2"));
 +    }
 +}
+diff --git a/bindings/rust/blenderui/src/layout.rs b/bindings/rust/blenderui/src/layout.rs
+index 29a3bf9..1c36de1 100644
+--- a/bindings/rust/blenderui/src/layout.rs
++++ b/bindings/rust/blenderui/src/layout.rs
+@@ -1982,9 +1982,16 @@ impl<'a> Builder<'a> {
+             std::borrow::Cow::Borrowed(_) => raw,
+             std::borrow::Cow::Owned(s) => s,
+         };
+-        // bidirectional text: laid out in visual order
++        // bidirectional text: laid out in visual order. Text that may wrap keeps its words in
++        // logical order (each shaped and put in visual order by itself), so lines break as they
++        // read; `mirror_rtl_runs` then reverses each line's right-to-left runs after layout.
+         let (rtl, ovr) = (c.layout.direction == taffy::style::Direction::Rtl, c.bidi_override);
+-        if let Some(v) = text::bidi_visual(&text, rtl, ovr) {
++        let wraps = matches!(ws, WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine);
++        if wraps && !rtl && !ovr {
++            if let Some(v) = text::words_visual(&text) {
++                text = v;
++            }
++        } else if let Some(v) = text::bidi_visual(&text, rtl, ovr) {
+             text = v;
+         }
+         if ws == WhiteSpace::NoWrap {
+@@ -2319,10 +2326,73 @@ pub(crate) fn layout(root: AnyElement, viewport: (f32, f32), state: &UiState, ca
+     }
+     let mut walk = Walk { t: taffy, box_of, state, vp: viewport, styles, text: tc };
+     walk.place(&mut frame.nodes, root_id, 0.0, 0.0, None, (0.0, 0.0));
++    mirror_rtl_runs(&mut frame.nodes);
+     finish(&mut frame.nodes, styles, acc);
+     frame
+ }
+ 
++/// Reverses, within each line, every run of right-to-left words of a text box (their words were
++/// laid out in logical order, so a wrapped right-to-left paragraph starts on its first line): a
++/// run's words swap places about the middle of the space it takes. Neutral words (symbols,
++/// punctuation) between right-to-left words belong to the run, as bidi resolves them.
++fn mirror_rtl_runs(nodes: &mut [BoxNode]) {
++    let word_of = |n: &BoxNode| match n.content {
++        Content::Word { src, start, end } => Some((src, start, end)),
++        _ => None,
++    };
++    let dir = |nodes: &[BoxNode], k: usize| match word_of(&nodes[k]) {
++        Some((src, start, end)) => match &nodes[src as usize].content {
++            Content::Text(t) => text::word_rtl(&t[start as usize..end as usize]),
++            _ => Some(false),
++        },
++        None => Some(false),
++    };
++    let mut i = 0;
++    while i < nodes.len() {
++        let Some((src, ..)) = word_of(&nodes[i]) else {
++            i += 1;
++            continue;
++        };
++        // the words of this text box (pushed one after another)
++        let mut j = i;
++        while j < nodes.len() && word_of(&nodes[j]).is_some_and(|w| w.0 == src) {
++            j += 1;
++        }
++        let mut k = i;
++        while k < j {
++            if dir(nodes, k) != Some(true) {
++                k += 1;
++                continue;
++            }
++            // a run from a right-to-left word to the last right-to-left word on the same line,
++            // through neutral ones
++            let y = nodes[k].bounds.origin.y;
++            let (mut e, mut last) = (k + 1, k);
++            while e < j && (nodes[e].bounds.origin.y - y).abs() <= 0.5 {
++                match dir(nodes, e) {
++                    Some(true) => last = e,
++                    None => {}
++                    Some(false) => break,
++                }
++                e += 1;
++            }
++            let e = last + 1;
++            if e - k > 1 {
++                let left = nodes[k..e].iter().map(|n| n.bounds.origin.x).fold(f32::MAX, f32::min);
++                let right = nodes[k..e]
++                    .iter()
++                    .map(|n| n.bounds.origin.x + n.bounds.size.width)
++                    .fold(f32::MIN, f32::max);
++                for n in &mut nodes[k..e] {
++                    n.bounds.origin.x = left + right - (n.bounds.origin.x + n.bounds.size.width);
++                }
++            }
++            k = e;
++        }
++        i = j;
++    }
++}
++
+ /// Positions follow the taffy tree (words live in line containers, which may
+ /// be anonymous); translate and scroll offsets shift whole subtrees.
+ struct Walk<'a> {
 diff --git a/bindings/rust/blenderui/src/lib.rs b/bindings/rust/blenderui/src/lib.rs
 index 6312c63..a1a9c13 100644
 --- a/bindings/rust/blenderui/src/lib.rs
@@ -384,10 +481,10 @@ index 03b6e4c..b144bde 100644
  
      pub(crate) fn styled_text(&mut self, x: f32, y: f32, text: &str, size: f32, flags: i32, color: Rgba) {
 diff --git a/bindings/rust/blenderui/src/text.rs b/bindings/rust/blenderui/src/text.rs
-index 99d673e..271c46d 100644
+index 99d673e..133fc14 100644
 --- a/bindings/rust/blenderui/src/text.rs
 +++ b/bindings/rust/blenderui/src/text.rs
-@@ -273,18 +273,61 @@ fn class(c: char) -> Class {
+@@ -273,18 +273,88 @@ fn class(c: char) -> Class {
      }
  }
  
@@ -424,6 +521,33 @@ index 99d673e..271c46d 100644
 +    }
 +}
 +
++/// `s` with every word (run of non-space characters) shaped and in visual order by itself, the
++/// words and spaces staying in logical order; `None` when there is no right-to-left text.
++pub(crate) fn words_visual(s: &str) -> Option<String> {
++    if !s.chars().any(|c| class(c) == Class::R) {
++        return None;
++    }
++    let mut out = String::with_capacity(s.len());
++    let mut word = String::new();
++    for c in s.chars() {
++        if c.is_whitespace() {
++            out.push_str(&display(&word));
++            word.clear();
++            out.push(c);
++        } else {
++            word.push(c);
++        }
++    }
++    out.push_str(&display(&word));
++    Some(out)
++}
++
++/// Which way `word` reads: `Some(true)` right to left, `Some(false)` left to right (by its first
++/// strongly directional character), `None` for a word with none (punctuation, symbols, digits).
++pub(crate) fn word_rtl(word: &str) -> Option<bool> {
++    word.chars().map(class).find(|c| matches!(c, Class::R | Class::L)).map(|c| c == Class::R)
++}
++
  /// `s` in visual (left-to-right display) order. `rtl`: the paragraph's
  /// direction; `override_`: `unicode-bidi: bidi-override` (every character
  /// takes the paragraph's direction). Returns None when nothing moves (pure
@@ -452,7 +576,7 @@ index 99d673e..271c46d 100644
      }
      let base: u8 = rtl as u8;
      // resolved levels: R odd, L even (W/I rules simplified: digits take the
-@@ -369,7 +412,7 @@ pub(crate) fn bidi_visual(s: &str, rtl: bool, override_: bool) -> Option<String>
+@@ -369,12 +439,12 @@ pub(crate) fn bidi_visual(s: &str, rtl: bool, override_: bool) -> Option<String>
          c => c,
      };
      let out: String = order.iter().map(|&k| if levels[k] % 2 == 1 { mirror(chars[k]) } else { chars[k] }).collect();
@@ -461,6 +585,25 @@ index 99d673e..271c46d 100644
  }
  
  #[cfg(test)]
+ mod bidi_tests {
+-    use super::bidi_visual;
++    use super::{bidi_visual, word_rtl, words_visual};
+ 
+     #[test]
+     fn reorders_rtl_runs() {
+@@ -383,6 +453,12 @@ mod bidi_tests {
+                    Some("abc \u{05d2}\u{05d1}\u{05d0} def"));
+         // pure LTR: untouched
+         assert_eq!(bidi_visual("hello world", false, false), None);
++        // words keep their logical order, each in visual order by itself
++        assert_eq!(words_visual("\u{05d0}\u{05d1} \u{05d2}").as_deref(), Some("\u{05d1}\u{05d0} \u{05d2}"));
++        assert_eq!(words_visual("plain text"), None);
++        assert_eq!(word_rtl("\u{05d0}x"), Some(true));
++        assert_eq!(word_rtl("abc"), Some(false));
++        assert_eq!(word_rtl("\u{2194}"), None);
+         // RTL paragraph: English words keep their order inside, runs swap
+         assert_eq!(bidi_visual("abc \u{05d0}\u{05d1}", true, false).as_deref(), Some("\u{05d1}\u{05d0} abc"));
+         // numbers stay left-to-right inside RTL text
 diff --git a/bindings/rust/blenderui/src/widgets.rs b/bindings/rust/blenderui/src/widgets.rs
 index ae613f8..879be90 100644
 --- a/bindings/rust/blenderui/src/widgets.rs

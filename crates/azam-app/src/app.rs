@@ -138,6 +138,12 @@ pub struct AzamApp {
     pub(crate) show_sidebar: bool,
     /// The last dart cut, for Adjust Last Operation.
     pub(crate) last_op: Option<crate::redo_panel::LastOp>,
+    /// The user's preferences (interface options, custom shortcuts).
+    pub(crate) prefs: crate::prefs::Prefs,
+    /// Where the preferences are saved (none in tests and headless runs).
+    pub(crate) prefs_path: Option<PathBuf>,
+    /// The Preferences window, while open.
+    pub(crate) prefs_view: Option<crate::prefs::PrefsView>,
     /// A modal transform (G, R) in progress.
     pub(crate) modal: Option<crate::modal::Modal>,
     /// The fabric library as last read (`None`: read it when next shown).
@@ -266,6 +272,9 @@ impl AzamApp {
             show_sidebar: false,
             last_op: None,
             modal: None,
+            prefs: crate::prefs::Prefs::default(),
+            prefs_path: None,
+            prefs_view: None,
             area_bounds: std::collections::BTreeMap::new(),
             menu_anchor: (0.0, 0.0),
             workspace: Workspace::Design,
@@ -548,7 +557,12 @@ impl AzamApp {
             Operator::ToggleArrangementPoints => self.show_arrangement = !self.show_arrangement,
             Operator::ToggleSidebar => self.toggle_sidebar(),
             Operator::ToggleCurvePoint => self.toggle_curve_points(),
-            Operator::ToggleToolLabels => self.toggle_tool_labels(),
+            Operator::ToggleToolLabels => {
+                self.toggle_tool_labels();
+                self.prefs.tool_labels = self.tool_labels;
+                self.save_prefs();
+            }
+            Operator::Preferences => self.prefs_view = Some(crate::prefs::PrefsView::default()),
             Operator::ToggleAvatar => self
                 .session
                 .edit("Show Avatar", |p| p.avatar.show = !p.avatar.show),
@@ -558,6 +572,7 @@ impl AzamApp {
             Operator::ExportDxf
             | Operator::ExportSvg
             | Operator::ExportObj
+            | Operator::ExportGltf
             | Operator::ExportPatternPdf
             | Operator::ExportTechPackPdf => self.export(ExportKind::for_operator(op)),
             Operator::ImportDxf => self.import_file(crate::import::ImportFormat::Dxf),
@@ -696,6 +711,17 @@ impl AzamApp {
 
     fn on_key(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let key = &e.keystroke;
+        // the Preferences window takes keys first (a shortcut being set, Esc), and while it is
+        // open no shortcut runs (typing goes to its filter)
+        if self.prefs_view.is_some() {
+            self.prefs_key(key);
+            if self.prefs_view.is_none() {
+                // closed: keys go back to the window, not the filter field that went with it
+                window.focus_id("root");
+            }
+            cx.notify();
+            return;
+        }
         if key.key == "Escape" && self.modal.is_some() {
             self.cancel_modal();
             cx.notify();
@@ -744,8 +770,16 @@ impl AzamApp {
                 "return" | "kp_enter" => self.confirm_modal(),
                 "x" => self.toggle_modal_axis(crate::modal::Axis::X),
                 "y" => self.toggle_modal_axis(crate::modal::Axis::Y),
-                _ => {}
+                k => {
+                    let ch = key.key_char.as_deref().and_then(|c| c.chars().next());
+                    self.modal_type(ch, k == "backspace");
+                }
             }
+            cx.notify();
+            return;
+        }
+        // the user's own shortcuts come before the built-in keys
+        if self.custom_shortcut(key, window, cx) {
             cx.notify();
             return;
         }
@@ -1115,7 +1149,7 @@ impl AzamApp {
                 el.child(div().class("menu-path").child(format!("{p} ▸")))
             })
             .child(div().class("menu-label").child(op.label()))
-            .when_some(op.shortcut(), |el, s| {
+            .when_some(self.shortcut_label(op), |el, s| {
                 el.child(div().class("menu-shortcut").child(s))
             })
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
@@ -1136,7 +1170,11 @@ impl AzamApp {
 
     /// Whether a menu, the operator search, a file prompt or a pie covers part of the window.
     fn overlay_open(&self) -> bool {
-        self.open_menu.is_some() || self.search.is_some() || self.file_prompt.is_some() || self.pie.is_some()
+        self.open_menu.is_some()
+            || self.search.is_some()
+            || self.file_prompt.is_some()
+            || self.pie.is_some()
+            || self.prefs_view.is_some()
     }
 
     /// The Dart tool's settings in the pattern editor's header, as Blender shows a tool's
@@ -1171,6 +1209,29 @@ impl AzamApp {
             .class("hgroup tool-settings")
             .child(field("Width", size.width, 200.0, |d, v| d.width = v, cx))
             .child(field("Depth", size.depth, 400.0, |d, v| d.depth = v, cx))
+    }
+
+    /// The Fillet tool's radius, in the tool settings bar.
+    fn fillet_settings(&mut self, cx: &mut Context<Self>) -> Div {
+        let radius = self.tools.fillet.radius;
+        if self.overlay_open() {
+            return div()
+                .class("hgroup")
+                .child(div().class("hbtn").child(format!("Radius {radius:.0}")));
+        }
+        div().class("hgroup tool-settings").child(
+            NumberField()
+                .attr("label", "Radius")
+                .value(format!("{radius:.0}"))
+                .min(1.0)
+                .max(300.0)
+                .step(1.0)
+                .css("width", "112px")
+                .on_input(cx.listener(|this, e: &ChangeEvent, _, cx| {
+                    this.tools.fillet.radius = e.number.clamp(1.0, 300.0);
+                    cx.notify();
+                })),
+        )
     }
 
     /// Which fit map the fit map shading shows (Fit, Strain, Stress, Pressure).
@@ -1426,7 +1487,7 @@ impl AzamApp {
                 shelf = shelf.child(div().class("tool-sep"));
             }
             let class = if tool == self.tool { "tool active" } else { "tool" };
-            let tip = match tool.key() {
+            let tip = match self.shortcut_label(Operator::SetTool(tool)) {
                 Some(key) => format!("{}\t{key}", tool.label()),
                 None => tool.label().to_owned(),
             };
@@ -1481,7 +1542,8 @@ impl AzamApp {
                 .class("area-header tool-header")
                 .child(self.icons.sized(self.tool.icon(), 14.0, None))
                 .child(div().class("mode-label").child(self.tool.label()))
-                .when(self.tool == Tool::Dart, |el| el.child(self.dart_settings(cx))),
+                .when(self.tool == Tool::Dart, |el| el.child(self.dart_settings(cx)))
+                .when(self.tool == Tool::Fillet, |el| el.child(self.fillet_settings(cx))),
         );
         div()
             .class("area")
@@ -1865,6 +1927,9 @@ impl AzamApp {
         }
         if let Some(pie) = self.pie {
             root = root.child(self.pie_menu(pie, cx));
+        }
+        if let Some(view) = self.prefs_view.clone() {
+            root = root.child(self.prefs_popup(&view, cx));
         }
         if let Some(tip) = self.tooltip_overlay(window) {
             root = root.child(tip);

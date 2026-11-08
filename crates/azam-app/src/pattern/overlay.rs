@@ -16,6 +16,8 @@ const SIDE_B: u32 = 0x3b82f6;
 const SNAP: u32 = 0x10b981;
 /// Measurement colour.
 const MEASURE: u32 = 0x6fd3ff;
+/// The Cut tool's line (Blender's knife red).
+const CUT_LINE: u32 = 0xe0_4a_3f;
 /// Distance of the rotation handle above the selection's box, in logical pixels.
 pub const ROTATE_HANDLE_PX: f32 = 26.0;
 /// Radius of the rotation handle, in logical pixels.
@@ -72,6 +74,8 @@ pub struct Overlay {
     pub selection_box: Option<(Vec2, Vec2)>,
     /// A measurement: from and to.
     pub measure: Option<(Vec2, Vec2)>,
+    /// A cut line being drawn: from and to.
+    pub cut: Option<(Vec2, Vec2)>,
     /// Where the pointer snapped to.
     pub snap: Option<Vec2>,
     /// Box of the pieces the rotation handle turns: min and max corners.
@@ -191,6 +195,9 @@ impl Overlay {
                 rgb(MEASURE),
                 rgb(0x111111),
             );
+        }
+        if let Some((a, c)) = self.cut {
+            dashed(p, &[to_px(a), to_px(c)], 6.0, 4.0, rgb(CUT_LINE), 1.5);
         }
         if let Some(q) = self.snap {
             ring(p, to_px(q), 7.0, rgb(SNAP), 1.5);

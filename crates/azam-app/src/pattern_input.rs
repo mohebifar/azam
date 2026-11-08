@@ -113,6 +113,13 @@ pub enum PatternDrag {
         /// Width over height.
         ratio: f64,
     },
+    /// Drawing a cut line.
+    Cut {
+        /// Where the line starts, in pattern space.
+        from: Vec2,
+        /// Where it ends so far.
+        to: Vec2,
+    },
     /// Measuring from a point.
     Measure {
         /// Where the measurement starts, in pattern space.

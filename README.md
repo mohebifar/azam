@@ -40,14 +40,17 @@ view's header leaves out its less used controls. Right-click on a seam or an out
 own menus; File ▸ Import Avatar OBJ… dresses a body mesh of your own (scaled to the avatar's height). N over the 3D view
 opens its sidebar (the selected piece's placement as numbers); over the pattern editor it is the Sew
 tool, as each Blender editor has its own keys. With the Select tool and pieces selected, G, R and S with
-the pointer over them move, turn and scale them modally (X or Y locks the axis; click or Enter keeps,
-Esc or right-click cancels and leaves nothing to redo); elsewhere these keys pick their tools. The 3D
+the pointer over them move, turn and scale them modally (X or Y locks the axis; typing a number sets
+the move in mm, the turn in degrees or the scale factor exactly; click or Enter keeps, Esc or
+right-click cancels and leaves nothing to redo); elsewhere these keys pick their tools. The 3D
 header's mode selector switches between Garment Mode and Arrange Mode (arrangement points shown).
 Drags and modal transforms are one undo step each; separate clicks are always separate steps.
 After a dart or a rectangle, an Adjust Last Operation panel changes its size. Pattern ▸ View ▸ Tool Names in Shelf
 shows the tool shelves with labels. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
-`P` add point, `H` polygon, `S` rectangle, `D` dart, `N` sew (`Shift N` free sew), `M` measure; hover a
-tool for its name and key. The Dart tool cuts a 20 × 80 mm dart into the clicked segment and sews its
+`P` add point, `H` polygon, `S` rectangle, `D` dart, `U` cut a piece along a dragged line, `F` round
+a corner (radius in the tool settings bar), `N` sew (`Shift N` free sew), `M` measure; hover a tool
+for its name and key. Edit ▸ Preferences… (`Ctrl ,`) sets tooltips and tool names and rebinds any
+command's shortcut (saved next to the fabric library). The Dart tool cuts a 20 × 80 mm dart into the clicked segment and sews its
 legs; reshape it with Edit Points.
 
 A piece's starting place around the avatar (slot, distance, angle, height) is in the Piece tab's
@@ -65,7 +68,8 @@ the body (saved with the project and undoable), or show the arrangement points (
 selected pieces there. The Dart tool's width and depth sit in the pattern editor's header while it
 is active. Fabrics can be deleted, saved to a fabric library shared by all projects
 (`~/Library/Application Support/azam/fabrics` on macOS, or `$AZAM_LIBRARY/fabrics`) and added from
-it; DXF import also brings notches and grain lines, and File ▸ Import SVG… makes pieces of a drawing's
+it; File ▸ Export glTF (.glb)… writes the draped garment with the avatar; DXF import also brings
+notches and grain lines, and File ▸ Import SVG… makes pieces of a drawing's
 closed shapes (curves kept).
 
 ## Layout

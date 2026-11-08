@@ -3,6 +3,10 @@
 //! holding a button. X or Y locks the move or scale to that axis (again: free). A click or Enter
 //! keeps the change; Esc or a right-click puts everything back. The keys start a transform only
 //! with the pointer over the selection; elsewhere they pick their tools (CLO's keys).
+//!
+//! As in Blender, typing a number sets the transform exactly instead of the pointer: millimetres
+//! for a move (along the locked axis, X when none), degrees for a turn (counter-clockwise on
+//! screen), a factor for a scale. Backspace edits the number; `-` flips its sign.
 
 use blenderui::prelude::*;
 
@@ -42,6 +46,13 @@ pub struct Modal {
     /// Scale: the pieces, the middle, the pointer's starting distance from it, and the factor
     /// applied so far.
     scale: Option<(Vec<azam_doc::PieceId>, azam_geom::Vec2, f64, azam_geom::Vec2)>,
+    /// The pieces transformed and the middle of their bounds.
+    ids: Vec<azam_doc::PieceId>,
+    center: azam_geom::Vec2,
+    /// The project before the transform, which a typed value is applied to.
+    origin: Box<azam_doc::Project>,
+    /// The number typed so far (empty: the pointer drives the transform).
+    typed: String,
 }
 
 impl AzamApp {
@@ -78,6 +89,10 @@ impl AzamApp {
             kind,
             axis: None,
             scale: None,
+            ids: ids.clone(),
+            center,
+            origin: Box::new(self.session.project.clone()),
+            typed: String::new(),
         };
         self.pattern_drag = match kind {
             ModalKind::Move => Some(PatternDrag::MovePieces { ids, last: q }),
@@ -132,7 +147,101 @@ impl AzamApp {
                 Some(Axis::Y) => "Locked to Y".into(),
                 None => "Free".into(),
             };
+            if !m.typed.is_empty() {
+                self.apply_typed();
+            }
         }
+    }
+
+    /// Takes a key typed during a modal transform: a digit, `.` or `-` (`ch`), or Backspace.
+    /// Returns `true` if the key belonged to the typed number.
+    pub fn modal_type(&mut self, ch: Option<char>, backspace: bool) -> bool {
+        let Some(m) = self.modal.as_mut() else {
+            return false;
+        };
+        match ch {
+            _ if backspace => {
+                if m.typed.pop().is_none() {
+                    return false;
+                }
+            }
+            Some('-') => {
+                if let Some(rest) = m.typed.strip_prefix('-') {
+                    m.typed = rest.to_owned();
+                } else {
+                    m.typed.insert(0, '-');
+                }
+            }
+            Some('.') if !m.typed.contains('.') => m.typed.push('.'),
+            Some(c) if c.is_ascii_digit() => m.typed.push(c),
+            _ => return false,
+        }
+        // typing takes over from the pointer
+        self.pattern_drag = None;
+        if let Some(m) = self.modal.as_mut() {
+            m.scale = None;
+        }
+        self.apply_typed();
+        true
+    }
+
+    /// The number typed during the modal transform, if any.
+    #[must_use]
+    pub fn modal_typed(&self) -> Option<&str> {
+        self.modal
+            .as_ref()
+            .map(|m| m.typed.as_str())
+            .filter(|t| !t.is_empty())
+    }
+
+    /// Puts the project back as it was before the transform and applies the typed value.
+    fn apply_typed(&mut self) {
+        let Some(m) = self.modal.clone() else {
+            return;
+        };
+        let value = m.typed.trim_end_matches('.').parse::<f64>().ok();
+        let (kind, axis, ids, center) = (m.kind, m.axis, m.ids, m.center);
+        let origin = *m.origin;
+        let transform = move |v: azam_geom::Vec2, x: f64| match kind {
+            ModalKind::Move => match axis {
+                Some(Axis::Y) => v + azam_geom::Vec2::new(0.0, x),
+                _ => v + azam_geom::Vec2::new(x, 0.0),
+            },
+            ModalKind::Rotate => {
+                // degrees counter-clockwise on the y-down screen
+                let (s, c) = (-x.to_radians()).sin_cos();
+                let d = v - center;
+                center + azam_geom::Vec2::new(d.x * c - d.y * s, d.x * s + d.y * c)
+            }
+            ModalKind::Scale => {
+                let k = if x.abs() < 1e-6 { 1e-6 } else { x };
+                let d = v - center;
+                center
+                    + azam_geom::Vec2::new(
+                        if axis == Some(Axis::Y) { d.x } else { d.x * k },
+                        if axis == Some(Axis::X) { d.y } else { d.y * k },
+                    )
+            }
+        };
+        self.session.edit("Transform Pieces", |p| {
+            *p = origin;
+            if let Some(x) = value {
+                for id in &ids {
+                    azam_doc::transform_piece(p, id, |v| transform(v, x));
+                }
+                azam_doc::sync_mirrors(p);
+            }
+        });
+        let unit = match kind {
+            ModalKind::Move => format!(
+                "Move {}: {} mm",
+                if axis == Some(Axis::Y) { "Y" } else { "X" },
+                m.typed
+            ),
+            ModalKind::Rotate => format!("Rotate: {}°", m.typed),
+            ModalKind::Scale => format!("Scale: ×{}", m.typed),
+        };
+        self.status = format!("{unit}  (Enter keeps, Esc cancels)");
     }
 
     /// Follows the pointer at `at` with a modal scale; returns `true` if one is running.

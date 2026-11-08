@@ -705,3 +705,101 @@ fn the_point_menu_toggles_a_corner_into_a_curve_point() {
         );
     });
 }
+
+#[test]
+fn typed_numbers_set_modal_transforms_exactly() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        let centre = ui.centre(cx, &back);
+        ui.click(cx, centre);
+        let first = |cx: &App| ui.app(cx).session().project.pieces[&back].pts[0].pos;
+        let start = first(cx);
+        let (x, y) = ui.at(cx, centre);
+
+        // G, Y, 2, 5, Backspace, 0, Enter: exactly 20 mm down, whatever the pointer does
+        cx.simulate_mouse_move(ui.win.id, x, y);
+        ui.key(cx, "g", "g");
+        ui.key(cx, "y", "y");
+        for (text, sym) in [("2", "2"), ("5", "5"), ("", "BackSpace"), ("0", "0")] {
+            ui.key(cx, text, sym);
+        }
+        assert_eq!(ui.app(cx).modal_typed(), Some("20"));
+        cx.simulate_mouse_move(ui.win.id, x + 80.0, y - 50.0);
+        cx.draw(ui.win.id);
+        ui.key(cx, "", "Return");
+        let moved = first(cx);
+        assert!(
+            (moved - start - azam_geom::Vec2::new(0.0, 20.0)).length() < 1e-6,
+            "moved {:?}",
+            moved - start
+        );
+
+        // R, 9, 0, Enter: a quarter turn about the middle keeps the distance to it
+        let mid = ui.centre(cx, &back);
+        let (x, y) = ui.at(cx, mid);
+        cx.simulate_mouse_move(ui.win.id, x, y);
+        ui.key(cx, "r", "r");
+        ui.key(cx, "9", "9");
+        ui.key(cx, "0", "0");
+        ui.key(cx, "", "Return");
+        let turned = first(cx);
+        let (a, b) = (moved - mid, turned - mid);
+        assert!(
+            (a.length() - b.length()).abs() < 1e-6 && a.dot(b).abs() < 1e-6 * a.length_squared(),
+            "a quarter turn"
+        );
+
+        // S, 2, Esc: cancelled, nothing changes
+        cx.simulate_mouse_move(ui.win.id, x, y);
+        ui.key(cx, "s", "s");
+        ui.key(cx, "2", "2");
+        ui.key(cx, "", "Escape");
+        assert!(first(cx).distance(turned) < 1e-9, "Esc puts the typed scale back");
+    });
+}
+
+#[test]
+fn the_cut_tool_splits_a_piece_and_the_fillet_tool_rounds_a_corner() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        let count = |cx: &App| ui.app(cx).session().project.pieces.len();
+        let before = count(cx);
+        // U, then drag a horizontal line across the middle of the back
+        ui.key(cx, "u", "u");
+        assert_eq!(ui.app(cx).current_tool(), azam_app::operators::Tool::Cut);
+        let c = ui.centre(cx, &back);
+        let pts = &ui.app(cx).session().project.pieces[&back].pts;
+        let (lo, hi) = pts.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+            (lo.min(p.pos.x), hi.max(p.pos.x))
+        });
+        let (x0, y) = ui.at(cx, Vec2::new(lo - 40.0, c.y));
+        let (x1, _) = ui.at(cx, Vec2::new(hi + 40.0, c.y));
+        cx.simulate_drag(ui.win.id, (x0, y), (x1, y));
+        cx.draw(ui.win.id);
+        assert_eq!(count(cx), before + 1, "{}", ui.app(cx).status());
+        assert!(
+            ui.app(cx)
+                .session()
+                .project
+                .pieces
+                .values()
+                .any(|pc| pc.name == "Back 2")
+        );
+        ui.undo(cx);
+        assert_eq!(count(cx), before, "one undo puts the piece back whole");
+
+        // F, then click the back's first corner: it becomes a corner, a curve point and a corner
+        ui.key(cx, "f", "f");
+        let corners = ui.app(cx).session().project.pieces[&back].pts.len();
+        let first = ui.app(cx).session().project.pieces[&back].pts[0].pos;
+        ui.click(cx, first);
+        assert_eq!(
+            ui.app(cx).session().project.pieces[&back].pts.len(),
+            corners + 2,
+            "{}",
+            ui.app(cx).status()
+        );
+    });
+}

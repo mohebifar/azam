@@ -657,3 +657,98 @@ fn an_obj_body_becomes_the_avatar() {
     });
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn the_draped_garment_exports_as_gltf() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        let path = std::env::temp_dir().join(format!("azam-export-{}.glb", std::process::id()));
+        win.root()
+            .read(cx)
+            .export_to(azam_app::export::ExportKind::Gltf, &path)
+            .expect("exported");
+        let glb = std::fs::read(&path).expect("written");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(&glb[0..4], b"glTF");
+        let json_len = u32::from_le_bytes(glb[12..16].try_into().expect("4 bytes")) as usize;
+        let doc: serde_json::Value = serde_json::from_slice(&glb[20..20 + json_len]).expect("JSON chunk");
+        let names: Vec<&str> = doc["meshes"]
+            .as_array()
+            .expect("meshes")
+            .iter()
+            .filter_map(|m| m["name"].as_str())
+            .collect();
+        assert!(names.contains(&"Front") && names.contains(&"Avatar"), "{names:?}");
+    });
+}
+
+#[test]
+fn a_shortcut_set_in_preferences_runs_its_command() {
+    use azam_app::operators::{Operator, Tool};
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        cx.simulate_mouse_move(win.id, 700.0, 400.0);
+        cx.draw(win.id);
+        cx.simulate_key_with(win.id, ",", "comma", true, false);
+        cx.draw(win.id);
+        cx.draw(win.id);
+        let click = |cx: &mut App, id: &str| {
+            let b = cx
+                .element_bounds(win.id, id)
+                .unwrap_or_else(|| panic!("{id} is laid out"));
+            cx.simulate_click(
+                win.id,
+                b.origin.x + b.size.width / 2.0,
+                b.origin.y + b.size.height / 2.0,
+            );
+            cx.draw(win.id);
+            cx.draw(win.id);
+        };
+        assert!(
+            win.root().read(cx).prefs_open(),
+            "Ctrl Comma opens the preferences"
+        );
+        click(cx, "prefs-tab-Keymap");
+        click(cx, "keymap-filter");
+        for c in "measure".chars() {
+            let s = c.to_string();
+            cx.simulate_key(win.id, &s, &s);
+        }
+        cx.draw(win.id);
+        cx.draw(win.id);
+        assert!(
+            win.root().read(cx).prefs_open(),
+            "typing into the filter keeps the window open"
+        );
+        click(cx, "bind-Tool: Measure");
+        cx.simulate_key(win.id, "q", "q");
+        cx.draw(win.id);
+        assert_eq!(
+            win.root().read(cx).prefs().operator_for("q"),
+            Some(Operator::SetTool(Tool::Measure)),
+            "Q is bound to the Measure tool"
+        );
+        assert_eq!(
+            win.root()
+                .read(cx)
+                .shortcut_label(Operator::SetTool(Tool::Measure))
+                .as_deref(),
+            Some("Q"),
+            "menus show the new shortcut"
+        );
+        // Esc closes the window; then Q picks the tool
+        cx.simulate_key(win.id, "", "Escape");
+        cx.draw(win.id);
+        let pat = cx.element_bounds(win.id, PATTERN_ID).expect("pattern editor");
+        cx.simulate_mouse_move(win.id, pat.origin.x + 300.0, pat.origin.y + 300.0);
+        cx.simulate_key(win.id, "q", "q");
+        cx.draw(win.id);
+        assert_eq!(win.root().read(cx).current_tool(), Tool::Measure);
+    });
+}

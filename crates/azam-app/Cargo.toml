@@ -24,6 +24,7 @@ azam-trace = { path = "../azam-trace" }
 blenderui.workspace = true
 glam.workspace = true
 png = "0.17"
+serde.workspace = true
 serde_json.workspace = true
 
 [lints]

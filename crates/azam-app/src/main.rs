@@ -202,7 +202,11 @@ fn main() {
                 .and_then(azam_app::operators::Template::from_key),
         );
         let open = args.open.clone();
+        let prefs = if headless { None } else { azam_app::prefs::prefs_path() };
         window.root().update(cx, |app, _| {
+            if let Some(path) = prefs {
+                app.use_prefs_file(path);
+            }
             if let Some(t) = template {
                 app.open_template(t);
             }

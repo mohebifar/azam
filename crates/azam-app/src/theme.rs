@@ -201,6 +201,23 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
              border-radius: 4px; background: #232323; border: 1px solid #111111;
              box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
 
+/* -- preferences ------------------------------------------------------------------------------ */
+.prefs { position: absolute; left: 50%; top: 60px; width: 620px; margin-left: -310px; z-index: 45;
+         background: #232323; border: 1px solid #111111; border-radius: 8px; padding: 8px;
+         box-shadow: 0 8px 24px rgba(0,0,0,0.6); display: flex; flex-direction: column; max-height: 80%; }
+.prefs-head { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid #2e2e2e; }
+.prefs-title { font-weight: 600; color: #e6e6e6; margin-right: 10px; }
+.prefs-body { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; min-height: 0; }
+.prefs-tab { padding: 3px 10px; border-radius: 4px; color: #bdbdbd; }
+.prefs-tab:hover { background: #3a3a3a; }
+.prefs-tab.on { background: #4772b3; color: #ffffff; }
+.keymap-list { display: flex; flex-direction: column; max-height: 420px; overflow-y: scroll; margin-top: 4px; }
+.keymap-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; }
+.keymap-row:hover { background: #2c2c2c; }
+.keymap-name { flex: 1; color: #e6e6e6; white-space: nowrap; overflow: hidden; min-width: 0; }
+.keymap-key { width: 120px; color: #8f8f8f; text-align: right; }
+.keymap-key.custom { color: #e6e6e6; font-weight: 600; }
+
 /* -- operator search (F3) ----------------------------------------------------------------------------- */
 .search { position: absolute; left: 50%; top: 80px; width: 460px; margin-left: -230px; z-index: 40;
           background: #181818; border: 1px solid #2e2e2e; border-radius: 6px; padding: 6px;

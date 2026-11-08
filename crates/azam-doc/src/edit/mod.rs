@@ -1,6 +1,8 @@
 //! Pattern edits: the operations commands are built from.
 
+mod cut;
 mod dart;
+mod fillet;
 mod grading;
 mod library;
 mod pieces;
@@ -9,7 +11,9 @@ mod segment;
 mod shapes;
 mod transform;
 
+pub use cut::{CutError, cut_piece};
 pub use dart::{DEFAULT_DART_DEPTH_MM, DEFAULT_DART_WIDTH_MM, DartError, add_dart};
+pub use fillet::fillet_corner;
 pub use grading::{grade_points_linear, grade_step, set_base_size, set_grade_step_axis, set_sizes};
 pub use library::{add_fabric, delete_colorway, delete_fabric, duplicate_colorway, duplicate_fabric};
 pub use pieces::{

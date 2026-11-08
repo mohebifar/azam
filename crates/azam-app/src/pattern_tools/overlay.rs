@@ -113,6 +113,7 @@ impl AzamApp {
                 });
             }
             Some(PatternDrag::SelectBox { from, to, .. }) => o.selection_box = Some((*from, *to)),
+            Some(PatternDrag::Cut { from, to }) => o.cut = Some((*from, *to)),
             _ => {}
         }
         if self.pattern_drag.is_some() {

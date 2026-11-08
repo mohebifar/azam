@@ -19,6 +19,7 @@
 pub mod dimensions;
 mod dxf;
 pub mod format;
+mod gltf;
 mod model;
 mod obj;
 pub mod pdf;
@@ -26,6 +27,7 @@ mod svg;
 mod techpack;
 
 pub use dxf::{DxfError, ImportedLine, ImportedPiece, export_dxf, import_dxf};
+pub use gltf::export_glb;
 pub use model::Bounds;
 pub use obj::{
     MTL_FILE_NAME, ObjExport, ObjImport, ObjImportError, ObjMaterial, ObjMesh, ObjPiece, export_obj,

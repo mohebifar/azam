@@ -86,6 +86,7 @@ dependencies = [
  "blenderui",
  "glam",
  "png",
+ "serde",
  "serde_json",
 ]
 

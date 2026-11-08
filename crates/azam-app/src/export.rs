@@ -1,4 +1,5 @@
-//! Export: DXF and SVG patterns, the draped garment as OBJ, and pattern and tech-pack PDFs.
+//! Export: DXF and SVG patterns, the draped garment as OBJ or glTF, and pattern and tech-pack
+//! PDFs.
 
 use std::path::{Path, PathBuf};
 
@@ -16,6 +17,8 @@ pub enum ExportKind {
     Svg,
     /// The draped garment as OBJ (with an MTL next to it).
     Obj,
+    /// The draped garment, and the avatar if it is shown, as binary glTF.
+    Gltf,
     /// The pattern as a tiled PDF to print at 1:1.
     PatternPdf,
     /// The tech pack as a PDF.
@@ -29,6 +32,7 @@ impl ExportKind {
         match op {
             O::ExportSvg => Self::Svg,
             O::ExportObj => Self::Obj,
+            O::ExportGltf => Self::Gltf,
             O::ExportPatternPdf => Self::PatternPdf,
             O::ExportTechPackPdf => Self::TechPackPdf,
             _ => Self::Dxf,
@@ -40,6 +44,7 @@ impl ExportKind {
             Self::Dxf => "dxf",
             Self::Svg => "svg",
             Self::Obj => "obj",
+            Self::Gltf => "glb",
             Self::PatternPdf | Self::TechPackPdf => "pdf",
         }
     }
@@ -48,7 +53,7 @@ impl ExportKind {
         match self {
             Self::PatternPdf => "-pattern",
             Self::TechPackPdf => "-techpack",
-            Self::Dxf | Self::Svg | Self::Obj => "",
+            Self::Dxf | Self::Svg | Self::Obj | Self::Gltf => "",
         }
     }
 
@@ -57,6 +62,7 @@ impl ExportKind {
             Self::Dxf => "DXF\t*.dxf",
             Self::Svg => "SVG\t*.svg",
             Self::Obj => "Wavefront OBJ\t*.obj",
+            Self::Gltf => "glTF Binary\t*.glb",
             Self::PatternPdf | Self::TechPackPdf => "PDF\t*.pdf",
         }
     }
@@ -108,6 +114,14 @@ impl AzamApp {
         };
     }
 
+    /// Writes `kind` to `path` without asking (scripts and tests).
+    ///
+    /// # Errors
+    /// Why the file could not be written, or that there is no draped garment to export.
+    pub fn export_to(&self, kind: ExportKind, path: &Path) -> Result<(), String> {
+        self.write_export(kind, path)
+    }
+
     fn write_export(&self, kind: ExportKind, path: &Path) -> Result<(), String> {
         let project = &self.session.project;
         let write =
@@ -121,6 +135,40 @@ impl AzamApp {
                 write(path, &pdf)
             }
             ExportKind::TechPackPdf => write(path, &azam_io::techpack_pdf(project, &TechPackInfo::default())),
+            ExportKind::Gltf => {
+                let buffers = self.garment_buffers().ok_or("there is no draped garment yet")?;
+                let pieces = piece_views(&buffers);
+                let avatar = self
+                    .scene3d
+                    .avatar
+                    .as_ref()
+                    .filter(|_| project.avatar.show)
+                    .map(|av| {
+                        let m = &av.mesh;
+                        (
+                            m.positions
+                                .chunks_exact(3)
+                                .map(|c| [c[0], c[1], c[2]])
+                                .collect::<Vec<_>>(),
+                            m.normals
+                                .chunks_exact(3)
+                                .map(|c| [c[0], c[1], c[2]])
+                                .collect::<Vec<_>>(),
+                            m.indices
+                                .chunks_exact(3)
+                                .map(|t| [t[0], t[1], t[2]])
+                                .collect::<Vec<_>>(),
+                        )
+                    });
+                let mesh = avatar
+                    .as_ref()
+                    .map(|(positions, normals, triangles)| azam_io::ObjMesh {
+                        positions,
+                        normals,
+                        triangles,
+                    });
+                write(path, &azam_io::export_glb(&pieces, mesh.as_ref()))
+            }
             ExportKind::Obj => {
                 let export = self.obj_export().ok_or("there is no draped garment yet")?;
                 write(path, export.obj.as_bytes())?;
@@ -133,6 +181,12 @@ impl AzamApp {
     }
 
     fn obj_export(&self) -> Option<azam_io::ObjExport> {
+        let buffers = self.garment_buffers()?;
+        Some(azam_io::export_obj(&piece_views(&buffers), None))
+    }
+
+    /// Every simulated piece's geometry, as the exporters take it.
+    fn garment_buffers(&self) -> Option<Vec<Buffers>> {
         let sim = self.scene3d.sim.as_ref()?;
         let project = &self.session.project;
         let buffers: Vec<Buffers> = sim
@@ -150,18 +204,22 @@ impl AzamApp {
                 }
             })
             .collect();
-        let pieces: Vec<ObjPiece<'_>> = buffers
-            .iter()
-            .map(|b| ObjPiece {
-                name: &b.name,
-                material: b.material.clone(),
-                hidden: false,
-                positions: &b.positions,
-                normals: &b.normals,
-                uvs: &b.uvs,
-                triangles: &b.triangles,
-            })
-            .collect();
-        Some(azam_io::export_obj(&pieces, None))
+        Some(buffers)
     }
+}
+
+/// `buffers` as the exporters' pieces.
+fn piece_views(buffers: &[Buffers]) -> Vec<ObjPiece<'_>> {
+    buffers
+        .iter()
+        .map(|b| ObjPiece {
+            name: &b.name,
+            material: b.material.clone(),
+            hidden: false,
+            positions: &b.positions,
+            normals: &b.normals,
+            uvs: &b.uvs,
+            triangles: &b.triangles,
+        })
+        .collect()
 }

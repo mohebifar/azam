@@ -79,6 +79,21 @@ pub struct PatternTools {
     pub last_press: Option<Vec2>,
     /// The Dart tool's settings.
     pub dart: DartSize,
+    /// The Fillet tool's settings.
+    pub fillet: FilletSize,
+}
+
+/// Radius of the rounds the Fillet tool makes, set in the pattern editor's header.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FilletSize {
+    /// Radius, mm.
+    pub radius: f64,
+}
+
+impl Default for FilletSize {
+    fn default() -> Self {
+        Self { radius: 20.0 }
+    }
 }
 
 /// Size of the darts the Dart tool cuts, set in the pattern editor's header (Blender's tool
@@ -134,6 +149,11 @@ impl AzamApp {
                 self.tools.measure = Some((from, from));
                 self.pattern_drag = Some(PatternDrag::Measure { from });
             }
+            Tool::Cut => {
+                let from = self.snap_point(press.q, None, press.alt);
+                self.pattern_drag = Some(PatternDrag::Cut { from, to: from });
+            }
+            Tool::Fillet => self.fillet_press(press),
         }
     }
 
@@ -160,6 +180,13 @@ impl AzamApp {
                 self.tools.measure = Some((from, to));
                 self.pattern_drag = Some(PatternDrag::Measure { from });
             }
+            PatternDrag::Cut { from, .. } => {
+                let mut to = self.snap_point(q, None, alt);
+                if shift {
+                    to = snap_45(from, to);
+                }
+                self.pattern_drag = Some(PatternDrag::Cut { from, to });
+            }
         }
     }
 
@@ -178,6 +205,7 @@ impl AzamApp {
                     self.status = format!("Distance {:.1} cm", from.distance(to) / 10.0);
                 }
             }
+            PatternDrag::Cut { from, to } => self.cut_along(from, to),
             _ => {}
         }
     }
@@ -361,6 +389,11 @@ impl AzamApp {
             }
             Tool::Comment => "Click on a piece to pin a comment".into(),
             Tool::Measure => "Drag to measure (snaps to corners, Alt: free)".into(),
+            Tool::Cut => "Drag a line across a piece to cut it in two (Shift: 45° steps)".into(),
+            Tool::Fillet => format!(
+                "Click a corner to round it with a {:.0} mm radius (radius in the tool settings bar)",
+                self.tools.fillet.radius
+            ),
         }
     }
 }
@@ -381,4 +414,95 @@ pub(crate) fn side_polyline(project: &azam_doc::Project, side: &SeamSide) -> Vec
             .map(|p| p.pos)
             .collect()
     })
+}
+
+/// `to` turned about `from` to the nearest 45° step.
+fn snap_45(from: Vec2, to: Vec2) -> Vec2 {
+    let d = to - from;
+    let step = std::f64::consts::FRAC_PI_4;
+    let angle = (d.y.atan2(d.x) / step).round() * step;
+    from + Vec2::new(angle.cos(), angle.sin()) * d.length()
+}
+
+impl AzamApp {
+    /// Cuts every piece the line from `from` to `to` (extended across it) crosses twice, in one
+    /// undo step. Linked mirror pieces are left alone (they follow their source).
+    fn cut_along(&mut self, from: Vec2, to: Vec2) {
+        if from.distance(to) < 1.0 {
+            self.status = "Drag a line across a piece to cut it".into();
+            return;
+        }
+        let project = &self.session.project;
+        let poly_hit = |id: &PieceId| {
+            let pc = &project.pieces[id];
+            let ol = pc.outline();
+            // the drawn stretch itself must touch the piece: cross its outline or lie in it
+            azam_geom::contains(&ol.poly, from)
+                || azam_geom::contains(&ol.poly, to)
+                || ol.poly.windows(2).any(|w| segments_cross(from, to, w[0], w[1]))
+        };
+        let targets: Vec<PieceId> = project
+            .pieces
+            .keys()
+            .filter(|id| project.pieces[*id].mirror.is_none() && poly_hit(id))
+            .cloned()
+            .collect();
+        if targets.is_empty() {
+            self.status = "The line does not cross a piece".into();
+            return;
+        }
+        let mut cut = Vec::new();
+        let mut why = None;
+        self.session.edit("Cut Piece", |p| {
+            for id in &targets {
+                match azam_doc::cut_piece(p, id, from, to) {
+                    Ok(new) => cut.push(new),
+                    Err(e) => why = Some(e),
+                }
+            }
+            azam_doc::sync_mirrors(p);
+        });
+        self.status = match (cut.len(), why) {
+            (0, Some(e)) => format!("Not cut: {e}"),
+            (1, _) => "Cut the piece in two".into(),
+            (n, _) => format!("Cut {n} pieces"),
+        };
+        if let Some(first) = cut.first() {
+            self.session.selection.select_only(first.clone());
+        }
+        self.force_scene();
+    }
+
+    /// Rounds the corner clicked with the Fillet tool.
+    fn fillet_press(&mut self, press: &Press) {
+        let Some(pt) = press.hit.point.clone() else {
+            self.status = "Click a corner to round it".into();
+            return;
+        };
+        if self.refuse_mirror(&pt.piece) {
+            return;
+        }
+        let radius = self.tools.fillet.radius;
+        let mut done = false;
+        self.session.edit("Fillet", |p| {
+            done = azam_doc::fillet_corner(p, &pt.piece, pt.index, radius);
+            if done {
+                azam_doc::sync_mirrors(p);
+            }
+        });
+        self.status = if done {
+            format!("Rounded the corner ({radius:.0} mm)")
+        } else {
+            "Only a corner between two edges can be rounded".into()
+        };
+        self.force_scene();
+    }
+}
+
+/// Whether segments `a`–`b` and `c`–`d` cross.
+fn segments_cross(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
+    let side = |p: Vec2, q: Vec2, r: Vec2| (q - p).perp_dot(r - p);
+    let (d1, d2) = (side(a, b, c), side(a, b, d));
+    let (d3, d4) = (side(c, d, a), side(c, d, b));
+    d1 * d2 < 0.0 && d3 * d4 < 0.0
 }

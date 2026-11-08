@@ -61,6 +61,9 @@ impl AzamApp {
     /// The tooltip to draw over the window, once its delay has passed (until then, asks for
     /// another frame).
     pub(crate) fn tooltip_overlay(&self, window: &mut Window) -> Option<Div> {
+        if !self.prefs.tooltips {
+            return None;
+        }
         let tip = self.tooltip.as_ref()?;
         if tip.since.elapsed() < TOOLTIP_DELAY {
             window.request_animation_frame();

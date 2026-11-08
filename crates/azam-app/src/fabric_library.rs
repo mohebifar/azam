@@ -16,6 +16,12 @@ pub const LIBRARY_ENV: &str = "AZAM_LIBRARY";
 /// The library's fabrics folder, if a home or data folder is known.
 #[must_use]
 pub fn fabrics_dir() -> Option<PathBuf> {
+    data_dir().map(|d| d.join("fabrics"))
+}
+
+/// azam's data folder (the fabric library, preferences), if a home or data folder is known.
+#[must_use]
+pub fn data_dir() -> Option<PathBuf> {
     let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
     let root = if let Some(dir) = var(LIBRARY_ENV) {
         dir
@@ -28,7 +34,7 @@ pub fn fabrics_dir() -> Option<PathBuf> {
             .or_else(|| var("HOME").map(|h| h.join(".local/share")))?
             .join("azam")
     };
-    Some(root.join("fabrics"))
+    Some(root)
 }
 
 /// A file name for `name`: letters, digits, spaces, `-` and `_` kept, the rest dropped.

@@ -119,6 +119,10 @@ pub enum Tool {
     Pin,
     /// Measure a distance.
     Measure,
+    /// Cut pieces in two along a dragged line.
+    Cut,
+    /// Round a corner (its radius in the tool settings).
+    Fillet,
 }
 
 impl Tool {
@@ -130,6 +134,7 @@ impl Tool {
             Self::Curvature,
             Self::CurvePoint,
             Self::AddPoint,
+            Self::Fillet,
         ],
         &[
             Self::Polygon,
@@ -139,6 +144,7 @@ impl Tool {
             Self::InternalEllipse,
             Self::Notch,
             Self::Dart,
+            Self::Cut,
         ],
         &[Self::Sew, Self::FreeSew, Self::EditSew],
         &[
@@ -190,6 +196,8 @@ impl Tool {
             Self::Grab => "Grab",
             Self::Pin => "Pin",
             Self::Measure => "Measure",
+            Self::Cut => "Cut",
+            Self::Fillet => "Fillet",
         }
     }
 
@@ -223,6 +231,8 @@ impl Tool {
             Self::Grab => "HAND",
             Self::Pin => "PINNED",
             Self::Measure => "DRIVER_DISTANCE",
+            Self::Cut => "MOD_EDGESPLIT",
+            Self::Fillet => "MOD_BEVEL",
         }
     }
 
@@ -249,6 +259,8 @@ impl Tool {
             Self::Grab => "Drag Cloth",
             Self::Pin => "Pin / Unpin",
             Self::Measure => "Measure",
+            Self::Cut => "Draw Cut",
+            Self::Fillet => "Round Corner",
         }
     }
 
@@ -276,6 +288,8 @@ impl Tool {
             Self::Pin => "I",
             Self::Measure => "M",
             Self::Dart => "D",
+            Self::Cut => "U",
+            Self::Fillet => "F",
             Self::Notch
             | Self::Zipper
             | Self::Button
@@ -311,6 +325,8 @@ impl Tool {
             ("i", false) => Self::Pin,
             ("m", false) => Self::Measure,
             ("d", false) => Self::Dart,
+            ("u", false) => Self::Cut,
+            ("f", false) => Self::Fillet,
             _ => return None,
         })
     }
@@ -352,6 +368,8 @@ pub enum Operator {
     ExportSvg,
     /// Export the draped garment as OBJ.
     ExportObj,
+    /// Export the draped garment (and the avatar, if shown) as binary glTF.
+    ExportGltf,
     /// Export the pattern as a PDF to print at 1:1.
     ExportPatternPdf,
     /// Export the tech pack as a PDF.
@@ -426,6 +444,8 @@ pub enum Operator {
     Shortcuts,
     /// About azam.
     About,
+    /// Open the Preferences window (interface options and the keymap).
+    Preferences,
     /// Path-trace the 3D view into an image (Blender's F12).
     RenderImage,
     /// Show a fit map (switching to fit map shading).
@@ -477,6 +497,7 @@ impl Operator {
             Self::ExportDxf => "Export DXF…",
             Self::ExportSvg => "Export SVG…",
             Self::ExportObj => "Export OBJ…",
+            Self::ExportGltf => "Export glTF (.glb)…",
             Self::ExportPatternPdf => "Export Pattern PDF…",
             Self::ExportTechPackPdf => "Export Tech Pack PDF…",
             Self::Quit => "Quit",
@@ -511,6 +532,7 @@ impl Operator {
             Self::ViewPie => "View Pie",
             Self::Shortcuts => "Keyboard Shortcuts",
             Self::About => "About azam",
+            Self::Preferences => "Preferences…",
             Self::RenderImage => "Render Image",
             Self::New(_)
             | Self::SetTool(_)
@@ -540,6 +562,7 @@ impl Operator {
             Self::ExportDxf
             | Self::ExportSvg
             | Self::ExportObj
+            | Self::ExportGltf
             | Self::ExportPatternPdf
             | Self::ExportTechPackPdf => "EXPORT",
             Self::Quit => "QUIT",
@@ -575,6 +598,7 @@ impl Operator {
             Self::ToggleSidebar => "MENU_PANEL",
             Self::Shortcuts => "KEY_COMMAND",
             Self::About => "INFO",
+            Self::Preferences => "PREFERENCES",
             Self::RenderImage => "RENDER_STILL",
             Self::SetEditor(_, e) => e.icon(),
             Self::SplitArea(_, crate::areas::Dir::Row) => "SPLIT_VERTICAL",
@@ -594,6 +618,7 @@ impl Operator {
                 Self::Save => "Ctrl S",
                 Self::SaveAs => "Shift Ctrl S",
                 Self::Quit => "Ctrl Q",
+                Self::Preferences => "Ctrl Comma",
                 Self::Undo => "Ctrl Z",
                 Self::Redo => "Shift Ctrl Z",
                 Self::SelectAll => "A",
@@ -636,6 +661,7 @@ impl Operator {
             ("s", true, false, _) => Self::Save,
             ("s", true, true, _) => Self::SaveAs,
             ("q", true, _, _) => Self::Quit,
+            ("comma" | ",", true, false, _) => Self::Preferences,
             ("z", true, false, _) => Self::Undo,
             ("z", true, true, _) | ("y", true, _, _) => Self::Redo,
             ("a", false, false, false) => Self::SelectAll,
@@ -682,6 +708,7 @@ impl Operator {
             Self::ExportDxf,
             Self::ExportSvg,
             Self::ExportObj,
+            Self::ExportGltf,
             Self::ExportPatternPdf,
             Self::ExportTechPackPdf,
             Self::Undo,
@@ -721,6 +748,7 @@ impl Operator {
             Self::ToggleSidebar,
             Self::Shortcuts,
             Self::About,
+            Self::Preferences,
             Self::RenderImage,
         ]);
         all.extend(
@@ -1017,6 +1045,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::ExportDxf),
         Item(O::ExportSvg),
         Item(O::ExportObj),
+        Item(O::ExportGltf),
         Item(O::ExportPatternPdf),
         Item(O::ExportTechPackPdf),
         Separator,
@@ -1039,6 +1068,8 @@ pub fn top_menus() -> Vec<Menu> {
                 Item(O::Delete),
                 Separator,
                 Item(O::Search),
+                Separator,
+                Item(O::Preferences),
             ],
         },
         Menu {
