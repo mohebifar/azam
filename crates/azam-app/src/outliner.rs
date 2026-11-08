@@ -14,7 +14,7 @@ const INDENT_PX: f32 = 14.0;
 
 impl AzamApp {
     /// The outliner's body.
-    pub(crate) fn outliner_body(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn outliner_body(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
         let project = &self.session.project;
         let mut pieces: Vec<(PieceId, String, PieceState, u32)> = project
             .pieces
@@ -103,7 +103,10 @@ impl AzamApp {
                     cx.notify();
                 })),
         );
-        div().class("outliner").id("outliner").children(rows)
+        div()
+            .class("outliner")
+            .id(format!("outliner-{area}"))
+            .children(rows)
     }
 
     /// Topstitches, buttons, buttonholes and comments, each selectable.

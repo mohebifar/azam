@@ -189,6 +189,11 @@ impl AzamApp {
             if let Some(id) = created {
                 self.session.selection.select_only(id);
                 self.status = format!("Created a {}", shape.name().to_lowercase());
+                self.remember_last(crate::redo_panel::LastKind::Shape(crate::redo_panel::LastShape {
+                    shape,
+                    from,
+                    size: to - from,
+                }));
             }
         }
     }

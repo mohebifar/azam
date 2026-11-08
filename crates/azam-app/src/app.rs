@@ -99,10 +99,15 @@ pub struct FilePrompt {
 
 /// File browser filter for project files.
 const PROJECT_FILTER: &str = "azam Projects\t*.azam.json *.json";
+/// Below this width a 3D view's header leaves out its motion selector.
+const COMPACT_HEADER_PX: f32 = 760.0;
+/// Below this width it also leaves out the fit map selector and the avatar and grid buttons.
+const NARROW_HEADER_PX: f32 = 600.0;
 /// Radius of a pie menu's ring of items, in logical pixels.
 const PIE_RADIUS: f32 = 110.0;
 
 /// The application view.
+#[allow(clippy::struct_excessive_bools, reason = "independent view toggles")]
 pub struct AzamApp {
     pub(crate) menus: Vec<Menu>,
     top_menu_count: usize,
@@ -110,10 +115,10 @@ pub struct AzamApp {
     pub(crate) context_menu_start: usize,
     /// Index of the first editor-type menu in `menus`.
     pub(crate) editor_menu_start: usize,
-    /// Editors the user switched areas to.
-    pub(crate) editor_choices: crate::editors::EditorChoices,
-    /// Areas the user split off or joined away.
-    pub(crate) area_choices: crate::editors::AreaChoices,
+    /// Each workspace's areas (made from its defaults when first shown).
+    pub(crate) layouts: crate::areas::Layouts,
+    /// The last area or split id handed out.
+    pub(crate) next_area_id: crate::areas::AreaId,
     pub(crate) open_menu: Option<usize>,
     pub(crate) menu_anchor: (f32, f32),
     /// Where each menu title was laid out, while a menu is open: the scrim over the window routes
@@ -121,10 +126,8 @@ pub struct AzamApp {
     menu_title_bounds: Vec<Option<Bounds<f32>>>,
     /// The menu that was open when the mouse button last went down over the scrim.
     menu_at_press: Option<usize>,
-    /// How the areas share the window.
-    pub(crate) layout: crate::areas::AreaLayout,
-    /// The area border being dragged.
-    pub(crate) resizing: Option<crate::areas::Border>,
+    /// The split whose border is being dragged.
+    pub(crate) resizing: Option<crate::areas::AreaId>,
     /// The piece being moved or turned in the 3D view.
     pub(crate) piece_drag: Option<crate::place3d::PieceDrag>,
     /// Whether the avatar's arrangement points are shown in the 3D view.
@@ -134,15 +137,13 @@ pub struct AzamApp {
     /// Whether the 3D view's sidebar (N) is shown.
     pub(crate) show_sidebar: bool,
     /// The last dart cut, for Adjust Last Operation.
-    pub(crate) last_dart: Option<crate::redo_panel::LastDart>,
+    pub(crate) last_op: Option<crate::redo_panel::LastOp>,
     /// A modal transform (G, R) in progress.
     pub(crate) modal: Option<crate::modal::Modal>,
     /// The fabric library as last read (`None`: read it when next shown).
     pub(crate) fabric_library: Option<Vec<azam_doc::Fabric>>,
-    /// Where the main, side and outliner borders were laid out last frame.
-    pub(crate) border_bounds: [Option<Bounds<f32>>; 3],
-    /// Width of the window last frame, logical pixels.
-    pub(crate) window_width: f32,
+    /// Where the current layout's areas and splits were laid out last frame.
+    pub(crate) area_bounds: std::collections::BTreeMap<crate::areas::AreaId, Bounds<f32>>,
     workspace: Workspace,
     pub(crate) tool: Tool,
     shading: Shading,
@@ -245,28 +246,27 @@ impl AzamApp {
         let context_menu_start = menus.len();
         menus.extend(crate::operators::context_menus());
         let editor_menu_start = menus.len();
-        menus.extend(crate::editors::editor_menus());
+        // one menu slot for the editor-type menus, filled for an area when its button is clicked
+        menus.push(crate::editors::editor_menu(0));
         Self {
             menus,
             top_menu_count,
             context_menu_start,
             editor_menu_start,
-            editor_choices: crate::editors::EditorChoices::new(),
-            area_choices: crate::editors::AreaChoices::new(),
+            layouts: crate::areas::Layouts::new(),
+            next_area_id: 0,
             open_menu: None,
             menu_title_bounds: Vec::new(),
             menu_at_press: None,
-            layout: crate::areas::AreaLayout::default(),
             resizing: None,
             piece_drag: None,
             show_arrangement: false,
             fabric_library: None,
             tool_labels: false,
             show_sidebar: false,
-            last_dart: None,
+            last_op: None,
             modal: None,
-            border_bounds: [None; 3],
-            window_width: 0.0,
+            area_bounds: std::collections::BTreeMap::new(),
             menu_anchor: (0.0, 0.0),
             workspace: Workspace::Design,
             tool: Tool::Select,
@@ -311,6 +311,7 @@ impl AzamApp {
     /// Switches to `workspace`.
     pub fn set_workspace(&mut self, workspace: Workspace) {
         self.workspace = workspace;
+        self.layout_mut();
         self.framed = false;
         self.scene_revision = 0;
         match workspace {
@@ -375,12 +376,6 @@ impl AzamApp {
     #[must_use]
     pub fn top_menu_count(&self) -> usize {
         self.top_menu_count
-    }
-
-    /// How the areas share the window.
-    #[must_use]
-    pub fn area_layout(&self) -> crate::areas::AreaLayout {
-        self.layout
     }
 
     /// Where the open pie menu is centred, if one is open.
@@ -467,6 +462,7 @@ impl AzamApp {
     // -- operators ---------------------------------------------------------------------------
 
     /// Runs `op`.
+    #[allow(clippy::too_many_lines, reason = "one arm per operator")]
     pub(crate) fn run(&mut self, op: Operator, window: &mut Window, cx: &mut Context<Self>) {
         let from_menu = self.open_menu.is_some();
         self.open_menu = None;
@@ -534,15 +530,13 @@ impl AzamApp {
             | Operator::FinishDraft => self.run_pattern_op(op),
             Operator::SetShading(shading) => self.shading = shading,
             Operator::SetFitMap(mode) => self.set_fit_mode(mode),
-            Operator::SetEditor(slot, editor) => self.set_editor(slot, editor),
-            Operator::SplitArea(slot) => {
-                if !self.split_area(slot) {
-                    self.status = "That area is split already".into();
-                }
+            Operator::SetEditor(id, editor) => self.set_editor(id, editor),
+            Operator::SplitArea(id, dir) => {
+                self.split_area(id, dir);
             }
-            Operator::JoinArea(slot) => {
-                if !self.join_area(slot) {
-                    self.status = "There is no area to join with".into();
+            Operator::JoinArea(id) => {
+                if !self.join_area(id) {
+                    self.status = "That area fills the window alone".into();
                 }
             }
             Operator::View(preset) => self.viewport.camera.set_preset(preset),
@@ -550,6 +544,7 @@ impl AzamApp {
             Operator::ToggleGrid => self.viewport.overlays.grid = !self.viewport.overlays.grid,
             Operator::ToggleArrangementPoints => self.show_arrangement = !self.show_arrangement,
             Operator::ToggleSidebar => self.toggle_sidebar(),
+            Operator::ToggleCurvePoint => self.toggle_curve_points(),
             Operator::ToggleToolLabels => self.toggle_tool_labels(),
             Operator::ToggleAvatar => self
                 .session
@@ -564,6 +559,8 @@ impl AzamApp {
             | Operator::ExportTechPackPdf => self.export(ExportKind::for_operator(op)),
             Operator::ImportDxf => self.import_file(crate::import::ImportFormat::Dxf),
             Operator::ImportSvg => self.import_file(crate::import::ImportFormat::Svg),
+            Operator::ImportAvatar => self.import_avatar(),
+            Operator::UseBuiltinBody => self.set_custom_body(None),
             Operator::Quit => std::process::exit(0),
             Operator::Shortcuts => {
                 self.status =
@@ -1314,18 +1311,23 @@ impl AzamApp {
         )
     }
 
-    pub(crate) fn viewport_area(&mut self, slot: crate::editors::Slot, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn viewport_area(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
         let show_avatar = self.session.project.avatar.show;
+        // a narrow 3D view leaves out the header's less used controls (they stay in the menus)
+        let width = self.area_width(area);
+        let (roomy, wide) = (width >= NARROW_HEADER_PX, width >= COMPACT_HEADER_PX);
         let header = div()
             .class("area-header")
-            .child(self.editor_type_button(slot, cx))
+            .child(self.editor_type_button(area, cx))
             .child(self.mode_dropdown(cx))
             .child(self.menu_title(self.top_menu_count, cx))
             .child(self.menu_title(self.top_menu_count + 1, cx))
             .child(div().class("header-spacer"))
-            .child(self.header_button("ARMATURE_DATA", show_avatar, Operator::ToggleAvatar, cx))
-            .child(self.header_button("GRID", self.viewport.overlays.grid, Operator::ToggleGrid, cx))
-            .child(div().class("header-sep"))
+            .when(roomy, |el| {
+                el.child(self.header_button("ARMATURE_DATA", show_avatar, Operator::ToggleAvatar, cx))
+                    .child(self.header_button("GRID", self.viewport.overlays.grid, Operator::ToggleGrid, cx))
+                    .child(div().class("header-sep"))
+            })
             .child(
                 div()
                     .class("hgroup")
@@ -1348,12 +1350,14 @@ impl AzamApp {
                         .class("last"),
                     ),
             )
-            .when(self.shading == Shading::FitMap, |el| {
+            .when(self.shading == Shading::FitMap && roomy, |el| {
                 el.child(self.fit_dropdown(cx))
             })
             .child(div().class("header-sep"))
-            .child(self.motion_dropdown(cx))
-            .child(div().class("header-sep"))
+            .when(wide, |el| {
+                el.child(self.motion_dropdown(cx))
+                    .child(div().class("header-sep"))
+            })
             .child(self.header_button("FILE_REFRESH", false, Operator::ResetSim, cx))
             .child(self.header_button(
                 if self.playing { "PAUSE" } else { "PLAY" },
@@ -1431,11 +1435,11 @@ impl AzamApp {
         shelf
     }
 
-    pub(crate) fn pattern_area(&mut self, slot: crate::editors::Slot, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn pattern_area(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
         let sizes = self.session.project.active_size.0.clone();
         let header = div()
             .class("area-header")
-            .child(self.editor_type_button(slot, cx))
+            .child(self.editor_type_button(area, cx))
             .child(div().class("mode-label").child("Pattern"))
             .child(self.menu_title(self.top_menu_count + 2, cx))
             .child(self.menu_title(self.top_menu_count + 3, cx))
@@ -1478,37 +1482,37 @@ impl AzamApp {
             .child(body)
     }
 
-    pub(crate) fn outliner_area(&mut self, slot: crate::editors::Slot, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn outliner_area(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
         div()
             .class("area")
             .flex_1()
             .child(
                 div()
                     .class("area-header")
-                    .child(self.editor_type_button(slot, cx))
+                    .child(self.editor_type_button(area, cx))
                     .child(div().class("header-spacer"))
                     .child(self.icons.icon("FILTER")),
             )
-            .child(self.outliner_body(cx))
+            .child(self.outliner_body(area, cx))
     }
 
-    pub(crate) fn properties_area(&mut self, slot: crate::editors::Slot, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn properties_area(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
         div()
             .class("area")
             .flex_1()
             .child(
                 div()
                     .class("area-header")
-                    .child(self.editor_type_button(slot, cx))
+                    .child(self.editor_type_button(area, cx))
                     .child(div().class("header-spacer")),
             )
-            .child(self.properties_body(cx))
+            .child(self.properties_body(area, cx))
     }
 
-    pub(crate) fn techpack_area(&mut self, slot: crate::editors::Slot, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn techpack_area(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
         let header = div()
             .class("area-header")
-            .child(self.editor_type_button(slot, cx))
+            .child(self.editor_type_button(area, cx))
             .child(div().class("mode-label").child("Tech Pack"))
             .child(div().class("header-spacer"))
             .child(self.header_button("EXPORT", false, Operator::ExportDxf, cx));
@@ -1516,32 +1520,7 @@ impl AzamApp {
             .class("area")
             .flex_1()
             .child(header)
-            .child(self.techpack_body())
-    }
-
-    /// The side column: the editors of the side slots (the outliner over the properties, unless
-    /// switched), the top one as tall as the layout says.
-    fn side_column(&mut self, cx: &mut Context<Self>) -> Div {
-        use crate::editors::Slot;
-        let mut column = div().class("area-col").w(px(self.layout.side_px)).flex_shrink_0();
-        let top = self.editor_at(Slot::SideTop);
-        let bottom = self.editor_at(Slot::SideBottom);
-        if let Some(top) = top {
-            let area = self.editor_area(Slot::SideTop, top, cx);
-            // with the column split, the top area has the height the layout says
-            column = column.child(if bottom.is_some() {
-                area.css("flex", "0 0 auto").h(px(self.layout.outliner_px))
-            } else {
-                area
-            });
-        }
-        if let Some(bottom) = bottom {
-            if top.is_some() {
-                column = column.child(Self::area_border(crate::areas::Border::Outliner, cx));
-            }
-            column = column.child(self.editor_area(Slot::SideBottom, bottom, cx));
-        }
-        column
+            .child(self.techpack_body(area))
     }
 
     fn statusbar(&mut self) -> Div {
@@ -1758,7 +1737,7 @@ impl AzamApp {
         self.icons.set_scale(window.scale_factor());
         self.viewport.bounds = window.bounds_of(VIEWPORT_ID);
         self.pattern_bounds = window.bounds_of(PATTERN_ID);
-        self.note_borders(window);
+        self.note_areas(window);
         self.frames += 1;
         self.sync_collab();
         self.sync_scene();
@@ -1821,32 +1800,8 @@ impl AzamApp {
 
     /// The editor areas of the current workspace.
     fn workspace_areas(&mut self, cx: &mut Context<Self>) -> Div {
-        use crate::areas::Border;
-        use crate::editors::Slot;
-        let areas = div().class("areas");
-        let side = |this: &mut Self, cx: &mut Context<Self>| {
-            div()
-                .class("area-col-wrap")
-                .child(Self::area_border(Border::Side, cx))
-                .child(this.side_column(cx))
-        };
-        let main = self
-            .editor_at(Slot::Main)
-            .map(|e| self.editor_area(Slot::Main, e, cx));
-        let second = self
-            .editor_at(Slot::Second)
-            .map(|e| self.editor_area(Slot::Second, e, cx));
-        let areas = match (main, second) {
-            (Some(main), Some(second)) => {
-                let share = self.layout.main_share;
-                areas
-                    .child(main.css("flex", format!("{share} 1 0px")))
-                    .child(Self::area_border(Border::Main, cx))
-                    .child(second.css("flex", format!("{} 1 0px", 1.0 - share)))
-            }
-            (main, _) => areas.children(main),
-        };
-        areas.child(side(self, cx))
+        let layout = self.layout_mut().clone();
+        div().class("areas").child(self.area_tree(&layout, cx).flex_1())
     }
 
     /// Menus, popups and pies drawn over the window.

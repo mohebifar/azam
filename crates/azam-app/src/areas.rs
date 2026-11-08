@@ -1,144 +1,352 @@
-//! Resizable areas, as in Blender: dragging the border between two areas shares the space
-//! differently (3D view | pattern editor | outliner and properties, outliner over properties).
+//! Areas, as in Blender: each workspace's window is a tree of splits whose leaves are editors.
+//! Any area can be split side by side or one over the other, an area joins its neighbour, and the
+//! border of every split can be dragged.
+
+use std::collections::BTreeMap;
 
 use blenderui::prelude::*;
 
-use crate::app::AzamApp;
+use crate::app::{AzamApp, Workspace};
+use crate::editors::Editor;
 
-/// Padding around the areas, in logical pixels (`.areas` in the theme).
-const AREAS_PAD: f32 = 2.0;
-/// Thickness of a border, in logical pixels (`.area-split` in the theme).
-const BORDER_PX: f32 = 3.0;
-/// Narrowest and widest the outliner and properties column gets, in logical pixels.
-const SIDE_RANGE: (f32, f32) = (220.0, 720.0);
-/// Smallest share of the 3D view or the pattern editor in their pair.
-const MIN_SHARE: f32 = 0.15;
-/// Shortest the outliner gets, and the least height it leaves the properties, in logical pixels.
-const MIN_OUTLINER_PX: f32 = 80.0;
-const MIN_PROPERTIES_PX: f32 = 160.0;
+/// Identifies an area (a leaf) or a split in a layout.
+pub type AreaId = u32;
 
-/// A border between areas that can be dragged.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Border {
-    /// Between the 3D view and the pattern editor.
-    Main,
-    /// Before the outliner and properties column.
-    Side,
-    /// Between the outliner and the properties editor.
-    Outliner,
+/// How a split lays out its two parts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Dir {
+    /// Side by side (the border runs up and down).
+    Row,
+    /// One over the other (the border runs across).
+    Column,
 }
 
-impl Border {
-    /// Whether the border runs up and down (dragged sideways).
-    const fn vertical(self) -> bool {
-        !matches!(self, Self::Outliner)
+/// A layout: an area showing an editor, or a split into two parts.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AreaNode {
+    /// An area.
+    Leaf {
+        /// Its id.
+        id: AreaId,
+        /// The editor it shows.
+        editor: Editor,
+    },
+    /// Two parts sharing the room.
+    Split {
+        /// Its id.
+        id: AreaId,
+        /// How the parts are laid out.
+        dir: Dir,
+        /// Share of the first part, 0..1.
+        ratio: f32,
+        /// The first part (left or top).
+        a: Box<AreaNode>,
+        /// The second part (right or bottom).
+        b: Box<AreaNode>,
+    },
+}
+
+/// Smallest share either part of a split keeps when its border is dragged.
+const MIN_RATIO: f32 = 0.08;
+/// Share of the window the large areas take beside the outliner and properties column.
+const MAIN_RATIO: f32 = 0.775;
+/// Share of the side column the outliner takes.
+const OUTLINER_RATIO: f32 = 0.3;
+
+impl AreaNode {
+    /// Its id.
+    #[must_use]
+    pub fn id(&self) -> AreaId {
+        match self {
+            Self::Leaf { id, .. } | Self::Split { id, .. } => *id,
+        }
     }
-}
 
-/// How the areas share the window.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct AreaLayout {
-    /// Share of the 3D view in the 3D view | pattern editor pair, 0..1.
-    pub main_share: f32,
-    /// Width of the outliner and properties column.
-    pub side_px: f32,
-    /// Height of the outliner.
-    pub outliner_px: f32,
-}
+    /// Every area with its editor, left to right and top to bottom.
+    #[must_use]
+    pub fn leaves(&self) -> Vec<(AreaId, Editor)> {
+        match self {
+            Self::Leaf { id, editor } => vec![(*id, *editor)],
+            Self::Split { a, b, .. } => {
+                let mut out = a.leaves();
+                out.extend(b.leaves());
+                out
+            }
+        }
+    }
 
-impl Default for AreaLayout {
-    fn default() -> Self {
-        Self {
-            main_share: 0.5,
-            side_px: 330.0,
-            outliner_px: 250.0,
+    /// Every split's id.
+    #[must_use]
+    pub fn splits(&self) -> Vec<AreaId> {
+        match self {
+            Self::Leaf { .. } => Vec::new(),
+            Self::Split { id, a, b, .. } => {
+                let mut out = vec![*id];
+                out.extend(a.splits());
+                out.extend(b.splits());
+                out
+            }
+        }
+    }
+
+    /// The split `id`: its direction and ratio.
+    #[must_use]
+    pub fn split_info(&self, id: AreaId) -> Option<(Dir, f32)> {
+        match self {
+            Self::Leaf { .. } => None,
+            Self::Split {
+                id: sid,
+                dir,
+                ratio,
+                a,
+                b,
+            } => {
+                if *sid == id {
+                    Some((*dir, *ratio))
+                } else {
+                    a.split_info(id).or_else(|| b.split_info(id))
+                }
+            }
+        }
+    }
+
+    /// The editor area `id` shows.
+    #[must_use]
+    pub fn editor_of(&self, id: AreaId) -> Option<Editor> {
+        self.leaves().into_iter().find(|&(i, _)| i == id).map(|(_, e)| e)
+    }
+
+    /// Shows `editor` in area `id`; `false` if there is no such area.
+    pub fn set_editor(&mut self, id: AreaId, editor: Editor) -> bool {
+        match self {
+            Self::Leaf { id: lid, editor: e } if *lid == id => {
+                *e = editor;
+                true
+            }
+            Self::Leaf { .. } => false,
+            Self::Split { a, b, .. } => a.set_editor(id, editor) || b.set_editor(id, editor),
+        }
+    }
+
+    /// Splits area `id` in two along `dir`: it keeps its editor in the first part and `other`
+    /// shows in the second. New ids come from `next`. `false` if there is no such area.
+    pub fn split(&mut self, id: AreaId, dir: Dir, other: Editor, next: &mut AreaId) -> bool {
+        match self {
+            Self::Leaf { id: lid, editor } if *lid == id => {
+                let editor = *editor;
+                let mut fresh = || {
+                    *next += 1;
+                    *next
+                };
+                let (split_id, other_id) = (fresh(), fresh());
+                *self = Self::Split {
+                    id: split_id,
+                    dir,
+                    ratio: 0.5,
+                    a: Box::new(Self::Leaf { id, editor }),
+                    b: Box::new(Self::Leaf {
+                        id: other_id,
+                        editor: other,
+                    }),
+                };
+                true
+            }
+            Self::Leaf { .. } => false,
+            Self::Split { a, b, .. } => a.split(id, dir, other, next) || b.split(id, dir, other, next),
+        }
+    }
+
+    /// Joins area `id` with its neighbour: the split holding it becomes it, taking all the room.
+    /// `false` if there is no such area or it fills the window alone.
+    pub fn join(&mut self, id: AreaId) -> bool {
+        let Self::Split { a, b, .. } = self else {
+            return false;
+        };
+        let keep = if matches!(**a, Self::Leaf { id: lid, .. } if lid == id) {
+            Some((**a).clone())
+        } else if matches!(**b, Self::Leaf { id: lid, .. } if lid == id) {
+            Some((**b).clone())
+        } else {
+            None
+        };
+        match keep {
+            Some(leaf) => {
+                *self = leaf;
+                true
+            }
+            None => a.join(id) || b.join(id),
+        }
+    }
+
+    /// Sets split `id`'s ratio (kept between [`MIN_RATIO`] and its complement).
+    pub fn set_ratio(&mut self, id: AreaId, value: f32) -> bool {
+        match self {
+            Self::Leaf { .. } => false,
+            Self::Split {
+                id: sid, ratio, a, b, ..
+            } => {
+                if *sid == id {
+                    *ratio = value.clamp(MIN_RATIO, 1.0 - MIN_RATIO);
+                    true
+                } else {
+                    a.set_ratio(id, value) || b.set_ratio(id, value)
+                }
+            }
         }
     }
 }
 
-/// Where the borders lie now, for a drag to measure from.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BorderSpots {
-    /// The dragged border.
-    pub here: Bounds<f32>,
-    /// Left edge of the border before the side column.
-    pub side_left: f32,
-    /// Height of the outliner and properties column.
-    pub column_height: f32,
-}
-
-impl AreaLayout {
-    /// Moves `border` to the pointer at `(x, y)`.
-    pub fn drag(&mut self, border: Border, x: f32, y: f32, spots: BorderSpots) {
-        let centre = |b: Bounds<f32>| (b.origin.x + b.size.width / 2.0, b.origin.y + b.size.height / 2.0);
-        match border {
-            Border::Side => {
-                self.side_px = (self.side_px + centre(spots.here).0 - x).clamp(SIDE_RANGE.0, SIDE_RANGE.1);
-            }
-            Border::Main => {
-                let room = (spots.side_left - AREAS_PAD - BORDER_PX).max(1.0);
-                self.main_share = ((x - AREAS_PAD) / room).clamp(MIN_SHARE, 1.0 - MIN_SHARE);
-            }
-            Border::Outliner => {
-                let most = (spots.column_height - MIN_PROPERTIES_PX).max(MIN_OUTLINER_PX);
-                self.outliner_px = (self.outliner_px + y - centre(spots.here).1).clamp(MIN_OUTLINER_PX, most);
-            }
-        }
+/// The layout `workspace` starts with: its large areas beside the outliner over the properties.
+/// Ids come from `next`.
+#[must_use]
+pub fn default_layout(workspace: Workspace, next: &mut AreaId) -> AreaNode {
+    let mut fresh = || {
+        *next += 1;
+        *next
+    };
+    let leaf = |editor, id| AreaNode::Leaf { id, editor };
+    let main = match workspace {
+        Workspace::Design | Workspace::Colorway => AreaNode::Split {
+            id: fresh(),
+            dir: Dir::Row,
+            ratio: 0.5,
+            a: Box::new(leaf(Editor::View3d, fresh())),
+            b: Box::new(leaf(Editor::Pattern, fresh())),
+        },
+        Workspace::Review => leaf(Editor::View3d, fresh()),
+        Workspace::Grading => leaf(Editor::Pattern, fresh()),
+        Workspace::TechPack => leaf(Editor::TechPack, fresh()),
+    };
+    let side = AreaNode::Split {
+        id: fresh(),
+        dir: Dir::Column,
+        ratio: OUTLINER_RATIO,
+        a: Box::new(leaf(Editor::Outliner, fresh())),
+        b: Box::new(leaf(Editor::Properties, fresh())),
+    };
+    AreaNode::Split {
+        id: fresh(),
+        dir: Dir::Row,
+        ratio: MAIN_RATIO,
+        a: Box::new(main),
+        b: Box::new(side),
     }
 }
 
-/// Id of border `border`'s element.
-fn border_id(border: Border) -> String {
-    format!("border-{border:?}")
+/// Layouts by workspace.
+pub type Layouts = BTreeMap<Workspace, AreaNode>;
+
+/// Id of split `id`'s draggable border element.
+fn border_id(id: AreaId) -> String {
+    format!("border-{id}")
+}
+
+/// Id of area `id`'s element.
+fn area_box_id(id: AreaId) -> String {
+    format!("area-{id}")
+}
+
+/// Id of split `id`'s element.
+fn split_box_id(id: AreaId) -> String {
+    format!("splitbox-{id}")
 }
 
 impl AzamApp {
-    /// The draggable border `border`.
-    pub(crate) fn area_border(border: Border, cx: &mut Context<Self>) -> Div {
-        div()
-            .class(if border.vertical() {
-                "area-split v"
-            } else {
-                "area-split h"
-            })
-            .id(border_id(border))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-                    this.resizing = Some(border);
-                    cx.notify();
-                }),
-            )
+    /// The current workspace's layout (made from its defaults the first time).
+    pub(crate) fn layout_mut(&mut self) -> &mut AreaNode {
+        let ws = self.workspace();
+        let next = &mut self.next_area_id;
+        self.layouts.entry(ws).or_insert_with(|| default_layout(ws, next))
     }
 
-    /// Remembers where the borders were laid out (window bounds can only be read while a frame
-    /// is prepared, not in event handlers).
-    pub(crate) fn note_borders(&mut self, window: &Window) {
-        self.border_bounds =
-            [Border::Main, Border::Side, Border::Outliner].map(|b| window.bounds_of(&border_id(b)));
-        self.window_width = window.viewport_size().width.0;
+    /// The current workspace's layout (its defaults until it is first shown; the ids they get
+    /// then are the ones shown here, as nothing else hands out ids).
+    #[must_use]
+    pub fn layout(&self) -> AreaNode {
+        self.layouts.get(&self.workspace()).cloned().unwrap_or_else(|| {
+            let mut next = self.next_area_id;
+            default_layout(self.workspace(), &mut next)
+        })
+    }
+
+    /// The areas of `node`, its splits laid out with draggable borders.
+    pub(crate) fn area_tree(&mut self, node: &AreaNode, cx: &mut Context<Self>) -> Div {
+        match node {
+            AreaNode::Leaf { id, editor } => self
+                .editor_area(*id, *editor, cx)
+                .id(area_box_id(*id))
+                // kept bounds let a narrow area's header leave out what does not fit
+                .on_hover(cx.listener(|_, _: &bool, _, _| {})),
+            AreaNode::Split { id, dir, ratio, a, b } => {
+                let first = self.area_tree(a, cx).css("flex", format!("{ratio} 1 0px"));
+                let second = self
+                    .area_tree(b, cx)
+                    .css("flex", format!("{} 1 0px", 1.0 - ratio));
+                let (id, dir) = (*id, *dir);
+                div()
+                    .class(if dir == Dir::Row {
+                        "area-split-row"
+                    } else {
+                        "area-split-col"
+                    })
+                    .id(split_box_id(id))
+                    // a listener makes the kit keep this element's bounds for border drags
+                    .on_hover(cx.listener(|_, _: &bool, _, _| {}))
+                    .child(first)
+                    .child(
+                        div()
+                            .class(if dir == Dir::Row {
+                                "area-split v"
+                            } else {
+                                "area-split h"
+                            })
+                            .id(border_id(id))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+                                    this.resizing = Some(id);
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .child(second)
+            }
+        }
+    }
+
+    /// Remembers where the current layout's areas and splits were laid out (window bounds can
+    /// only be read while a frame is prepared, not in event handlers).
+    pub(crate) fn note_areas(&mut self, window: &Window) {
+        let layout = self.layout();
+        let splits = layout.splits().into_iter().map(|id| (id, split_box_id(id)));
+        let leaves = layout.leaves().into_iter().map(|(id, _)| (id, area_box_id(id)));
+        self.area_bounds = splits
+            .chain(leaves)
+            .filter_map(|(id, el)| window.bounds_of(&el).map(|b| (id, b)))
+            .collect();
+    }
+
+    /// Width area `id` was laid out at last frame (unbounded before it was).
+    #[must_use]
+    pub fn area_width(&self, id: AreaId) -> f32 {
+        self.area_bounds.get(&id).map_or(f32::INFINITY, |b| b.size.width)
     }
 
     /// Follows the pointer with the border being dragged; returns `true` if one is.
     pub(crate) fn drag_border(&mut self, at: Point<Pixels>) -> bool {
-        let Some(border) = self.resizing else {
+        let Some(id) = self.resizing else {
             return false;
         };
-        let index = match border {
-            Border::Main => 0,
-            Border::Side => 1,
-            Border::Outliner => 2,
-        };
-        let Some(here) = self.border_bounds[index] else {
+        let (Some(b), Some((dir, _))) = (self.area_bounds.get(&id).copied(), self.layout().split_info(id))
+        else {
             return true;
         };
-        let side = self.border_bounds[1];
-        let spots = BorderSpots {
-            here,
-            side_left: side.map_or(self.window_width, |b| b.origin.x),
-            column_height: side.map_or(here.size.height, |b| b.size.height),
+        let ratio = match dir {
+            Dir::Row => (at.x.0 - b.origin.x) / b.size.width.max(1.0),
+            Dir::Column => (at.y.0 - b.origin.y) / b.size.height.max(1.0),
         };
-        self.layout.drag(border, at.x.0, at.y.0, spots);
+        self.layout_mut().set_ratio(id, ratio);
+        self.framed = false;
         true
     }
 }
@@ -147,41 +355,46 @@ impl AzamApp {
 mod tests {
     use super::*;
 
-    fn bounds(x: f32, y: f32, w: f32, h: f32) -> Bounds<f32> {
-        Bounds {
-            origin: Point { x, y },
-            size: Size { width: w, height: h },
-        }
-    }
-
     #[test]
-    fn borders_follow_the_pointer_within_limits() {
-        let mut l = AreaLayout::default();
-        let side = bounds(1065.0, 30.0, 3.0, 800.0);
-        let spots = |here| BorderSpots {
-            here,
-            side_left: 1065.0,
-            column_height: 800.0,
+    fn areas_split_join_and_resize() {
+        let mut next = 0;
+        let mut layout = default_layout(Workspace::Review, &mut next);
+        let editors = |l: &AreaNode| l.leaves().into_iter().map(|(_, e)| e).collect::<Vec<_>>();
+        assert_eq!(
+            editors(&layout),
+            vec![Editor::View3d, Editor::Outliner, Editor::Properties]
+        );
+        let (view, _) = layout.leaves()[0];
+        assert!(layout.split(view, Dir::Row, Editor::Pattern, &mut next));
+        assert_eq!(
+            editors(&layout),
+            vec![
+                Editor::View3d,
+                Editor::Pattern,
+                Editor::Outliner,
+                Editor::Properties
+            ]
+        );
+        let (pattern, _) = layout.leaves()[1];
+        assert!(
+            layout.split(pattern, Dir::Column, Editor::Outliner, &mut next),
+            "an area splits again"
+        );
+        assert_eq!(layout.leaves().len(), 5);
+        assert!(layout.join(pattern), "the pattern editor takes its split back");
+        assert_eq!(layout.leaves().len(), 4);
+        assert!(layout.join(view));
+        assert_eq!(
+            editors(&layout),
+            vec![Editor::View3d, Editor::Outliner, Editor::Properties]
+        );
+        let root = layout.id();
+        assert!(layout.set_ratio(root, 2.0));
+        assert_eq!(layout.split_info(root), Some((Dir::Row, 1.0 - MIN_RATIO)));
+        let lone = AreaNode::Leaf {
+            id: 99,
+            editor: Editor::View3d,
         };
-        l.drag(Border::Side, 966.5, 0.0, spots(side));
-        assert!(
-            (l.side_px - 430.0).abs() < 1e-3,
-            "dragged 100 px left: {}",
-            l.side_px
-        );
-        l.drag(Border::Side, 2000.0, 0.0, spots(side));
-        assert!(
-            (l.side_px - SIDE_RANGE.0).abs() < 1e-3,
-            "the column keeps a usable width"
-        );
-        l.drag(Border::Main, 532.0, 0.0, spots(bounds(530.0, 30.0, 3.0, 800.0)));
-        assert!((l.main_share - 530.0 / 1060.0).abs() < 1e-4);
-        l.drag(Border::Main, 0.0, 0.0, spots(side));
-        assert!((l.main_share - MIN_SHARE).abs() < 1e-6);
-        let outliner = bounds(1070.0, 280.0, 330.0, 3.0);
-        l.drag(Border::Outliner, 0.0, 331.5, spots(outliner));
-        assert!((l.outliner_px - 300.0).abs() < 1e-3);
-        l.drag(Border::Outliner, 0.0, 5000.0, spots(outliner));
-        assert!((l.outliner_px - (800.0 - MIN_PROPERTIES_PX)).abs() < 1e-3);
+        assert!(!lone.clone().join(99), "a lone area has nothing to join");
     }
 }

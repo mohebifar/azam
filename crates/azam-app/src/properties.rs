@@ -129,7 +129,7 @@ const SIM_PRESETS: [(&str, &str); 5] = [
 
 impl AzamApp {
     /// The properties editor's body.
-    pub(crate) fn properties_body(&mut self, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn properties_body(&mut self, area: crate::areas::AreaId, cx: &mut Context<Self>) -> Div {
         let mut tabs = div().class("prop-tabs");
         for tab in PropTab::ALL {
             let class = if tab == self.prop_tab {
@@ -164,7 +164,7 @@ impl AzamApp {
         div().class("props").child(tabs).child(
             div()
                 .class("prop-body")
-                .id("prop-body")
+                .id(format!("prop-body-{area}"))
                 .child(title)
                 .children(body),
         )
@@ -876,8 +876,29 @@ impl AzamApp {
                     }))),
             );
         }
+        let body_buttons = {
+            let button = |label: &'static str, op: crate::operators::Operator, cx: &mut Context<Self>| {
+                div()
+                    .class("pbtn")
+                    .child(label)
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| this.run(op, window, cx)))
+            };
+            div()
+                .class("pbuttons")
+                .child(button(
+                    "Custom Body…",
+                    crate::operators::Operator::ImportAvatar,
+                    cx,
+                ))
+                .child(button(
+                    "Built-in Body",
+                    crate::operators::Operator::UseBuiltinBody,
+                    cx,
+                ))
+        };
         avatar_rows.extend([
             show_row,
+            body_buttons,
             div().class("pnote").child(self.scene3d.avatar_status()),
             div().class("pnote").child("All measurements in mm."),
         ]);

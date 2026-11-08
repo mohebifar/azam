@@ -290,24 +290,39 @@ fn pinning_cloth_is_saved_on_the_piece() {
 
 #[test]
 fn dragging_an_area_border_resizes_the_side_column() {
+    use azam_app::editors::Editor;
     Application::headless().run(|cx| {
         let win = cx
             .open_window(options(), |_, cx| cx.new(AzamApp::new))
             .expect("window");
         cx.draw(win.id);
         cx.draw(win.id);
-        let before = win.root().read(cx).area_layout().side_px;
+        let (root, outliner) = {
+            let app = win.root().read(cx);
+            (
+                app.layout().id(),
+                app.area_with(Editor::Outliner).expect("an outliner"),
+            )
+        };
+        let side_x = |cx: &mut App| {
+            cx.element_bounds(win.id, &format!("editor-type-{outliner}"))
+                .expect("the outliner's header")
+                .origin
+                .x
+        };
+        let before = side_x(cx);
         let border = cx
-            .element_bounds(win.id, "border-Side")
+            .element_bounds(win.id, &format!("border-{root}"))
             .expect("the side column's border");
         let x = border.origin.x + border.size.width / 2.0;
         let y = border.origin.y + border.size.height / 2.0;
         cx.simulate_drag(win.id, (x, y), (x - 100.0, y));
         cx.draw(win.id);
-        let after = win.root().read(cx).area_layout().side_px;
+        cx.draw(win.id);
+        let after = side_x(cx);
         assert!(
-            (after - (before + 100.0)).abs() < 3.0,
-            "side column {before} → {after}"
+            (after - (before - 100.0)).abs() < 3.0,
+            "side column at {before} → {after}"
         );
     });
 }
@@ -456,44 +471,38 @@ fn the_piece_context_menu_runs_its_commands() {
     });
 }
 
+/// Clicks the element `id` near its left end.
+fn click_element(cx: &mut App, win: &WindowHandle<AzamApp>, id: &str) {
+    let b = cx
+        .element_bounds(win.id, id)
+        .unwrap_or_else(|| panic!("{id} is laid out"));
+    cx.simulate_click(win.id, b.origin.x + 8.0, b.origin.y + b.size.height / 2.0);
+    for _ in 0..3 {
+        cx.draw(win.id);
+    }
+}
+
 #[test]
 fn the_editor_type_menu_switches_an_area() {
-    use azam_app::editors::{Editor, Slot};
+    use azam_app::editors::Editor;
     Application::headless().run(|cx| {
         let win = cx
             .open_window(options(), |_, cx| cx.new(AzamApp::new))
             .expect("window");
         cx.draw(win.id);
         cx.draw(win.id);
-        assert_eq!(win.root().read(cx).editor_at(Slot::Main), Some(Editor::View3d));
-        let button = cx
-            .element_bounds(win.id, "editor-type-0")
-            .expect("the main area's editor type");
-        cx.simulate_click(
-            win.id,
-            button.origin.x + 8.0,
-            button.origin.y + button.size.height / 2.0,
-        );
-        cx.draw(win.id);
-        cx.draw(win.id);
-        let item = cx
-            .element_bounds(win.id, "op-Pattern Editor")
-            .expect("Pattern Editor in the menu");
-        cx.simulate_click(
-            win.id,
-            item.origin.x + 20.0,
-            item.origin.y + item.size.height / 2.0,
-        );
-        for _ in 0..3 {
-            cx.draw(win.id);
-        }
+        let (view, pattern) = {
+            let app = win.root().read(cx);
+            (
+                app.area_with(Editor::View3d).expect("3D view"),
+                app.area_with(Editor::Pattern).expect("pattern"),
+            )
+        };
+        click_element(cx, &win, &format!("editor-type-{view}"));
+        click_element(cx, &win, "op-Pattern Editor");
         let app = win.root().read(cx);
-        assert_eq!(app.editor_at(Slot::Main), Some(Editor::Pattern));
-        assert_eq!(
-            app.editor_at(Slot::Second),
-            Some(Editor::View3d),
-            "the two areas swap"
-        );
+        assert_eq!(app.editor_of(view), Some(Editor::Pattern));
+        assert_eq!(app.editor_of(pattern), Some(Editor::View3d), "the two areas swap");
         assert!(
             cx.element_bounds(win.id, PATTERN_ID).is_some()
                 && cx.element_bounds(win.id, VIEWPORT_ID).is_some()
@@ -502,8 +511,9 @@ fn the_editor_type_menu_switches_an_area() {
 }
 
 #[test]
-fn areas_split_and_join() {
-    use azam_app::editors::{Editor, Slot};
+fn areas_split_freely_and_join() {
+    use azam_app::areas::Dir;
+    use azam_app::editors::Editor;
     Application::headless().run(|cx| {
         let win = cx
             .open_window(options(), |_, cx| cx.new(AzamApp::new))
@@ -514,19 +524,19 @@ fn areas_split_and_join() {
             cx.notify();
         });
         cx.draw(win.id);
-        assert_eq!(
-            win.root().read(cx).editor_at(Slot::Second),
-            None,
-            "Review has one large area"
-        );
-        win.root().update(cx, |app, cx| {
-            assert!(app.split_area(Slot::Main));
+        let view = {
+            let app = win.root().read(cx);
+            assert_eq!(app.area_with(Editor::Pattern), None, "Review has one large area");
+            app.area_with(Editor::View3d).expect("3D view")
+        };
+        let pattern = win.root().update(cx, |app, cx| {
             cx.notify();
+            app.split_area(view, Dir::Row).expect("the 3D view splits")
         });
         cx.draw(win.id);
         cx.draw(win.id);
         assert_eq!(
-            win.root().read(cx).editor_at(Slot::Second),
+            win.root().read(cx).editor_of(pattern),
             Some(Editor::Pattern),
             "the new area shows the pattern"
         );
@@ -534,33 +544,46 @@ fn areas_split_and_join() {
             cx.element_bounds(win.id, PATTERN_ID).is_some(),
             "and it is laid out"
         );
-        win.root().update(cx, |app, cx| {
-            assert!(app.join_area(Slot::Second));
-            assert!(app.join_area(Slot::SideBottom), "the side column joins too");
-            cx.notify();
-        });
-        cx.draw(win.id);
-        cx.draw(win.id);
-        let app = win.root().read(cx);
+        // the new area splits again, one over the other, from its editor-type menu
+        click_element(cx, &win, &format!("editor-type-{pattern}"));
+        click_element(cx, &win, "op-Horizontal Split");
+        let shown = win.root().read(cx).editors_shown();
         assert_eq!(
-            app.editor_at(Slot::Main),
-            Some(Editor::Pattern),
-            "the joined area keeps the editor that was kept"
+            shown,
+            vec![
+                Editor::View3d,
+                Editor::Pattern,
+                Editor::Properties,
+                Editor::Outliner,
+                Editor::Properties
+            ],
+            "no second pattern editor; the properties show twice"
         );
-        assert_eq!(app.editor_at(Slot::Second), None);
-        assert_eq!(app.editor_at(Slot::SideTop), None);
-        assert_eq!(app.editor_at(Slot::SideBottom), Some(Editor::Properties));
-        // splitting again opens an editor that is not on screen yet
+        let props: Vec<_> = win
+            .root()
+            .read(cx)
+            .layout()
+            .leaves()
+            .into_iter()
+            .filter(|&(_, e)| e == Editor::Properties)
+            .map(|(id, _)| id)
+            .collect();
+        for id in &props {
+            assert!(
+                cx.element_bounds(win.id, &format!("prop-body-{id}")).is_some(),
+                "both properties editors are laid out"
+            );
+        }
         win.root().update(cx, |app, cx| {
-            assert!(app.split_area(Slot::Main));
+            assert!(app.join_area(pattern), "the pattern editor takes its room back");
+            assert!(app.join_area(view));
             cx.notify();
         });
+        cx.draw(win.id);
         let app = win.root().read(cx);
-        assert_eq!(app.editor_at(Slot::Main), Some(Editor::Pattern));
         assert_eq!(
-            app.editor_at(Slot::Second),
-            Some(Editor::View3d),
-            "no second pattern editor"
+            app.editors_shown(),
+            vec![Editor::View3d, Editor::Outliner, Editor::Properties]
         );
     });
 }
@@ -592,4 +615,45 @@ fn n_over_the_3d_view_shows_the_sidebar_and_its_fields_place_the_piece() {
         cx.draw(win.id);
         assert_eq!(win.root().read(cx).current_tool(), azam_app::operators::Tool::Sew);
     });
+}
+
+#[test]
+fn an_obj_body_becomes_the_avatar() {
+    use std::fmt::Write as _;
+    // a body mesh in metres, as another program might export it
+    let body = azam_avatar::Avatar::parametric(&azam_avatar::AvatarParams::preset(azam_avatar::Sex::Female));
+    let mut obj = String::new();
+    for v in body.mesh.positions.chunks_exact(3) {
+        writeln!(obj, "v {} {} {}", v[0] / 1000.0, v[1] / 1000.0, v[2] / 1000.0).expect("write");
+    }
+    for t in body.mesh.indices.chunks_exact(3) {
+        writeln!(obj, "f {} {} {}", t[0] + 1, t[1] + 1, t[2] + 1).expect("write");
+    }
+    let path = std::env::temp_dir().join(format!("azam-body-{}.obj", std::process::id()));
+    std::fs::write(&path, obj).expect("write the body");
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        wait_for_garment(cx, &win);
+        win.root().update(cx, |app, cx| {
+            app.set_custom_body(Some(&path.to_string_lossy()));
+            cx.notify();
+        });
+        for _ in 0..400 {
+            win.root().update(cx, |_, cx| cx.notify());
+            cx.draw(win.id);
+            if win.root().read(cx).avatar_kind() == Some(azam_avatar::AvatarKind::Custom) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let app = win.root().read(cx);
+        assert_eq!(app.avatar_kind(), Some(azam_avatar::AvatarKind::Custom));
+        assert!(
+            app.sim_time().is_some(),
+            "the garment simulates on the custom body"
+        );
+    });
+    let _ = std::fs::remove_file(&path);
 }

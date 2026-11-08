@@ -61,6 +61,10 @@ struct Group {
 ///
 /// # Errors
 /// [`SvgError::NotSvg`] without an `<svg>` element, [`SvgError::NoPieces`] when nothing is closed.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one pass over the document's elements, read top to bottom"
+)]
 pub fn import_svg(text: &str) -> Result<Vec<ImportedPiece>, SvgError> {
     let mut scale = None;
     let mut shapes = Vec::new();
@@ -225,19 +229,18 @@ fn assemble(shapes: &[Shape], groups: &[Group], scale: f64) -> Vec<ImportedPiece
             .copied()
             .filter(|s| s.closed && s.dashed)
             .max_by(|a, b| area(a).total_cmp(&area(b)));
-        match dashed {
-            Some(outline) => emit(outline, open, name),
-            None => {
-                let closed: Vec<&Shape> = members.iter().copied().filter(|s| s.closed).collect();
-                let single = closed.len() == 1;
-                for s in closed {
-                    let name = if single {
-                        name.clone().or_else(|| s.id.clone())
-                    } else {
-                        s.id.clone().or_else(|| name.clone())
-                    };
-                    emit(s, if single { open.clone() } else { Vec::new() }, name);
-                }
+        if let Some(outline) = dashed {
+            emit(outline, open, name);
+        } else {
+            let closed: Vec<&Shape> = members.iter().copied().filter(|s| s.closed).collect();
+            let single = closed.len() == 1;
+            for s in closed {
+                let name = if single {
+                    name.clone().or_else(|| s.id.clone())
+                } else {
+                    s.id.clone().or_else(|| name.clone())
+                };
+                emit(s, if single { open.clone() } else { Vec::new() }, name);
             }
         }
     }
@@ -471,6 +474,7 @@ fn ellipse(cx: f64, cy: f64, rx: f64, ry: f64) -> Vec<(Vec2, bool)> {
 }
 
 /// The points of path data `d` (the first subpath) and whether it closes.
+#[allow(clippy::too_many_lines, reason = "one arm per path command")]
 fn path_points(d: &str) -> (Vec<(Vec2, bool)>, bool) {
     let mut pts: Vec<(Vec2, bool)> = Vec::new();
     let mut cur = Vec2::ZERO;
@@ -506,11 +510,11 @@ fn path_points(d: &str) -> (Vec<(Vec2, bool)>, bool) {
             }
         };
         let arity = match cmd.to_ascii_uppercase() {
-            'M' | 'L' | 'T' => 2,
             'H' | 'V' => 1,
             'C' => 6,
             'S' | 'Q' => 4,
             'A' => 7,
+            // M, L, T
             _ => 2,
         };
         for (k, a) in args.chunks_exact(arity).enumerate() {

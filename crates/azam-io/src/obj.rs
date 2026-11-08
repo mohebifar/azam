@@ -186,3 +186,113 @@ pub fn export_obj(pieces: &[ObjPiece], avatar: Option<&ObjMesh>) -> ObjExport {
     }
     ObjExport { obj, mtl }
 }
+
+/// A triangle mesh read from an OBJ file.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ObjImport {
+    /// Vertex positions, `x, y, z` per vertex, in the file's units.
+    pub positions: Vec<f32>,
+    /// Triangles, three vertex indices each (polygons are fanned into triangles).
+    pub indices: Vec<u32>,
+}
+
+/// Why an OBJ file could not be read as a mesh.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ObjImportError {
+    /// A number in line `line` does not parse.
+    InvalidNumber {
+        /// 1-based line.
+        line: usize,
+    },
+    /// A face in line `line` names a vertex the file does not have.
+    BadIndex {
+        /// 1-based line.
+        line: usize,
+    },
+    /// The file has no faces.
+    Empty,
+}
+
+impl std::fmt::Display for ObjImportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidNumber { line } => write!(f, "line {line}: a number does not parse"),
+            Self::BadIndex { line } => write!(f, "line {line}: a face names a missing vertex"),
+            Self::Empty => f.write_str("the file has no faces"),
+        }
+    }
+}
+
+impl std::error::Error for ObjImportError {}
+
+/// The mesh in OBJ `text`: `v` positions and `f` faces (with or without texture and normal
+/// indices, negative indices counting back from the last vertex). Everything else is skipped.
+///
+/// # Errors
+/// [`ObjImportError`] for a bad number or index, or a file without faces.
+pub fn import_obj(text: &str) -> Result<ObjImport, ObjImportError> {
+    let mut positions = Vec::new();
+    let mut indices = Vec::new();
+    for (k, raw) in text.lines().enumerate() {
+        let line = k + 1;
+        let mut words = raw.split_whitespace();
+        match words.next() {
+            Some("v") => {
+                for _ in 0..3 {
+                    let v: f32 = words
+                        .next()
+                        .and_then(|w| w.parse().ok())
+                        .ok_or(ObjImportError::InvalidNumber { line })?;
+                    positions.push(v);
+                }
+            }
+            Some("f") => {
+                let count = positions.len() / 3;
+                let corners = words
+                    .map(|w| {
+                        let i: i64 = w
+                            .split('/')
+                            .next()
+                            .and_then(|n| n.parse().ok())
+                            .ok_or(ObjImportError::InvalidNumber { line })?;
+                        let index = if i < 0 {
+                            i64::try_from(count).unwrap_or(i64::MAX) + i
+                        } else {
+                            i - 1
+                        };
+                        u32::try_from(index)
+                            .ok()
+                            .filter(|&v| (v as usize) < count)
+                            .ok_or(ObjImportError::BadIndex { line })
+                    })
+                    .collect::<Result<Vec<u32>, _>>()?;
+                for w in 1..corners.len().saturating_sub(1) {
+                    indices.extend([corners[0], corners[w], corners[w + 1]]);
+                }
+            }
+            _ => {}
+        }
+    }
+    if indices.is_empty() {
+        return Err(ObjImportError::Empty);
+    }
+    Ok(ObjImport { positions, indices })
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+
+    #[test]
+    fn obj_faces_fan_into_triangles() {
+        let text = "# quad\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvt 0 0\nf 1/1 2/1 3/1 -1/1\n";
+        let mesh = import_obj(text).expect("reads");
+        assert_eq!(mesh.positions.len(), 12);
+        assert_eq!(mesh.indices, vec![0, 1, 2, 0, 2, 3]);
+        assert_eq!(
+            import_obj("v 0 0 0\nf 1 2 3\n"),
+            Err(ObjImportError::BadIndex { line: 2 })
+        );
+        assert_eq!(import_obj("v 0 0 0\n"), Err(ObjImportError::Empty));
+    }
+}

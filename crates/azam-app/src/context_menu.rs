@@ -22,4 +22,37 @@ impl AzamApp {
             .filter(|&i| (self.context_menu_start..self.editor_menu_start).contains(&i))
             .map(|i| self.menus[i].title)
     }
+
+    /// Turns the selected outline points of the active piece from corners into curve points, or
+    /// back (Blender's toggle; the outline's first point stays a corner).
+    pub(crate) fn toggle_curve_points(&mut self) {
+        let Some(piece) = self.session.selection.active.clone() else {
+            self.status = "Select points first (Edit Pattern tool)".into();
+            return;
+        };
+        let points = self.session.selection.points.clone();
+        if points.is_empty() {
+            self.status = "Select points first (Edit Pattern tool)".into();
+            return;
+        }
+        let mut changed = 0;
+        self.session.edit("Toggle Corner / Curve", |p| {
+            for &i in &points {
+                let curve = p
+                    .pieces
+                    .get(&piece)
+                    .and_then(|pc| pc.pts.get(i))
+                    .is_some_and(|q| q.curve);
+                if azam_doc::set_point_curve(p, &piece, i, !curve) {
+                    changed += 1;
+                }
+            }
+            azam_doc::sync_mirrors(p);
+        });
+        self.status = if changed > 0 {
+            format!("Toggled {changed} point(s)")
+        } else {
+            "Those points cannot change (a piece keeps three corners)".into()
+        };
+    }
 }

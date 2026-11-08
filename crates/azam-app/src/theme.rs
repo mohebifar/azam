@@ -45,8 +45,8 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .areas { flex: 1; display: flex; padding: 2px; min-height: 0; }
 .area { display: flex; flex-direction: column; border-radius: 6px; overflow: hidden; background: #303030;
         min-width: 0; min-height: 0; }
-.area-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
-.area-col-wrap { display: flex; flex-shrink: 0; min-height: 0; height: 100%; overflow: hidden; }
+.area-split-row { display: flex; flex-direction: row; min-width: 0; min-height: 0; overflow: hidden; }
+.area-split-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .area-split { flex-shrink: 0; }
 .area-split.v { width: 3px; cursor: ew-resize; }
 .area-split.h { height: 3px; cursor: ns-resize; }

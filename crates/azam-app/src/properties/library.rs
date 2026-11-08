@@ -138,7 +138,7 @@ impl AzamApp {
                 }
                 let mut done = false;
                 this.session.edit("Delete Colorway", |p| {
-                    done = azam_doc::delete_colorway(p, &active)
+                    done = azam_doc::delete_colorway(p, &active);
                 });
                 this.status = if done {
                     "Deleted the colorway".into()

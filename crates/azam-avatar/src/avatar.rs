@@ -15,6 +15,9 @@ use crate::rig::{Rig, RigJoints};
 use crate::surface::{AvatarMesh, surface_mesh};
 use crate::velocity::BodyVelocity;
 
+/// Room the collision grid of a custom body leaves around it, in millimetres.
+const CUSTOM_GRID_PAD_MM: f64 = 90.0;
+
 /// Which body model an avatar was built from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AvatarKind {
@@ -22,6 +25,8 @@ pub enum AvatarKind {
     Parametric,
     /// The morph-target body fitted to measurements.
     MakeHuman,
+    /// A body mesh brought in from a file (it does not move with motions).
+    Custom,
 }
 
 /// The skin vertices the solver keeps the cloth surface clear of (morph-target avatars only).
@@ -144,17 +149,76 @@ impl Avatar {
         }
     }
 
+    /// A body from a mesh (`positions` `x, y, z` per vertex, y up; `indices` three per triangle),
+    /// for an avatar brought in from another program. The mesh's units are guessed from its
+    /// height (m, cm or mm), it is scaled to the height in `params`, centred on the vertical axis
+    /// and stood on the floor. Torso sections, landmarks and joints (used to arrange pieces) come
+    /// from the measurements in `params`, so they should describe the same body. Returns `None`
+    /// for a mesh without triangles or height.
+    #[must_use]
+    pub fn custom(positions: &[f32], indices: &[u32], params: &AvatarParams, grid_cell: f64) -> Option<Self> {
+        let n = positions.len() / 3;
+        if n < 3 || indices.len() < 3 || indices.iter().any(|&i| i as usize >= n) {
+            return None;
+        }
+        let axis = |k: usize| positions.iter().skip(k).step_by(3).map(|&v| f64::from(v));
+        let (lo_y, hi_y) = axis(1).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| {
+            (a.min(v), b.max(v))
+        });
+        let mid = |k: usize| {
+            let (lo, hi) = axis(k).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| {
+                (a.min(v), b.max(v))
+            });
+            f64::midpoint(lo, hi)
+        };
+        let (cx, cz) = (mid(0), mid(2));
+        let height = hi_y - lo_y;
+        if !(height > 0.0 && height.is_finite()) {
+            return None;
+        }
+        let base = Self::parametric(params);
+        let scale = base.height() / height;
+        let placed: Vec<f32> = positions
+            .chunks_exact(3)
+            .flat_map(|v| {
+                [
+                    ((f64::from(v[0]) - cx) * scale) as f32,
+                    ((f64::from(v[1]) - lo_y) * scale) as f32,
+                    ((f64::from(v[2]) - cz) * scale) as f32,
+                ]
+            })
+            .collect();
+        let normals = crate::mesh_sdf::vertex_normals(&placed, indices, n);
+        let grid = crate::mesh_sdf::mesh_sdf(&placed, indices, grid_cell, CUSTOM_GRID_PAD_MM, &normals);
+        Some(Self {
+            kind: AvatarKind::Custom,
+            profile: base.profile,
+            joints: base.joints,
+            grid,
+            mesh: AvatarMesh {
+                positions: placed,
+                normals,
+                indices: indices.to_vec(),
+            },
+            makehuman: None,
+            velocity: None,
+            body_vertex_count: n,
+            rig: None,
+            pose: AvatarPose::REST,
+        })
+    }
+
     /// Body height.
     #[must_use]
     pub fn height(&self) -> f64 {
         self.profile.height
     }
 
-    /// Skin vertices for cloth-surface collision. Only morph-target avatars provide them; the
-    /// parametric mannequin relies on the distance grid alone.
+    /// Skin vertices for cloth-surface collision. Morph-target and custom bodies provide them;
+    /// the parametric mannequin relies on the distance grid alone.
     #[must_use]
     pub fn body_collision_mesh(&self) -> Option<BodyCollisionMesh<'_>> {
-        (self.kind == AvatarKind::MakeHuman).then_some(BodyCollisionMesh {
+        matches!(self.kind, AvatarKind::MakeHuman | AvatarKind::Custom).then_some(BodyCollisionMesh {
             positions: &self.mesh.positions,
             normals: &self.mesh.normals,
             body_vertex_count: self.body_vertex_count,
@@ -169,5 +233,50 @@ pub fn drafting_profile(params: &AvatarParams, model: Option<&MhModel>) -> Torso
     match model {
         Some(m) => m.build_body(params).profile,
         None => TorsoProfile::parametric(params),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_mesh_in_metres_becomes_a_body_of_the_measured_height() {
+        let params = AvatarParams::preset(crate::Sex::Female);
+        let source = Avatar::parametric(&params);
+        // the same body exported in metres, off to the side
+        let metres: Vec<f32> = source
+            .mesh
+            .positions
+            .chunks_exact(3)
+            .flat_map(|v| [v[0] / 1000.0 + 2.0, v[1] / 1000.0, v[2] / 1000.0 - 1.0])
+            .collect();
+        let custom = Avatar::custom(&metres, &source.mesh.indices, &params, 10.0).expect("a body");
+        assert_eq!(custom.kind, AvatarKind::Custom);
+        let top = custom
+            .mesh
+            .positions
+            .iter()
+            .skip(1)
+            .step_by(3)
+            .fold(f32::MIN, |a, &v| a.max(v));
+        assert!(
+            (f64::from(top) - source.height()).abs() < 1.0,
+            "scaled to {top} mm"
+        );
+        let waist = custom.profile.levels.waist;
+        assert!(
+            custom.grid.distance(DVec3::new(0.0, waist, 0.0)) < 0.0,
+            "the waist's middle is inside the body"
+        );
+        assert!(
+            custom.grid.distance(DVec3::new(0.0, waist, 400.0)) > 0.0,
+            "and 40 cm in front is not"
+        );
+        assert!(custom.body_collision_mesh().is_some());
+        assert!(
+            Avatar::custom(&[0.0; 6], &[0, 1, 0], &params, 10.0).is_none(),
+            "no height, no body"
+        );
     }
 }

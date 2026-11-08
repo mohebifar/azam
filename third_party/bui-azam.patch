@@ -437,7 +437,7 @@ index 99d673e..13d961c 100644
  
  #[cfg(test)]
 diff --git a/bindings/rust/blenderui/src/widgets.rs b/bindings/rust/blenderui/src/widgets.rs
-index ae613f8..e8c0252 100644
+index ae613f8..879be90 100644
 --- a/bindings/rust/blenderui/src/widgets.rs
 +++ b/bindings/rust/blenderui/src/widgets.rs
 @@ -81,6 +81,10 @@ pub(crate) struct WidgetSpec {
@@ -473,23 +473,24 @@ index ae613f8..e8c0252 100644
          Some(s)
      }
  }
-@@ -361,9 +373,14 @@ impl Widgets {
+@@ -361,9 +373,15 @@ impl Widgets {
              }
              w.seen = false;
              let (b, clip, visible) = at[key];
 +            // Native controls draw above page content and cannot be cut by a scroll
 +            // container, so one scrolled partly out of its clip (by more than a hairline) hides
 +            // rather than painting over what lies above or below the container. Sideways, a
-+            // control may be wider than a narrow column and still shows.
++            // control may be wider than a narrow column and still shows, as long as most of it is
++            // inside (a header crammed into a narrow area must not spill onto its neighbour).
 +            const SLACK: f32 = 2.0;
              let shown = visible && clip.is_none_or(|c| {
                  let i = c.intersect(&b);
 -                i.size.width > 0.0 && i.size.height > 0.0
-+                i.size.width > 0.0 && i.size.height >= b.size.height - SLACK
++                i.size.width >= b.size.width * 0.5 && i.size.height >= b.size.height - SLACK
              });
              unsafe {
                  sys::BK_geom_set(w.node, c"x".as_ptr(), (b.origin.x * scale).round() as f64);
-@@ -454,10 +471,16 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
+@@ -454,10 +472,16 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
          }
          if old.is_none_or(|o| o.label != spec.label) && !spec.label.is_empty() {
              match spec.kind {
@@ -508,7 +509,7 @@ index ae613f8..e8c0252 100644
          if old.is_none_or(|o| o.placeholder != spec.placeholder) && !spec.placeholder.is_empty() {
              set_str(c"placeholder", &spec.placeholder);
          }
-@@ -491,7 +514,9 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
+@@ -491,7 +515,9 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
          }
          if old.is_none_or(|o| (&o.items, &o.groups, o.html) != (&spec.items, &spec.groups, spec.html))
              && spec.kind == WKind::Select {

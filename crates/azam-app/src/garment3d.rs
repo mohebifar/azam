@@ -42,13 +42,19 @@ pub struct GrabState {
     pub depth: f32,
 }
 
+/// An avatar being built in the background: its key, and where it arrives with the reason a
+/// custom body could not be used.
+type PendingAvatar = (String, Receiver<(Avatar, Option<String>)>);
+
 /// The avatar and garment as uploaded to the renderer.
 #[derive(Default)]
 pub struct Scene3d {
     avatar_key: String,
     /// The current avatar, once built.
     pub avatar: Option<Arc<Avatar>>,
-    pending: Option<(String, Receiver<Avatar>)>,
+    pending: Option<PendingAvatar>,
+    /// Why the custom body file could not be used, if it could not.
+    pub avatar_error: Option<String>,
     avatar_uploaded: bool,
     avatar_generation: usize,
     built_for: Option<(u64, usize)>,
@@ -154,7 +160,11 @@ impl Scene3d {
         let Some(avatar) = &self.avatar else {
             return "Building the avatar…".into();
         };
+        if let Some(e) = &self.avatar_error {
+            return format!("Custom body unusable ({e}); built-in body shown");
+        }
         match (&avatar.kind, &avatar.makehuman) {
+            (AvatarKind::Custom, _) => "Custom body (imported mesh; motions keep it at rest)".into(),
             (AvatarKind::MakeHuman, Some(r)) => {
                 let worst = MEASUREMENTS
                     .iter()
@@ -259,24 +269,42 @@ impl Scene3d {
             return;
         };
         let use_pack = !self.mannequin && makehuman_available();
+        let body_file = custom_body_file(project);
         let key = format!(
-            "{}|{}",
+            "{}|{}|{}",
             serde_json::to_string(&params).unwrap_or_default(),
-            if use_pack { "makehuman" } else { "mannequin" }
+            if use_pack { "makehuman" } else { "mannequin" },
+            body_file.as_deref().unwrap_or("")
         );
         if key != self.avatar_key && self.pending.as_ref().is_none_or(|(k, _)| *k != key) {
             let (tx, rx) = channel();
             std::thread::spawn(move || {
-                let model = if use_pack { bundled_model() } else { None };
-                let _ = tx.send(Avatar::build(&params, model.as_deref()));
+                let custom = body_file.map(|path| {
+                    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                    let mesh = azam_io::import_obj(&text).map_err(|e| e.to_string())?;
+                    Avatar::custom(&mesh.positions, &mesh.indices, &params, CUSTOM_GRID_CELL_MM)
+                        .ok_or_else(|| "the mesh has no height".to_owned())
+                });
+                let built = match custom {
+                    Some(Ok(avatar)) => (avatar, None),
+                    other => {
+                        let model = if use_pack { bundled_model() } else { None };
+                        (
+                            Avatar::build(&params, model.as_deref()),
+                            other.and_then(Result::err),
+                        )
+                    }
+                };
+                let _ = tx.send(built);
             });
             self.pending = Some((key, rx));
         }
         if let Some((key, rx)) = &self.pending
-            && let Ok(avatar) = rx.try_recv()
+            && let Ok((avatar, error)) = rx.try_recv()
         {
             self.avatar_key.clone_from(key);
             self.pending = None;
+            self.avatar_error = error;
             self.avatar = Some(Arc::new(avatar));
             self.avatar_uploaded = false;
             self.avatar_generation += 1;
@@ -607,6 +635,23 @@ impl Scene3d {
         }
         meshes
     }
+}
+
+/// Avatar field naming an OBJ file to use as the body (a custom avatar).
+pub const CUSTOM_BODY_KEY: &str = "bodyFile";
+/// Cell size of a custom body's collision grid, in millimetres.
+const CUSTOM_GRID_CELL_MM: f64 = 7.5;
+
+/// The custom body file `project`'s avatar names, if any.
+#[must_use]
+pub fn custom_body_file(project: &Project) -> Option<String> {
+    project
+        .avatar
+        .extra
+        .get(CUSTOM_BODY_KEY)
+        .and_then(serde_json::Value::as_str)
+        .filter(|p| !p.is_empty())
+        .map(str::to_owned)
 }
 
 /// The colour of fit value `v` in `mode`, as linear RGBA.

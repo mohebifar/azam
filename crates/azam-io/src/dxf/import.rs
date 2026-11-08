@@ -368,10 +368,10 @@ fn make_piece(arena: &[Entity], block_name: &str, items: &[usize]) -> Option<Imp
     };
     let notches = lines()
         .filter(|e| e.layer == layer::NOTCH)
-        .filter_map(|e| {
+        .map(|e| {
             let (a, b) = (e.pts[0], e.pts[e.pts.len() - 1]);
             let gap = |q: Vec2| distance_to_polygon(q, &pts);
-            Some(if gap(a) <= gap(b) { a } else { b })
+            if gap(a) <= gap(b) { a } else { b }
         })
         .collect();
     let grain = lines().find(|e| e.layer == layer::GRAIN).and_then(|e| {

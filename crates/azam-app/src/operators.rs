@@ -342,6 +342,10 @@ pub enum Operator {
     ImportDxf,
     /// Import pattern pieces from an SVG drawing.
     ImportSvg,
+    /// Use a body mesh from an OBJ file as the avatar.
+    ImportAvatar,
+    /// Go back to the built-in avatar body.
+    UseBuiltinBody,
     /// Export the pattern as DXF.
     ExportDxf,
     /// Export the pattern as SVG.
@@ -408,6 +412,8 @@ pub enum Operator {
     ToggleArrangementPoints,
     /// Show the tool shelves' tool names beside their icons (Blender's wide toolbar).
     ToggleToolLabels,
+    /// Turn the selected outline points from corners into curve points, or back.
+    ToggleCurvePoint,
     /// Show or hide the 3D view's sidebar (Blender's N panel).
     ToggleSidebar,
     /// Open the shading pie menu.
@@ -423,11 +429,11 @@ pub enum Operator {
     /// Show a fit map (switching to fit map shading).
     SetFitMap(azam_sim::FitMode),
     /// Show an editor in an area (the editor-type menu).
-    SetEditor(crate::editors::Slot, crate::editors::Editor),
-    /// Split an area: its partner area opens beside it.
-    SplitArea(crate::editors::Slot),
-    /// Join an area with its partner, keeping its editor.
-    JoinArea(crate::editors::Slot),
+    SetEditor(crate::areas::AreaId, crate::editors::Editor),
+    /// Split an area in two, side by side or one over the other.
+    SplitArea(crate::areas::AreaId, crate::areas::Dir),
+    /// Join an area with its neighbour, keeping its editor.
+    JoinArea(crate::areas::AreaId),
 }
 
 impl Operator {
@@ -464,6 +470,8 @@ impl Operator {
             Self::StopSharing => "Stop Sharing",
             Self::ImportDxf => "Import DXF…",
             Self::ImportSvg => "Import SVG…",
+            Self::ImportAvatar => "Import Avatar OBJ…",
+            Self::UseBuiltinBody => "Use Built-in Body",
             Self::ExportDxf => "Export DXF…",
             Self::ExportSvg => "Export SVG…",
             Self::ExportObj => "Export OBJ…",
@@ -494,6 +502,7 @@ impl Operator {
             Self::ToggleGrid => "Show Floor Grid",
             Self::ToggleArrangementPoints => "Show Arrangement Points",
             Self::ToggleToolLabels => "Tool Names in Shelf",
+            Self::ToggleCurvePoint => "Toggle Corner / Curve",
             Self::ToggleSidebar => "Sidebar",
             Self::ShadingPie => "Shading Pie",
             Self::ViewPie => "View Pie",
@@ -506,8 +515,9 @@ impl Operator {
             | Self::SetFitMap(_)
             | Self::SetEditor(..)
             | Self::View(_) => "",
-            Self::SplitArea(_) => "Split Area",
-            Self::JoinArea(_) => "Join Areas",
+            Self::SplitArea(_, crate::areas::Dir::Row) => "Vertical Split",
+            Self::SplitArea(_, crate::areas::Dir::Column) => "Horizontal Split",
+            Self::JoinArea(_) => "Join with Neighbour",
         }
     }
 
@@ -522,6 +532,8 @@ impl Operator {
             Self::Join => "LINKED",
             Self::StopSharing => "UNLINKED",
             Self::ImportDxf | Self::ImportSvg => "IMPORT",
+            Self::ImportAvatar => "OUTLINER_OB_ARMATURE",
+            Self::UseBuiltinBody => "ARMATURE_DATA",
             Self::ExportDxf
             | Self::ExportSvg
             | Self::ExportObj
@@ -555,12 +567,14 @@ impl Operator {
             Self::ToggleGrid => "GRID",
             Self::ToggleArrangementPoints => "PIVOT_CURSOR",
             Self::ToggleToolLabels => "ALIGN_LEFT",
+            Self::ToggleCurvePoint => "HANDLE_AUTO",
             Self::ToggleSidebar => "MENU_PANEL",
             Self::Shortcuts => "KEY_COMMAND",
             Self::About => "INFO",
             Self::RenderImage => "RENDER_STILL",
             Self::SetEditor(_, e) => e.icon(),
-            Self::SplitArea(_) => "SPLIT_VERTICAL",
+            Self::SplitArea(_, crate::areas::Dir::Row) => "SPLIT_VERTICAL",
+            Self::SplitArea(_, crate::areas::Dir::Column) => "SPLIT_HORIZONTAL",
             Self::JoinArea(_) => "AREA_JOIN",
             Self::SelectAll | Self::DetectHems | Self::ShadingPie | Self::ViewPie => return None,
         })
@@ -659,6 +673,8 @@ impl Operator {
             Self::StopSharing,
             Self::ImportDxf,
             Self::ImportSvg,
+            Self::ImportAvatar,
+            Self::UseBuiltinBody,
             Self::ExportDxf,
             Self::ExportSvg,
             Self::ExportObj,
@@ -777,13 +793,23 @@ pub enum ContextMenu {
     Piece,
     /// Over empty pattern space.
     Pattern,
+    /// Over a seam.
+    Seam,
+    /// Over an outline point.
+    Point,
     /// In the 3D view.
     Viewport,
 }
 
 impl ContextMenu {
     /// Every right-click menu, in the order [`context_menus`] lists them.
-    pub const ALL: [Self; 3] = [Self::Piece, Self::Pattern, Self::Viewport];
+    pub const ALL: [Self; 5] = [
+        Self::Piece,
+        Self::Pattern,
+        Self::Viewport,
+        Self::Seam,
+        Self::Point,
+    ];
 }
 
 /// The right-click menus, in [`ContextMenu::ALL`] order: commands for what is under the pointer,
@@ -836,6 +862,28 @@ pub fn context_menus() -> Vec<Menu> {
                 Item(O::ToggleArrangementPoints),
                 Separator,
                 Item(O::RenderImage),
+            ],
+        },
+        Menu {
+            title: "Seam",
+            entries: vec![
+                Item(O::FlipSeam),
+                Item(O::SwapSeamSides),
+                Separator,
+                Item(O::SetTool(Tool::EditSew)),
+                Separator,
+                Item(O::Delete),
+            ],
+        },
+        Menu {
+            title: "Point",
+            entries: vec![
+                Item(O::ToggleCurvePoint),
+                Separator,
+                Item(O::SetTool(Tool::EditPoints)),
+                Item(O::SetTool(Tool::AddPoint)),
+                Separator,
+                Item(O::Delete),
             ],
         },
     ]
@@ -941,6 +989,7 @@ fn sewing_entries() -> Vec<MenuEntry> {
 
 /// The top bar's menus.
 #[must_use]
+#[allow(clippy::too_many_lines, reason = "the menu bar, read top to bottom")]
 pub fn top_menus() -> Vec<Menu> {
     use MenuEntry::{Item, Separator};
     use Operator as O;
@@ -958,6 +1007,7 @@ pub fn top_menus() -> Vec<Menu> {
         Separator,
         Item(O::ImportDxf),
         Item(O::ImportSvg),
+        Item(O::ImportAvatar),
         Item(O::ExportDxf),
         Item(O::ExportSvg),
         Item(O::ExportObj),

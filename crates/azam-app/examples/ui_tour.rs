@@ -19,6 +19,7 @@ fn save(path: &std::path::Path, w: usize, h: usize, px: &[u32]) {
         .expect("png");
 }
 
+#[allow(clippy::too_many_lines, reason = "one tour stop after another")]
 fn main() {
     let out = std::path::PathBuf::from(std::env::args().nth(1).unwrap_or_else(|| "tour".into()));
     std::fs::create_dir_all(&out).expect("out dir");

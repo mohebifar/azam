@@ -51,7 +51,11 @@ impl AzamApp {
                             let mut m = pc.arr.moved.unwrap_or([0.0; 3]);
                             m[k] = v;
                             let turned = pc.arr.turned;
-                            crate::place3d::set_placement(pc, (m != [0.0; 3]).then_some(m), turned);
+                            crate::place3d::set_placement(
+                                pc,
+                                m.iter().any(|v| v.abs() > f64::EPSILON).then_some(m),
+                                turned,
+                            );
                         }
                     })
                 };

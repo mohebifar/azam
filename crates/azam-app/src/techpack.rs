@@ -12,11 +12,11 @@ const SEAM_TOLERANCE_MM: f64 = 3.0;
 
 impl AzamApp {
     /// The Tech Pack editor's body.
-    pub(crate) fn techpack_body(&self) -> Div {
+    pub(crate) fn techpack_body(&self, area: crate::areas::AreaId) -> Div {
         let project = &self.session.project;
         div()
             .class("techpack")
-            .id("techpack")
+            .id(format!("techpack-{area}"))
             .child(section("Pattern Pieces", pieces_table(project)))
             .child(section("Seam Check", seams_table(project)))
             .child(section("Materials", materials_table(project)))

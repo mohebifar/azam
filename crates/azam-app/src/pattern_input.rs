@@ -146,7 +146,7 @@ impl AzamApp {
             match e.button {
                 MouseButton::Left => self.confirm_modal(),
                 MouseButton::Right => self.cancel_modal(),
-                _ => {}
+                MouseButton::Middle => {}
             }
             cx.notify();
             return;
@@ -158,14 +158,21 @@ impl AzamApp {
         if e.button == MouseButton::Right {
             // right-click: the piece under the pointer is selected and its commands offered
             let hit = hit_test(&self.session.project, q, self.pattern_view.zoom, false);
-            let menu = match hit.piece {
-                Some(piece) => {
-                    if !self.session.selection.pieces.contains(&piece) {
-                        self.session.selection.select_only(piece);
-                    }
-                    crate::operators::ContextMenu::Piece
+            let menu = if let Some(pt) = hit.point.clone() {
+                // a point: it alone is selected, on its piece
+                self.session.selection.select_only(pt.piece);
+                self.session.selection.points = vec![pt.index];
+                crate::operators::ContextMenu::Point
+            } else if let Some(seam) = hit.seam.clone() {
+                self.session.selection.select_seam(seam);
+                crate::operators::ContextMenu::Seam
+            } else if let Some(piece) = hit.piece.clone() {
+                if !self.session.selection.pieces.contains(&piece) {
+                    self.session.selection.select_only(piece);
                 }
-                None => crate::operators::ContextMenu::Pattern,
+                crate::operators::ContextMenu::Piece
+            } else {
+                crate::operators::ContextMenu::Pattern
             };
             self.open_context_menu(menu, e.position);
             cx.notify();

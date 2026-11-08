@@ -80,6 +80,60 @@ impl AzamApp {
     }
 }
 
+impl AzamApp {
+    /// Asks for an OBJ body mesh and makes it the avatar (kept with the project as a file path).
+    pub(crate) fn import_avatar(&mut self) {
+        let dir = std::env::var_os("HOME").map(PathBuf::from);
+        match blenderui::file_dialog(
+            "Import Avatar OBJ",
+            blenderui::FileDialogMode::Open,
+            dir.as_deref(),
+            None,
+            &["OBJ\t*.obj"],
+            false,
+        ) {
+            blenderui::FileDialogResult::Chosen(paths) => {
+                if let Some(path) = paths.into_iter().next() {
+                    self.set_custom_body(Some(&path.to_string_lossy()));
+                }
+            }
+            blenderui::FileDialogResult::Cancelled => {}
+            blenderui::FileDialogResult::Unavailable => {
+                self.status = "Importing needs a window for the file browser".into();
+            }
+        }
+    }
+
+    /// Which body model the avatar was built from, once built.
+    #[must_use]
+    pub fn avatar_kind(&self) -> Option<azam_avatar::AvatarKind> {
+        self.scene3d.avatar.as_ref().map(|a| a.kind)
+    }
+
+    /// Uses the OBJ body at `path` as the avatar, or the built-in body with `None`.
+    pub fn set_custom_body(&mut self, path: Option<&str>) {
+        let label = if path.is_some() {
+            "Custom Body"
+        } else {
+            "Built-in Body"
+        };
+        self.session.edit(label, |p| match path {
+            Some(path) => {
+                p.avatar
+                    .extra
+                    .insert(crate::garment3d::CUSTOM_BODY_KEY.to_owned(), path.into());
+            }
+            None => {
+                p.avatar.extra.remove(crate::garment3d::CUSTOM_BODY_KEY);
+            }
+        });
+        self.status = match path {
+            Some(path) => format!("Avatar body from {path}"),
+            None => "Built-in avatar body".into(),
+        };
+    }
+}
+
 /// Adds `pieces` (read from a DXF or SVG file) to `project` with their internal lines, and places each
 /// around the avatar by its name ("Back", "Sleeve L", "Collar"…). A second piece that names no
 /// side and would land where an earlier one did goes on the other side ("Sleeve", "Sleeve" →

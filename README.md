@@ -34,14 +34,17 @@ shading pie, `` ` `` the view pie, `F3` the operator search, `Space` plays the s
 undoes. Right-click opens a context menu for what is under the pointer (a piece, empty pattern space,
 the 3D view); the editor-type button at the left of every area header switches the editor it shows
 (choosing one another area shows swaps them); F3 ranks matches and shows each command's menu and
-shortcut. The editor-type menu also splits an area or joins it with its neighbour. N over the 3D view
+shortcut. The editor-type menu also splits any area side by side or one over the other (as often as you like, as in
+Blender) or joins it with its neighbour; every border between areas can be dragged, and a narrow 3D
+view's header leaves out its less used controls. Right-click on a seam or an outline point for their
+own menus; File ▸ Import Avatar OBJ… dresses a body mesh of your own (scaled to the avatar's height). N over the 3D view
 opens its sidebar (the selected piece's placement as numbers); over the pattern editor it is the Sew
 tool, as each Blender editor has its own keys. With the Select tool and pieces selected, G, R and S with
 the pointer over them move, turn and scale them modally (X or Y locks the axis; click or Enter keeps,
 Esc or right-click cancels and leaves nothing to redo); elsewhere these keys pick their tools. The 3D
 header's mode selector switches between Garment Mode and Arrange Mode (arrangement points shown).
 Drags and modal transforms are one undo step each; separate clicks are always separate steps.
-After a dart, an Adjust Last Operation panel changes its size. Pattern ▸ View ▸ Tool Names in Shelf
+After a dart or a rectangle, an Adjust Last Operation panel changes its size. Pattern ▸ View ▸ Tool Names in Shelf
 shows the tool shelves with labels. The pies are also under View ▸ Pie Menus. In the pattern editor: `W` select, `E` edit points,
 `P` add point, `H` polygon, `S` rectangle, `D` dart, `N` sew (`Shift N` free sew), `M` measure; hover a
 tool for its name and key. The Dart tool cuts a 20 × 80 mm dart into the clicked segment and sews its

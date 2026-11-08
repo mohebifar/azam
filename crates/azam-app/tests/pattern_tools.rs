@@ -158,6 +158,25 @@ fn rectangle_and_polygon_draw_pieces() {
         );
         let made = app.session().project.pieces.values().last().expect("new piece");
         assert!(made.name.starts_with("Rectangle"), "{}", made.name);
+        // Adjust Last Operation: 200 mm wide, still one new piece
+        assert!(matches!(
+            app.last_op(),
+            Some(azam_app::redo_panel::LastKind::Shape(_))
+        ));
+        ui.win.root().update(cx, |app, cx| {
+            app.adjust_last(0, 200.0);
+            cx.notify();
+        });
+        cx.draw(ui.win.id);
+        let app = ui.app(cx);
+        assert_eq!(
+            app.session().project.pieces.len(),
+            before + 1,
+            "redone, not added"
+        );
+        let made = app.session().project.pieces.values().last().expect("new piece");
+        let b = azam_geom::bbox(made.pts.iter().map(|q| q.pos)).expect("outline");
+        assert!((b.max.x - b.min.x - 200.0).abs() < 1e-6, "200 mm wide");
         assert_eq!(made.pts.len(), 4);
         ui.shot(cx, "rectangle");
         ui.undo(cx);
@@ -643,6 +662,46 @@ fn g_and_r_move_and_turn_pieces_modally() {
         assert!(
             (width(cx) - w0).abs() < 1e-6,
             "one undo takes the whole scale back"
+        );
+    });
+}
+
+#[test]
+fn the_point_menu_toggles_a_corner_into_a_curve_point() {
+    Application::headless().run(|cx| {
+        let ui = Ui::open(cx);
+        let back = ui.piece(cx, "Back");
+        let (index, pos) = {
+            let pc = &ui.app(cx).session().project.pieces[&back];
+            let i = (1..pc.pts.len()).find(|&i| !pc.pts[i].curve).expect("a corner");
+            (i, pc.pts[i].pos)
+        };
+        ui.key(cx, "e", "e");
+        ui.click(cx, pos);
+        assert_eq!(
+            ui.app(cx).session().selection.points,
+            vec![index],
+            "the corner is selected"
+        );
+        let (x, y) = ui.at(cx, pos);
+        ui.win.root().update(cx, |app, cx| {
+            app.open_context_menu(azam_app::operators::ContextMenu::Point, point(px(x), px(y)));
+            cx.notify();
+        });
+        cx.draw(ui.win.id);
+        cx.draw(ui.win.id);
+        let item = cx
+            .element_bounds(ui.win.id, "op-Toggle Corner / Curve")
+            .expect("in the Point menu");
+        cx.simulate_click(
+            ui.win.id,
+            item.origin.x + 20.0,
+            item.origin.y + item.size.height / 2.0,
+        );
+        cx.draw(ui.win.id);
+        assert!(
+            ui.app(cx).session().project.pieces[&back].pts[index].curve,
+            "now a curve point"
         );
     });
 }
