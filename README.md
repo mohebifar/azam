@@ -65,7 +65,11 @@ holding a button: X, Y or Z locks the axis, a typed number sets mm or degrees, c
 Esc or right-click puts it back. A fabric can carry an image texture (Fabric tab ▸ Texture), tiled
 along each piece's grain in the 3D view and in renders, and a normal map and a roughness map
 (Fabric tab ▸ Surface: tile width, normal strength) that bend its shading and set its gloss texel by
-texel, in solid shading and in the path tracer alike. The Grading panel lists the selected
+texel, in solid shading and in the path tracer alike. File ▸ Import U3M Fabric… adds a fabric from a
+U3M material (schema 1.0, a `.u3m` file beside its images or a `.u3ma` archive, unpacked into azam's
+data folder): its colour, roughness, sheen and opacity, and its colour, normal and roughness images
+with their tile widths (from the file, or from each image's resolution). U3M physics measurements
+are not read; the fabric starts from the default preset's physics. The Grading panel lists the selected
 point's offset in every size as an editable table.
 
 The 3D header's third shading button (or View ▸ Rendered Shading) path-traces the view in place,

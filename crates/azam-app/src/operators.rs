@@ -387,6 +387,8 @@ pub enum Operator {
     ImportSvg,
     /// Use a body mesh from an OBJ file as the avatar.
     ImportAvatar,
+    /// Import a fabric from a U3M material (`.u3m` or `.u3ma`).
+    ImportU3m,
     /// Go back to the built-in avatar body.
     UseBuiltinBody,
     /// Export the pattern as DXF.
@@ -541,6 +543,7 @@ impl Operator {
             Self::ImportDxf => "Import DXF…",
             Self::ImportSvg => "Import SVG…",
             Self::ImportAvatar => "Import Avatar OBJ…",
+            Self::ImportU3m => "Import U3M Fabric…",
             Self::UseBuiltinBody => "Use Built-in Body",
             Self::ExportDxf => "Export DXF…",
             Self::ExportDxfGraded => "Export DXF (All Sizes)…",
@@ -615,6 +618,7 @@ impl Operator {
             Self::StopSharing => "UNLINKED",
             Self::ImportDxf | Self::ImportSvg => "IMPORT",
             Self::ImportAvatar => "OUTLINER_OB_ARMATURE",
+            Self::ImportU3m => "MATERIAL",
             Self::UseBuiltinBody => "ARMATURE_DATA",
             Self::ExportDxf
             | Self::ExportDxfGraded
@@ -773,6 +777,7 @@ impl Operator {
             Self::ImportDxf,
             Self::ImportSvg,
             Self::ImportAvatar,
+            Self::ImportU3m,
             Self::UseBuiltinBody,
             Self::ExportDxf,
             Self::ExportDxfGraded,
@@ -1180,6 +1185,7 @@ pub fn top_menus() -> Vec<Menu> {
         Item(O::ImportDxf),
         Item(O::ImportSvg),
         Item(O::ImportAvatar),
+        Item(O::ImportU3m),
         Item(O::ExportDxf),
         Item(O::ExportDxfGraded),
         Item(O::ExportAstm),

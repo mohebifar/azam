@@ -147,6 +147,161 @@ pub fn apply_rule_table(
 }
 
 impl AzamApp {
+    /// Asks for a U3M material and adds it to the project as a fabric.
+    pub(crate) fn import_u3m_dialog(&mut self) {
+        let dir = std::env::var_os("HOME").map(PathBuf::from);
+        match blenderui::file_dialog(
+            "Import U3M Fabric",
+            blenderui::FileDialogMode::Open,
+            dir.as_deref(),
+            None,
+            &["U3M Material\t*.u3m *.u3ma"],
+            false,
+        ) {
+            blenderui::FileDialogResult::Chosen(paths) => {
+                if let Some(path) = paths.into_iter().next() {
+                    self.status = match self.import_u3m(&path) {
+                        Ok(note) => note,
+                        Err(e) => format!("U3M import failed: {e}"),
+                    };
+                }
+            }
+            blenderui::FileDialogResult::Cancelled => {}
+            blenderui::FileDialogResult::Unavailable => {
+                self.status = "Importing needs a window for the file browser".into();
+            }
+        }
+    }
+
+    /// Adds the U3M material at `path` (a `.u3m` file beside its images, or a `.u3ma` archive,
+    /// whose images are unpacked into azam's data folder) to the project as a new fabric, as one
+    /// undoable edit. Returns what was imported.
+    ///
+    /// # Errors
+    /// Why the file could not be read or its images not unpacked.
+    pub fn import_u3m(&mut self, path: &Path) -> Result<String, String> {
+        let root = crate::fabric_library::data_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("u3m");
+        self.import_u3m_into(path, &root)
+    }
+
+    /// [`AzamApp::import_u3m`], unpacking an archive's images into a folder under `unpack_root`.
+    ///
+    /// # Errors
+    /// Why the file could not be read or its images not unpacked.
+    pub fn import_u3m_into(&mut self, path: &Path, unpack_root: &Path) -> Result<String, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let archive = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("u3ma"));
+        let (material, image_dir) = if archive {
+            let a = azam_io::read_u3ma(&bytes).map_err(|e| e.to_string())?;
+            let stem = path
+                .file_stem()
+                .map_or_else(|| "u3m".into(), |s| s.to_string_lossy().into_owned());
+            let root = unpack_root.join(azam_io::format::slug(&stem));
+            let mut dir = root.clone();
+            for (file, data) in &a.files {
+                let Some(rel) = safe_relative(file) else { continue };
+                let target = root.join(rel);
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+                }
+                std::fs::write(&target, data).map_err(|e| format!("{}: {e}", target.display()))?;
+                if *file == a.u3m_path
+                    && let Some(parent) = target.parent()
+                {
+                    dir = parent.to_path_buf();
+                }
+            }
+            (a.material, dir)
+        } else {
+            let json = String::from_utf8_lossy(&bytes);
+            let m = azam_io::read_u3m(&json).map_err(|e| e.to_string())?;
+            (m, path.parent().map(Path::to_path_buf).unwrap_or_default())
+        };
+        let fabric = u3m_fabric(&material, &image_dir);
+        let name = fabric.name.clone();
+        self.session.edit("Import U3M Fabric", |p| {
+            azam_doc::add_fabric(p, fabric);
+        });
+        Ok(format!("Imported fabric \"{name}\" from {}", path.display()))
+    }
+}
+
+/// `path` (inside an archive) as a relative path that stays inside the folder it is unpacked
+/// into, or `None` for one that would climb out of it.
+fn safe_relative(path: &str) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => return None,
+            p if p.contains(':') => return None,
+            p => out.push(p),
+        }
+    }
+    (!out.as_os_str().is_empty()).then_some(out)
+}
+
+/// The azam fabric for U3M `material`, whose images live under `dir`: its colour, finish, and
+/// texture, normal and roughness maps with their tile widths (from the file, else from each
+/// image's resolution). Physics stay those of the default preset.
+#[must_use]
+pub fn u3m_fabric(material: &azam_io::U3mMaterial, dir: &Path) -> azam_doc::Fabric {
+    let mut fabric = azam_doc::Fabric::default();
+    fabric.name.clone_from(&material.name);
+    let encode = |c: f64| {
+        let s = if c <= 0.003_130_8 {
+            c * 12.92
+        } else {
+            1.055 * c.powf(1.0 / 2.4) - 0.055
+        };
+        (s.clamp(0.0, 1.0) * 255.0).round() as u8
+    };
+    let [r, g, b] = material.base_color.map(encode);
+    fabric.color = format!("#{r:02x}{g:02x}{b:02x}");
+    fabric.rough = material.roughness;
+    fabric.sheen = material.sheen;
+    fabric.opacity = material.alpha.max(0.2);
+    let located = |img: &azam_io::U3mImage| {
+        let p = dir.join(&img.path);
+        let width = blenderui::Image::open(&p.to_string_lossy()).map(|i| i.width);
+        (p.to_string_lossy().into_owned(), img.tile_mm(width))
+    };
+    let mut set = |key: &str, value: serde_json::Value| {
+        fabric.extra.insert(key.to_owned(), value);
+    };
+    let mut base_tile = None;
+    if let Some(img) = &material.base_image {
+        let (p, tile) = located(img);
+        set(azam_doc::FABRIC_TEXTURE_KEY, p.into());
+        if let Some(t) = tile {
+            set(azam_doc::FABRIC_TEXTURE_MM_KEY, t.into());
+            base_tile = Some(t);
+        }
+    }
+    let mut map_tile = None;
+    if let Some(img) = &material.normal_image {
+        let (p, tile) = located(img);
+        set(azam_doc::FABRIC_NORMAL_MAP_KEY, p.into());
+        set(
+            azam_doc::FABRIC_NORMAL_STRENGTH_KEY,
+            material.normal_strength.into(),
+        );
+        map_tile = tile;
+    }
+    if let Some(img) = &material.roughness_image {
+        let (p, tile) = located(img);
+        set(azam_doc::FABRIC_ROUGHNESS_MAP_KEY, p.into());
+        map_tile = map_tile.or(tile);
+    }
+    if let Some(t) = map_tile.or(base_tile) {
+        set(azam_doc::FABRIC_MAP_MM_KEY, t.into());
+    }
+    fabric
+}
+
+impl AzamApp {
     /// Asks for an OBJ body mesh and makes it the avatar (kept with the project as a file path).
     pub(crate) fn import_avatar(&mut self) {
         let dir = std::env::var_os("HOME").map(PathBuf::from);
@@ -298,6 +453,49 @@ mod tests {
             rules: Vec::new(),
             allowance_included: false,
         }
+    }
+
+    #[test]
+    fn archive_paths_cannot_climb_out_of_their_folder() {
+        assert_eq!(safe_relative("a/./b.png"), Some(PathBuf::from("a/b.png")));
+        assert_eq!(safe_relative("../etc/passwd"), None);
+        assert_eq!(safe_relative("x/../../y"), None);
+        assert_eq!(safe_relative("C:/windows"), None);
+        assert_eq!(safe_relative(""), None);
+    }
+
+    #[test]
+    fn a_u3m_material_becomes_a_fabric_with_its_maps() {
+        let m = azam_io::U3mMaterial {
+            name: "Twill".into(),
+            base_color: [0.2, 0.2, 0.2],
+            base_image: Some(azam_io::U3mImage {
+                path: "tex/base.png".into(),
+                width_mm: 60.0,
+                dpi: 0.0,
+            }),
+            normal_image: Some(azam_io::U3mImage {
+                path: "tex/normal.png".into(),
+                width_mm: 0.0,
+                dpi: 300.0,
+            }),
+            normal_strength: 0.7,
+            roughness: 0.4,
+            roughness_image: None,
+            sheen: 0.1,
+            alpha: 1.0,
+        };
+        let f = u3m_fabric(&m, Path::new("/lib/twill"));
+        assert_eq!(f.name, "Twill");
+        assert_eq!(f.color, "#7c7c7c", "linear 0.2 is sRGB 124");
+        assert!((f.rough - 0.4).abs() < 1e-12);
+        let (tex, mm) = f.texture().expect("texture");
+        assert_eq!((tex, mm), ("/lib/twill/tex/base.png", 60.0));
+        let maps = f.surface_maps().expect("maps");
+        assert_eq!(maps.normal, Some("/lib/twill/tex/normal.png"));
+        // the normal map's size is unknown (no image on disk), so its tile is the texture's
+        assert!((maps.tile_mm - 60.0).abs() < 1e-12);
+        assert!((maps.strength - 0.7).abs() < 1e-12);
     }
 
     #[test]

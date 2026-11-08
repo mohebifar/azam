@@ -757,6 +757,70 @@ fn an_astm_export_imports_back_as_the_same_graded_pattern() {
 }
 
 #[test]
+fn a_u3m_archive_imports_as_a_fabric_with_its_images_unpacked() {
+    // a 4 × 2 PNG, as both the colour and the normal map
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header()
+            .and_then(|mut wr| wr.write_image_data(&vec![128; (w * h * 4) as usize]))
+            .expect("png");
+        out
+    }
+    let image = png(4, 2);
+    let u3m = r#"{"schema": "1.0", "material": {"name": "Scanned Denim",
+        "front": {"shader": "principled",
+          "basecolor": {"constant": {"r": 0.05, "g": 0.08, "b": 0.2},
+            "texture": {"mode": "multiply", "factor": {"r": 1, "g": 1, "b": 1},
+              "image": {"path": "maps/color.png", "width": 0, "height": 0, "dpi": 254, "repeat": null}}},
+          "normal": {"constant": 0, "texture": {"factor": 1, "offset": 0,
+              "image": {"path": "maps/normal.png", "width": 0, "height": 0, "dpi": 254, "repeat": null}}},
+          "roughness": {"constant": 0.9, "texture": null}},
+        "back": null}, "custom": null}"#;
+    let zip = azam_io::write_zip(&[
+        ("denim.u3m", u3m.as_bytes()),
+        ("maps/color.png", &image),
+        ("maps/normal.png", &image),
+        ("../escape.png", &image),
+    ]);
+    let dir = std::env::temp_dir().join(format!("azam-u3m-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("dir");
+    let path = dir.join("denim.u3ma");
+    std::fs::write(&path, zip).expect("written");
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        let note = win
+            .root()
+            .update(cx, |app, _| app.import_u3m_into(&path, &dir.join("lib")))
+            .expect("imported");
+        assert!(note.contains("Scanned Denim"), "{note}");
+        let project = win.root().read(cx).session().project.clone();
+        let fabric = project
+            .fabrics
+            .values()
+            .find(|f| f.name == "Scanned Denim")
+            .expect("the new fabric");
+        let (texture, tile) = fabric.texture().expect("colour image");
+        assert!(std::path::Path::new(texture).exists(), "unpacked: {texture}");
+        // 4 px at 254 dpi is 0.4 mm
+        assert!((tile - 0.4).abs() < 1e-9, "tile {tile}");
+        let maps = fabric.surface_maps().expect("normal map");
+        assert!(std::path::Path::new(maps.normal.expect("normal")).exists());
+        assert!((fabric.rough - 0.9).abs() < 1e-12);
+        assert!(
+            !dir.join("escape.png").exists(),
+            "nothing written outside the folder"
+        );
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_shortcut_set_in_preferences_runs_its_command() {
     use azam_app::operators::{Operator, Tool};
     Application::headless().run(|cx| {

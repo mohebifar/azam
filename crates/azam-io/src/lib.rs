@@ -26,6 +26,8 @@ mod obj;
 pub mod pdf;
 mod svg;
 mod techpack;
+mod u3m;
+mod zip;
 
 pub use dxf::{
     AstmFiles, DxfError, GradeRuleTable, ImportedLine, ImportedPiece, RulError, export_astm, export_dxf,
@@ -44,3 +46,5 @@ pub use svg::{SvgError, export_svg, import_svg};
 pub use techpack::{
     FabricRow, PatternRow, PomRow, SewingRow, TechData, TrimRow, csv_from, tech_data, techpack_csv,
 };
+pub use u3m::{U3mArchive, U3mError, U3mImage, U3mMaterial, read_u3m, read_u3ma};
+pub use zip::{read_zip, write_zip};

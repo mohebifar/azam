@@ -635,6 +635,7 @@ impl AzamApp {
             Operator::ImportDxf => self.import_file(crate::import::ImportFormat::Dxf),
             Operator::ImportSvg => self.import_file(crate::import::ImportFormat::Svg),
             Operator::ImportAvatar => self.import_avatar(),
+            Operator::ImportU3m => self.import_u3m_dialog(),
             Operator::UseBuiltinBody => self.set_custom_body(None),
             Operator::Quit => std::process::exit(0),
             Operator::Shortcuts => {
