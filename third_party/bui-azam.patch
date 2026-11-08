@@ -605,7 +605,7 @@ index 99d673e..133fc14 100644
          assert_eq!(bidi_visual("abc \u{05d0}\u{05d1}", true, false).as_deref(), Some("\u{05d1}\u{05d0} abc"));
          // numbers stay left-to-right inside RTL text
 diff --git a/bindings/rust/blenderui/src/widgets.rs b/bindings/rust/blenderui/src/widgets.rs
-index ae613f8..879be90 100644
+index ae613f8..ff0b432 100644
 --- a/bindings/rust/blenderui/src/widgets.rs
 +++ b/bindings/rust/blenderui/src/widgets.rs
 @@ -81,6 +81,10 @@ pub(crate) struct WidgetSpec {
@@ -658,7 +658,7 @@ index ae613f8..879be90 100644
              });
              unsafe {
                  sys::BK_geom_set(w.node, c"x".as_ptr(), (b.origin.x * scale).round() as f64);
-@@ -454,10 +472,16 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
+@@ -454,10 +472,13 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
          }
          if old.is_none_or(|o| o.label != spec.label) && !spec.label.is_empty() {
              match spec.kind {
@@ -671,13 +671,10 @@ index ae613f8..879be90 100644
 +        if old.is_none_or(|o| o.live != spec.live) {
 +            set_num(c"live", f64::from(u8::from(spec.live)));
 +        }
-+        if old.is_none() && spec.autofocus && matches!(spec.kind, WKind::Text { .. }) {
-+            set_num(c"editing", 1.0);
-+        }
          if old.is_none_or(|o| o.placeholder != spec.placeholder) && !spec.placeholder.is_empty() {
              set_str(c"placeholder", &spec.placeholder);
          }
-@@ -491,7 +515,9 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
+@@ -491,7 +512,9 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
          }
          if old.is_none_or(|o| (&o.items, &o.groups, o.html) != (&spec.items, &spec.groups, spec.html))
              && spec.kind == WKind::Select {
@@ -688,6 +685,16 @@ index ae613f8..879be90 100644
              let cs: Vec<CString> = items.iter().map(|s| cstr(s)).collect();
              let ptrs: Vec<*const std::ffi::c_char> = cs.iter().map(|c| c.as_ptr()).collect();
              sys::BK_set_strs(n, c"items".as_ptr(), ptrs.as_ptr(), ptrs.len() as i32);
+@@ -518,5 +541,9 @@ fn sync(n: *mut sys::BKNode, old: Option<&WidgetSpec>, spec: &WidgetSpec) {
+                 sys::BK_set_color(n, c"value".as_ptr(), c.to_array().as_ptr());
+             }
+         }
++        // last, so editing starts from the field's initial text
++        if old.is_none() && spec.autofocus && matches!(spec.kind, WKind::Text { .. }) {
++            set_num(c"editing", 1.0);
++        }
+     }
+ }
 diff --git a/bindings/rust/blenderui/src/window.rs b/bindings/rust/blenderui/src/window.rs
 index a59814b..a2922f0 100644
 --- a/bindings/rust/blenderui/src/window.rs

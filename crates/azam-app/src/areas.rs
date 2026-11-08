@@ -242,7 +242,7 @@ pub fn default_layout(workspace: Workspace, next: &mut AreaId) -> AreaNode {
 }
 
 /// Layouts by workspace.
-pub type Layouts = BTreeMap<Workspace, AreaNode>;
+pub type Layouts = BTreeMap<String, AreaNode>;
 
 /// Id of split `id`'s draggable border element.
 fn border_id(id: AreaId) -> String {
@@ -274,7 +274,7 @@ impl AzamApp {
         self.prefs.layouts = self
             .layouts
             .iter()
-            .filter_map(|(ws, node)| Some((ws.name().to_owned(), serde_json::to_value(node).ok()?)))
+            .filter_map(|(name, node)| Some((name.clone(), serde_json::to_value(node).ok()?)))
             .collect();
         self.save_prefs();
     }
@@ -282,13 +282,11 @@ impl AzamApp {
     /// Takes the layouts saved in the preferences (those that read back).
     pub(crate) fn load_layouts(&mut self) {
         for (name, value) in &self.prefs.layouts {
-            if let (Some(ws), Ok(node)) = (
-                Workspace::from_name(name),
-                serde_json::from_value::<AreaNode>(value.clone()),
-            ) && !node.leaves().is_empty()
+            if let Ok(node) = serde_json::from_value::<AreaNode>(value.clone())
+                && !node.leaves().is_empty()
             {
                 self.next_area_id = self.next_area_id.max(max_id(&node));
-                self.layouts.insert(ws, node);
+                self.layouts.insert(name.clone(), node);
             }
         }
         self.framed = false;
@@ -298,7 +296,8 @@ impl AzamApp {
     pub fn reset_layout(&mut self) {
         let ws = self.workspace();
         let mut next = self.next_area_id;
-        self.layouts.insert(ws, default_layout(ws, &mut next));
+        self.layouts
+            .insert(self.active_tab_name(), default_layout(ws, &mut next));
         self.next_area_id = next;
         self.maximized = None;
         self.framed = false;
@@ -309,18 +308,24 @@ impl AzamApp {
     /// The current workspace's layout (made from its defaults the first time).
     pub(crate) fn layout_mut(&mut self) -> &mut AreaNode {
         let ws = self.workspace();
+        let name = self.active_tab_name();
         let next = &mut self.next_area_id;
-        self.layouts.entry(ws).or_insert_with(|| default_layout(ws, next))
+        self.layouts
+            .entry(name)
+            .or_insert_with(|| default_layout(ws, next))
     }
 
     /// The current workspace's layout (its defaults until it is first shown; the ids they get
     /// then are the ones shown here, as nothing else hands out ids).
     #[must_use]
     pub fn layout(&self) -> AreaNode {
-        self.layouts.get(&self.workspace()).cloned().unwrap_or_else(|| {
-            let mut next = self.next_area_id;
-            default_layout(self.workspace(), &mut next)
-        })
+        self.layouts
+            .get(&self.active_tab_name())
+            .cloned()
+            .unwrap_or_else(|| {
+                let mut next = self.next_area_id;
+                default_layout(self.workspace(), &mut next)
+            })
     }
 
     /// The areas of `node`, its splits laid out with draggable borders.

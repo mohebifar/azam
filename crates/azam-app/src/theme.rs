@@ -21,6 +21,7 @@ body { background: #161616; color: #e6e6e6; font-size: 12px; overflow: hidden; }
 .ws-tab { padding: 4px 11px; border-radius: 5px 5px 0 0; color: #b3b3b3; background: transparent; }
 .ws-tab:hover { color: #ffffff; background: #262626; }
 .ws-tab.active { color: #ffffff; background: #303030; }
+.ws-tab.ws-add { padding: 4px 7px; display: flex; align-items: center; }
 .topbar-spacer { flex: 1; }
 .topbar-info { color: #8a8a8a; padding-right: 8px; }
 

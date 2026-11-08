@@ -46,7 +46,8 @@ impl Workspace {
         })
     }
 
-    const ALL: [Self; 5] = [
+    /// Every built-in kind, in the order the tabs start in.
+    pub const ALL: [Self; 5] = [
         Self::Design,
         Self::Grading,
         Self::Colorway,
@@ -103,6 +104,8 @@ pub struct FilePrompt {
     pub path: String,
 }
 
+/// Two clicks on a tab within this long make a double-click.
+const DOUBLE_CLICK: std::time::Duration = std::time::Duration::from_millis(400);
 /// File browser filter for project files.
 const PROJECT_FILTER: &str = "azam Projects\t*.azam.json *.json";
 /// Below this width a 3D view's header leaves out its motion selector.
@@ -160,7 +163,14 @@ pub struct AzamApp {
     pub(crate) fabric_library: Option<Vec<azam_doc::Fabric>>,
     /// Where the current layout's areas and splits were laid out last frame.
     pub(crate) area_bounds: std::collections::BTreeMap<crate::areas::AreaId, Bounds<f32>>,
-    workspace: Workspace,
+    /// The workspace tabs, in order.
+    pub(crate) tabs: Vec<crate::workspaces::WorkspaceTab>,
+    /// Index of the active tab.
+    pub(crate) active_tab: usize,
+    /// The rename prompt's text, while it is open.
+    pub(crate) rename_prompt: Option<String>,
+    /// The workspace tab last clicked and when (two quick clicks rename it).
+    last_tab_click: Option<(usize, std::time::Instant)>,
     pub(crate) tool: Tool,
     pub(crate) shading: Shading,
     /// What the fit map shading shows.
@@ -297,7 +307,10 @@ impl AzamApp {
             prefs_view: None,
             area_bounds: std::collections::BTreeMap::new(),
             menu_anchor: (0.0, 0.0),
-            workspace: Workspace::Design,
+            tabs: crate::workspaces::default_tabs(),
+            active_tab: 0,
+            rename_prompt: None,
+            last_tab_click: None,
             tool: Tool::Select,
             shading: Shading::Solid,
             fit_mode: azam_sim::FitMode::Fit,
@@ -338,16 +351,25 @@ impl AzamApp {
     /// The current workspace.
     #[must_use]
     pub fn workspace(&self) -> Workspace {
-        self.workspace
+        self.tabs
+            .get(self.active_tab)
+            .map_or(Workspace::Design, crate::workspaces::WorkspaceTab::workspace)
     }
 
-    /// Switches to `workspace`.
+    /// Switches to the first tab of kind `workspace`, adding one if there is none.
     pub fn set_workspace(&mut self, workspace: Workspace) {
-        self.workspace = workspace;
+        match self.tabs.iter().position(|t| t.workspace() == workspace) {
+            Some(i) => self.activate_tab(i),
+            None => self.add_workspace(workspace),
+        }
+    }
+
+    /// Lays out the newly active tab and applies what its kind starts with.
+    pub(crate) fn workspace_switched(&mut self) {
         self.layout_mut();
         self.framed = false;
         self.scene_revision = 0;
-        match workspace {
+        match self.workspace() {
             Workspace::Review => self.shading = Shading::FitMap,
             Workspace::Grading | Workspace::TechPack => self.prop_tab = PropTab::Project,
             Workspace::Colorway => self.prop_tab = PropTab::Fabric,
@@ -636,6 +658,14 @@ impl AzamApp {
             Operator::ImportSvg => self.import_file(crate::import::ImportFormat::Svg),
             Operator::ImportAvatar => self.import_avatar(),
             Operator::ImportU3m => self.import_u3m_dialog(),
+            Operator::AddWorkspace(kind) => self.add_workspace(kind),
+            Operator::DuplicateWorkspace => self.duplicate_workspace(),
+            Operator::RenameWorkspace => self.start_rename_workspace(),
+            Operator::DeleteWorkspace => {
+                self.delete_workspace();
+            }
+            Operator::MoveWorkspaceLeft => self.move_workspace(-1),
+            Operator::MoveWorkspaceRight => self.move_workspace(1),
             Operator::UseBuiltinBody => self.set_custom_body(None),
             Operator::Quit => std::process::exit(0),
             Operator::Shortcuts => {
@@ -799,6 +829,7 @@ impl AzamApp {
             self.open_menu = None;
             self.file_prompt = None;
             self.join_prompt = None;
+            self.rename_prompt = None;
             self.cancel_pattern_tool();
             window.focus_id("root");
             cx.notify();
@@ -814,6 +845,13 @@ impl AzamApp {
         if self.join_prompt.is_some() {
             if key.key == "Return" {
                 self.confirm_join(window, cx);
+                cx.notify();
+            }
+            return;
+        }
+        if self.rename_prompt.is_some() {
+            if key.key == "Return" {
+                self.confirm_rename_workspace(window);
                 cx.notify();
             }
             return;
@@ -1161,19 +1199,51 @@ impl AzamApp {
             bar = bar.child(self.menu_title(i, cx));
         }
         let mut tabs = div().class("workspaces");
-        for ws in Workspace::ALL {
-            let class = if ws == self.workspace {
+        for (i, tab) in self.tabs.iter().enumerate() {
+            let class = if i == self.active_tab {
                 "ws-tab active"
             } else {
                 "ws-tab"
             };
-            tabs = tabs.child(div().class(class).child(ws.label()).on_click(cx.listener(
-                move |this, _: &ClickEvent, _, cx| {
-                    this.set_workspace(ws);
-                    cx.notify();
-                },
-            )));
+            tabs = tabs.child(
+                div()
+                    .class(class)
+                    .id(format!("ws-{i}"))
+                    .child(tab.name.clone())
+                    .on_click(cx.listener(move |this, e: &ClickEvent, _, cx| {
+                        // a double-click on the active tab renames it, as in Blender
+                        let now = std::time::Instant::now();
+                        let quick = this
+                            .last_tab_click
+                            .is_some_and(|(t, at)| t == i && now.duration_since(at) < DOUBLE_CLICK);
+                        this.last_tab_click = Some((i, now));
+                        if this.active_tab == i && (e.click_count() >= 2 || quick) {
+                            this.start_rename_workspace();
+                        } else {
+                            this.activate_tab(i);
+                        }
+                        cx.notify();
+                    }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                            this.activate_tab(i);
+                            this.open_context_menu(crate::operators::ContextMenu::Workspace, e.position);
+                            cx.notify();
+                        }),
+                    ),
+            );
         }
+        tabs = tabs.child(
+            div()
+                .class("ws-tab ws-add")
+                .id("ws-add")
+                .child(self.icons.icon("ADD"))
+                .on_click(cx.listener(|this, e: &ClickEvent, _, cx| {
+                    this.open_context_menu(crate::operators::ContextMenu::AddWorkspace, e.up.position);
+                    cx.notify();
+                })),
+        );
         let title = format!(
             "{}{}",
             if self.session.project.meta.name.is_empty() {
@@ -1312,6 +1382,7 @@ impl AzamApp {
         self.open_menu.is_some()
             || self.search.is_some()
             || self.file_prompt.is_some()
+            || self.rename_prompt.is_some()
             || self.pie.is_some()
             || self.prefs_view.is_some()
     }
@@ -1991,7 +2062,7 @@ impl AzamApp {
             self.pattern_scene = pattern_scene_with(
                 &self.session.project,
                 &self.session.selection,
-                self.workspace == Workspace::Grading,
+                self.workspace() == Workspace::Grading,
                 &self.collab_marks,
             );
         }
@@ -2135,11 +2206,12 @@ impl AzamApp {
                 )
                 .child(self.dropdown(i, cx));
         }
-        if self.search.is_some() || self.file_prompt.is_some() {
+        if self.search.is_some() || self.file_prompt.is_some() || self.rename_prompt.is_some() {
             root = root.child(div().class("menu-scrim").on_click(cx.listener(
                 |this, _: &ClickEvent, window, cx| {
                     this.search = None;
                     this.file_prompt = None;
+                    this.rename_prompt = None;
                     window.focus_id("root");
                     cx.notify();
                 },
@@ -2153,6 +2225,9 @@ impl AzamApp {
         }
         if let Some(text) = self.join_prompt.clone() {
             root = root.child(self.join_popup(&text, cx));
+        }
+        if let Some(text) = self.rename_prompt.clone() {
+            root = root.child(self.rename_popup(&text, cx));
         }
         if let Some(pie) = self.pie {
             root = root.child(self.pie_menu(pie, cx));

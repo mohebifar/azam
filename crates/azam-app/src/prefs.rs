@@ -31,6 +31,8 @@ pub struct Prefs {
     pub autosave_minutes: f64,
     /// Each workspace's areas as last left, by workspace name.
     pub layouts: BTreeMap<String, serde_json::Value>,
+    /// The workspace tabs, in order (empty: the built-in ones).
+    pub workspaces: Vec<crate::workspaces::WorkspaceTab>,
 }
 
 impl Default for Prefs {
@@ -42,6 +44,7 @@ impl Default for Prefs {
             autosave: true,
             autosave_minutes: 2.0,
             layouts: BTreeMap::new(),
+            workspaces: Vec::new(),
         }
     }
 }
@@ -203,6 +206,7 @@ impl AzamApp {
         self.prefs = Prefs::load(&path);
         self.tool_labels = self.prefs.tool_labels;
         self.prefs_path = Some(path);
+        self.load_workspaces();
         self.load_layouts();
     }
 

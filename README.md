@@ -87,7 +87,10 @@ Arrangement panel; imported DXF pieces are placed by their names ("Back", "Sleev
 Lengths show in the project's units (Project tab ▸ Units: millimetres, centimetres or inches): the
 properties fields, segment labels, seam differences, the Measure tool and the tech pack. Area
 layouts are saved per workspace with the preferences and come back next time (Edit ▸ Reset Layout
-restores one). The Colorways editor (any area's editor menu, and beside the 3D view in the
+restores one). Workspaces are your own, as in Blender: the "+" after the tabs adds one of any kind,
+and right-clicking a tab (or Edit ▸ Workspace) duplicates it with its layout, renames it
+(double-click works too), moves it along the bar or deletes it; the tabs are saved with the
+preferences. The Colorways editor (any area's editor menu, and beside the 3D view in the
 Colorway workspace) shows a rendered card per colorway side by side; click one to make it active.
 File ▸ Export DXF (All Sizes)… writes the graded nest: every piece in every size,
 the sizes laid over each other. File ▸ Export ASTM DXF + Rules… writes the base size as an ASTM

@@ -39,5 +39,6 @@ mod theme;
 mod tooltip;
 pub mod units;
 pub mod viewport;
+pub mod workspaces;
 
 pub use app::AzamApp;

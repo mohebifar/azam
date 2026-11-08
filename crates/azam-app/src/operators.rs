@@ -505,7 +505,37 @@ pub enum Operator {
     MaximizeHovered,
     /// Put the current workspace's areas back as they start.
     ResetLayout,
+    /// Add a workspace tab of a built-in kind.
+    AddWorkspace(crate::app::Workspace),
+    /// Copy the active workspace tab and its layout.
+    DuplicateWorkspace,
+    /// Rename the active workspace tab.
+    RenameWorkspace,
+    /// Delete the active workspace tab.
+    DeleteWorkspace,
+    /// Move the active workspace tab one place left.
+    MoveWorkspaceLeft,
+    /// Move the active workspace tab one place right.
+    MoveWorkspaceRight,
 }
+
+/// Edit ▸ Workspace: what the tabs' right-click menu offers.
+pub const WORKSPACE_MENU: &[Operator] = &[
+    Operator::DuplicateWorkspace,
+    Operator::RenameWorkspace,
+    Operator::MoveWorkspaceLeft,
+    Operator::MoveWorkspaceRight,
+    Operator::DeleteWorkspace,
+];
+
+/// The workspace tabs' "+" menu: one entry per built-in kind.
+pub const ADD_WORKSPACE_MENU: &[Operator] = &[
+    Operator::AddWorkspace(crate::app::Workspace::Design),
+    Operator::AddWorkspace(crate::app::Workspace::Grading),
+    Operator::AddWorkspace(crate::app::Workspace::Colorway),
+    Operator::AddWorkspace(crate::app::Workspace::Review),
+    Operator::AddWorkspace(crate::app::Workspace::TechPack),
+];
 
 impl Operator {
     /// Display name.
@@ -513,6 +543,7 @@ impl Operator {
     pub fn label(self) -> String {
         match self {
             Self::New(t) => format!("New {}", t.label()),
+            Self::AddWorkspace(w) => format!("New Workspace: {}", w.name()),
             Self::SetTool(t) => format!("Tool: {}", t.label()),
             Self::SetShading(Shading::Solid) => "Solid Shading".into(),
             Self::SetShading(Shading::FitMap) => "Fit Map Shading".into(),
@@ -592,7 +623,13 @@ impl Operator {
             Self::RecoverAutoSave => "Recover Auto Save",
             Self::ExportAnimation => "Export Animation (.glb)…",
             Self::RenderImage => "Render Image",
+            Self::DuplicateWorkspace => "Duplicate Workspace",
+            Self::RenameWorkspace => "Rename Workspace…",
+            Self::DeleteWorkspace => "Delete Workspace",
+            Self::MoveWorkspaceLeft => "Move Workspace Left",
+            Self::MoveWorkspaceRight => "Move Workspace Right",
             Self::New(_)
+            | Self::AddWorkspace(_)
             | Self::SetTool(_)
             | Self::SetShading(_)
             | Self::SetFitMap(_)
@@ -611,6 +648,11 @@ impl Operator {
     pub const fn icon(self) -> Option<&'static str> {
         Some(match self {
             Self::New(_) => "FILE_NEW",
+            Self::AddWorkspace(_) => "ADD",
+            Self::RenameWorkspace => "GREASEPENCIL",
+            Self::DeleteWorkspace => "X",
+            Self::MoveWorkspaceLeft => "BACK",
+            Self::MoveWorkspaceRight => "FORWARD",
             Self::Open => "FILE_FOLDER",
             Self::Save | Self::SaveAs => "FILE_TICK",
             Self::Share | Self::ShareFile => "COMMUNITY",
@@ -633,7 +675,7 @@ impl Operator {
             Self::Quit => "QUIT",
             Self::Undo => "LOOP_BACK",
             Self::Redo => "LOOP_FORWARDS",
-            Self::Duplicate => "DUPLICATE",
+            Self::Duplicate | Self::DuplicateWorkspace => "DUPLICATE",
             Self::Delete => "TRASH",
             Self::Mirror => "MOD_MIRROR",
             Self::FlipHorizontal => "ARROW_LEFTRIGHT",
@@ -778,6 +820,11 @@ impl Operator {
             Self::ImportSvg,
             Self::ImportAvatar,
             Self::ImportU3m,
+            Self::DuplicateWorkspace,
+            Self::RenameWorkspace,
+            Self::DeleteWorkspace,
+            Self::MoveWorkspaceLeft,
+            Self::MoveWorkspaceRight,
             Self::UseBuiltinBody,
             Self::ExportDxf,
             Self::ExportDxfGraded,
@@ -916,16 +963,22 @@ pub enum ContextMenu {
     Point,
     /// In the 3D view.
     Viewport,
+    /// On a workspace tab.
+    Workspace,
+    /// The workspace tabs' "+" button.
+    AddWorkspace,
 }
 
 impl ContextMenu {
     /// Every right-click menu, in the order [`context_menus`] lists them.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 7] = [
         Self::Piece,
         Self::Pattern,
         Self::Viewport,
         Self::Seam,
         Self::Point,
+        Self::Workspace,
+        Self::AddWorkspace,
     ];
 }
 
@@ -1004,6 +1057,24 @@ pub fn context_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::Delete),
             ],
+        },
+        Menu {
+            title: "Workspace",
+            entries: vec![
+                Item(O::DuplicateWorkspace),
+                Item(O::RenameWorkspace),
+                Separator,
+                Item(O::MoveWorkspaceLeft),
+                Item(O::MoveWorkspaceRight),
+                Separator,
+                MenuEntry::Sub("New Workspace", "ADD", ADD_WORKSPACE_MENU),
+                Separator,
+                Item(O::DeleteWorkspace),
+            ],
+        },
+        Menu {
+            title: "Add Workspace",
+            entries: ADD_WORKSPACE_MENU.iter().map(|&op| Item(op)).collect(),
         },
     ]
 }
@@ -1217,6 +1288,7 @@ pub fn top_menus() -> Vec<Menu> {
                 Separator,
                 Item(O::Search),
                 Separator,
+                MenuEntry::Sub("Workspace", "WORKSPACE", WORKSPACE_MENU),
                 Item(O::ResetLayout),
                 Item(O::Preferences),
             ],

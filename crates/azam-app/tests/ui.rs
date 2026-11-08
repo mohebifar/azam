@@ -1210,6 +1210,86 @@ fn layouts_are_saved_and_come_back() {
 }
 
 #[test]
+fn workspaces_can_be_added_duplicated_renamed_moved_and_deleted() {
+    use azam_app::app::Workspace;
+    use azam_app::areas::Dir;
+    use azam_app::editors::Editor;
+    let dir = std::env::temp_dir().join(format!("azam-workspaces-{}", std::process::id()));
+    let prefs = dir.join("prefs.json");
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(win.id);
+        let names =
+            |app: &AzamApp| -> Vec<String> { app.workspace_tabs().iter().map(|t| t.name.clone()).collect() };
+        win.root().update(cx, |app, cx| {
+            app.use_prefs_file(prefs.clone());
+            assert_eq!(
+                names(app),
+                ["Design", "Grading", "Colorway", "Review", "Tech Pack"]
+            );
+            // split Design's properties, then duplicate it: the copy has the split
+            let props = app.area_with(Editor::Properties).expect("properties");
+            app.split_area(props, Dir::Column).expect("split");
+            let areas = app.layout().leaves().len();
+            app.duplicate_workspace();
+            assert_eq!(app.active_tab(), 1);
+            assert_eq!(names(app)[1], "Design.001");
+            assert_eq!(app.layout().leaves().len(), areas, "the copy keeps the layout");
+            assert_eq!(app.workspace(), Workspace::Design);
+            // rename it; a taken name is refused
+            assert!(!app.rename_workspace("Review"));
+            assert!(app.rename_workspace("Fitting"));
+            assert_eq!(names(app)[1], "Fitting");
+            assert_eq!(app.layout().leaves().len(), areas, "the layout follows the name");
+            // move it to the end, add a Review tab after it, delete that
+            app.move_workspace(10);
+            assert_eq!(names(app).last().map(String::as_str), Some("Fitting"));
+            app.add_workspace(Workspace::Review);
+            assert_eq!(names(app).last().map(String::as_str), Some("Review.001"));
+            assert_eq!(app.workspace(), Workspace::Review);
+            assert!(app.delete_workspace());
+            assert_eq!(names(app).last().map(String::as_str), Some("Fitting"));
+            assert_eq!(
+                app.active_tab(),
+                names(app).len() - 1,
+                "the tab before it is active"
+            );
+            cx.notify();
+        });
+        // a new window on the same preferences has the same tabs and layouts
+        let again = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        cx.draw(again.id);
+        again.root().update(cx, |app, _| {
+            app.use_prefs_file(prefs.clone());
+            assert_eq!(
+                names(app),
+                ["Design", "Grading", "Colorway", "Review", "Tech Pack", "Fitting"]
+            );
+            let fitting = app.workspace_tabs().len() - 1;
+            app.activate_tab(fitting);
+            let design_areas = {
+                let n = app.layout().leaves().len();
+                app.activate_tab(0);
+                assert_eq!(app.layout().leaves().len(), n, "Design kept its split too");
+                n
+            };
+            app.activate_tab(fitting);
+            assert_eq!(app.layout().leaves().len(), design_areas);
+            // the last tab cannot go
+            while app.workspace_tabs().len() > 1 {
+                assert!(app.delete_workspace());
+            }
+            assert!(!app.delete_workspace());
+        });
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn the_colorways_editor_shows_every_colorway_and_picks_one() {
     Application::headless().run(|cx| {
         let win = cx
