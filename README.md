@@ -99,8 +99,11 @@ closed shapes (curves kept).
 - Persian and Arabic text: contextual shaping (joined letter forms, lam-alef, ZWNJ) before bidi
   reordering, and per-glyph fallback to a system font for scripts the UI font lacks
   (`BUI_FALLBACK_FONT` overrides the font file).
-- Native controls that stick out of their scroll container hide instead of painting over what lies
-  beyond it (the kit cannot cut them partially).
+- Native controls that stick out of their scroll container (or are mostly outside it sideways) hide
+  instead of painting over what lies beyond it (the kit cannot cut them partially).
+- Text fields show Persian and Arabic values shaped and in visual order while not being edited.
+- A window repaints after its own key and pointer handlers call `notify` (it is out of the window
+  list while it dispatches), and a frame delivered while the app is busy is requested again.
 
 ## Working on it
 
