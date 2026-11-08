@@ -18,6 +18,8 @@ const SNAP: u32 = 0x10b981;
 const MEASURE: u32 = 0x6fd3ff;
 /// The Cut tool's line (Blender's knife red).
 const CUT_LINE: u32 = 0xe0_4a_3f;
+/// Colour of a symmetry axis.
+const SYMMETRY_AXIS: u32 = 0xc9a0ff;
 /// Distance of the rotation handle above the selection's box, in logical pixels.
 pub const ROTATE_HANDLE_PX: f32 = 26.0;
 /// Radius of the rotation handle, in logical pixels.
@@ -78,6 +80,8 @@ pub struct Overlay {
     pub measure: Option<(Vec2, Vec2)>,
     /// A cut line being drawn: from and to.
     pub cut: Option<(Vec2, Vec2)>,
+    /// Symmetry axes of symmetrically edited pieces: from and to.
+    pub axes: Vec<(Vec2, Vec2)>,
     /// Where the pointer snapped to.
     pub snap: Option<Vec2>,
     /// Box of the pieces the rotation handle turns: min and max corners.
@@ -197,6 +201,9 @@ impl Overlay {
                 rgb(MEASURE),
                 rgb(0x111111),
             );
+        }
+        for &(a, c) in &self.axes {
+            dashed(p, &[to_px(a), to_px(c)], 8.0, 3.0, rgb(SYMMETRY_AXIS), 1.2);
         }
         if let Some((a, c)) = self.cut {
             dashed(p, &[to_px(a), to_px(c)], 6.0, 4.0, rgb(CUT_LINE), 1.5);

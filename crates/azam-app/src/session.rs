@@ -128,7 +128,9 @@ impl Session {
         }
         self.redo.clear();
         let lengths = azam_doc::link_lengths(&self.project);
+        let symmetric = azam_doc::symmetry_snapshot(&self.project);
         f(&mut self.project);
+        azam_doc::sync_symmetry(&mut self.project, &symmetric);
         azam_doc::sync_length_links(&mut self.project, &lengths);
         if self.collab.is_some()
             && let Some(top) = self.undo.last_mut()
@@ -309,6 +311,42 @@ mod tests {
         let moved = len(&session, &b);
         session.undo();
         assert!(len(&session, &b) < moved - 1.0, "undo puts the follower back too");
+    }
+
+    #[test]
+    fn symmetric_editing_mirrors_point_moves_and_undoes_with_them() {
+        let mut session = Session::new(new_project(Template::Tee));
+        let front = session
+            .project
+            .pieces
+            .values()
+            .find(|pc| pc.name == "Front")
+            .expect("front")
+            .id
+            .clone();
+        let mut axis = None;
+        session.edit("Symmetric Editing", |p| {
+            axis = azam_doc::toggle_symmetry(p, &front);
+        });
+        let axis = axis.expect("on");
+        let at = |s: &Session, id: &str| {
+            let pc = &s.project.pieces[&front];
+            pc.pts[pc.point_index(&azam_geom::PointId::new(id)).expect("point")].pos
+        };
+        let right_before = at(&session, "shR");
+        session.edit("Move Points", |p| {
+            let pc = p.pieces.get_mut(&front).expect("front");
+            let k = pc.point_index(&azam_geom::PointId::new("shL")).expect("point");
+            pc.pts[k].pos.x -= 15.0;
+            pc.pts[k].pos.y += 6.0;
+        });
+        let (l, r) = (at(&session, "shL"), at(&session, "shR"));
+        assert!(
+            (l.x + r.x - 2.0 * axis).abs() < 1e-9 && (l.y - r.y).abs() < 1e-9,
+            "mirrored"
+        );
+        session.undo();
+        assert_eq!(at(&session, "shR"), right_before, "undo puts the mirror back too");
     }
 
     #[test]

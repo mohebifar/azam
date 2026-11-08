@@ -297,9 +297,11 @@ impl std::error::Error for EditError {}
 pub fn apply(project: &mut Project, command: Command) -> Result<Applied, EditError> {
     let before = project.clone();
     let lengths = crate::link_lengths(project);
+    let symmetric = crate::symmetry_snapshot(project);
     let mut created = Vec::new();
     match run(project, command, &mut created) {
         Ok(()) => {
+            crate::sync_symmetry(project, &symmetric);
             crate::sync_length_links(project, &lengths);
             sync_mirrors(project);
             let changed = !same_content(project, &before);

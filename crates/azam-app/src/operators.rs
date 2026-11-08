@@ -439,6 +439,8 @@ pub enum Operator {
     FinishDraft,
     /// Mirror the selected pieces.
     Mirror,
+    /// Edit the active piece symmetrically about its vertical centre line (or stop).
+    ToggleSymmetry,
     /// Detect hems on the selected pieces.
     DetectHems,
     /// Open the operator search.
@@ -604,6 +606,7 @@ impl Operator {
             Self::SwapSeamSides => "Swap Seam Sides",
             Self::FinishDraft => "Finish Shape / Seam Side",
             Self::Mirror => "Mirror Pieces",
+            Self::ToggleSymmetry => "Symmetric Editing",
             Self::DetectHems => "Detect Hems",
             Self::Search => "Search…",
             Self::TogglePlay => "Play / Pause Simulation",
@@ -686,6 +689,7 @@ impl Operator {
             Self::Duplicate | Self::DuplicateWorkspace => "DUPLICATE",
             Self::Delete => "TRASH",
             Self::Mirror => "MOD_MIRROR",
+            Self::ToggleSymmetry => "MOD_TRIANGULATE",
             Self::FlipHorizontal => "ARROW_LEFTRIGHT",
             Self::FlipVertical => "EMPTY_SINGLE_ARROW",
             Self::Rotate90 => "ORIENTATION_GIMBAL",
@@ -851,6 +855,7 @@ impl Operator {
             Self::Duplicate,
             Self::Delete,
             Self::Mirror,
+            Self::ToggleSymmetry,
             Self::FlipHorizontal,
             Self::FlipVertical,
             Self::Rotate90,
@@ -1004,6 +1009,7 @@ pub fn context_menus() -> Vec<Menu> {
             entries: vec![
                 Item(O::Duplicate),
                 Item(O::Mirror),
+                Item(O::ToggleSymmetry),
                 Separator,
                 Item(O::FlipHorizontal),
                 Item(O::FlipVertical),
@@ -1142,6 +1148,7 @@ pub fn editor_menus() -> Vec<Menu> {
             entries: vec![
                 Item(O::Duplicate),
                 Item(O::Mirror),
+                Item(O::ToggleSymmetry),
                 Item(O::Delete),
                 Separator,
                 Item(O::FlipHorizontal),

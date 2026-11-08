@@ -115,7 +115,9 @@ selected points by number and sets a straight segment's length. Length links kee
 length, or one a set amount longer (Segment panel ▸ Match Length Of, closest lengths first): front
 and back side seams, a sleeve cap and its armhole. Edit either side and the other follows, its curve
 scaled about its start corner so only its far corner moves; the pattern editor marks linked pairs
-with the same "⇔ n" chip. Links hold in the base size. The 3D header's wireframe button (or
+with the same "⇔ n" chip. Links hold in the base size. Piece ▸ Symmetric Editing (also on a piece's right-click
+menu) edits a piece about its vertical centre line, drawn dashed: moving a point moves its mirror
+partner too, and a point on the line stays on it. The 3D header's wireframe button (or
 View ▸ Wireframe Overlay) draws the cloth and body meshes' edges. View ▸ Fit Map (or the 3D header in fit map shading) switches
 between the Fit, Strain, Stress and Pressure maps. Graphics placed on pieces are printed on the cloth
 in the 3D view and in renders (F12), together with topstitches, buttons, buttonholes and zippers

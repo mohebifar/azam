@@ -32,6 +32,7 @@ mod project;
 mod seam_edit;
 mod seams;
 mod slots;
+mod symmetry;
 mod templates;
 mod torso;
 mod wire;
@@ -99,6 +100,9 @@ pub use seams::{
     set_segment_sa, side_seg_ids,
 };
 pub use slots::{SlotKind, mirror_slot, slot_for_name, slot_kind};
+pub use symmetry::{
+    SYMMETRY_KEY, SymmetrySnapshot, symmetry_axis, symmetry_snapshot, sync_symmetry, toggle_symmetry,
+};
 pub use templates::{
     AbaPieces, DraftOptions, Template, draft_aba, draft_dress, draft_labadeh, draft_skirt, draft_tee,
     from_template, reference_template, refine,

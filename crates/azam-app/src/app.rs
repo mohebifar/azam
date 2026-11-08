@@ -572,6 +572,7 @@ impl AzamApp {
             Operator::Mirror => {
                 self.duplicate_selected(DuplicateMode::Mirror { linked: true }, "Mirror Pieces");
             }
+            Operator::ToggleSymmetry => self.toggle_symmetry(),
             Operator::DetectHems => {
                 let mut marked = 0;
                 self.session

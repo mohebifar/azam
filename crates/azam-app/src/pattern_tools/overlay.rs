@@ -91,6 +91,22 @@ impl AzamApp {
         {
             o.labels.push(label);
         }
+        // symmetry axes, a little past each symmetric piece's top and bottom
+        for pc in project.pieces.values() {
+            if let (Some(x), Some(ol)) = (
+                azam_doc::symmetry_axis(project, &pc.id),
+                shown_outline(project, &pc.id),
+            ) {
+                let (y0, y1) = ol
+                    .poly
+                    .iter()
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), q| {
+                        (a.min(q.y), b.max(q.y))
+                    });
+                let over = 20.0 / self.pattern_view.zoom;
+                o.axes.push((Vec2::new(x, y0 - over), Vec2::new(x, y1 + over)));
+            }
+        }
         // length links: the same number on both segments of each
         for (i, link) in project.links.iter().enumerate() {
             o.labels.extend(

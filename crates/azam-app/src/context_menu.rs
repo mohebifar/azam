@@ -23,6 +23,23 @@ impl AzamApp {
             .map(|i| self.menus[i].title)
     }
 
+    /// Turns symmetric editing of the active piece on or off.
+    pub(crate) fn toggle_symmetry(&mut self) {
+        let Some(piece) = self.session.selection.active.clone() else {
+            self.status = "Select a piece first".into();
+            return;
+        };
+        let mut axis = None;
+        self.session.edit("Symmetric Editing", |p| {
+            axis = azam_doc::toggle_symmetry(p, &piece);
+        });
+        self.status = if axis.is_some() {
+            "Symmetric editing on: moving a point moves its mirror across the dashed axis".into()
+        } else {
+            "Symmetric editing off".into()
+        };
+    }
+
     /// Turns the selected outline points of the active piece from corners into curve points, or
     /// back (Blender's toggle; the outline's first point stays a corner).
     pub(crate) fn toggle_curve_points(&mut self) {
