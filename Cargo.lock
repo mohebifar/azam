@@ -138,6 +138,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "azam-mcp"
+version = "0.1.0"
+dependencies = [
+ "azam-app",
+ "azam-doc",
+ "azam-geom",
+ "azam-render",
+ "azam-sync",
+ "blenderui",
+ "glam",
+ "png",
+ "serde_json",
+]
+
+[[package]]
 name = "azam-mesh"
 version = "0.1.0"
 dependencies = [

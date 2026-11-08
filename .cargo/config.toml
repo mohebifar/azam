@@ -1,3 +1,3 @@
 [alias]
 # Formats azam's crates only. `cargo fmt --all` would also reformat the vendored BUI fork.
-fmt-azam = "fmt -p azam-geom -p azam-mesh -p azam-doc -p azam-avatar -p azam-sim -p azam-sim-gpu -p azam-io -p azam-render -p azam-app -p azam-mhpack -p azam-sync -p azam-trace"
+fmt-azam = "fmt -p azam-geom -p azam-mesh -p azam-doc -p azam-avatar -p azam-sim -p azam-sim-gpu -p azam-io -p azam-render -p azam-app -p azam-mcp -p azam-mhpack -p azam-sync -p azam-trace"

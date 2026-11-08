@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod areas;
+pub mod automation;
 pub mod autosave;
 mod avatar_motion;
 mod colorway_view;

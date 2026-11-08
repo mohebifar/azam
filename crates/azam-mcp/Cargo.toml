@@ -1,0 +1,25 @@
+[package]
+name = "azam-mcp"
+description = "An MCP server for azam: design garments from an AI agent, with pattern CAD tools and screenshots."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "azam-mcp"
+path = "src/main.rs"
+
+[dependencies]
+azam-app = { path = "../azam-app" }
+azam-doc.workspace = true
+azam-geom.workspace = true
+azam-render.workspace = true
+azam-sync = { path = "../azam-sync" }
+blenderui.workspace = true
+glam.workspace = true
+png = "0.17"
+serde_json = { workspace = true, features = ["preserve_order"] }
+
+[lints]
+workspace = true

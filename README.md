@@ -23,6 +23,7 @@ cargo run --release -p azam-app -- --screenshot shot.png --workspace grading --t
 cargo run --release -p azam-app -- --screenshot drape.png --template dress --frames 300   # simulate first
 cargo run --release -p azam-app -- --render render.png --template dress --frames 300      # path-traced
 cargo run --release -p azam-app -- --screenshot r.png --template dress --frames 300 --shading rendered
+cargo run --release -p azam-app -- --join 192.168.1.20:41234            # the window, joined to a live session
 ```
 
 On macOS, `scripts/bundle-macos.sh` builds `target/release/azam.app` (with the MakeHuman pack inside).
@@ -135,6 +136,38 @@ it; File ▸ Export glTF (.glb)… writes the draped garment with the avatar; DX
 notches and grain lines, and File ▸ Import SVG… makes pieces of a drawing's
 closed shapes (curves kept).
 
+## Designing with an AI agent (MCP)
+
+`azam-mcp` is an [MCP](https://modelcontextprotocol.io) server (stdio) that lets an agent such as
+Claude Code design garments: it runs azam headless and offers pattern CAD tools, draping and
+screenshots. The repository's `.mcp.json` registers it for Claude Code in this folder (it runs
+`scripts/azam-mcp.sh`, which builds the server and the app first). Elsewhere:
+
+```bash
+cargo build --release -p azam-app -p azam-mcp
+claude mcp add azam -- "$PWD/target/release/azam-mcp"
+```
+
+Then ask, for example, "design a bias-cut silk slip dress with a cowl back". The tools:
+
+- Project: `new_project` (from a template), `open_project`, `save_project`, `export` (SVG, DXF,
+  ASTM, PDF, tech pack, OBJ, glTF, FBX), `get_project`, `get_piece` (every point and segment with
+  its id, length, bulge and seams), `get_json`.
+- Pattern CAD: `create_piece` (outline, rectangle or ellipse), `move_points`, `insert_point`,
+  `curve_segment`, `delete_points`, `set_segment_length`, `transform_pieces`, `flip_pieces`,
+  `duplicate_piece` (copy or linked mirror), `delete_pieces`, `cut_piece`, `spread_piece` (slash and
+  spread, pleats), `add_dart`, `round_corner`, `add_internal_line`, `sew`, `delete_seam`,
+  `set_allowance`, `set_hem`, `set_piece` (name, fabric, grain, arrangement around the avatar).
+- Materials and body: `set_fabric` (colour and preset), `set_avatar` (measurements).
+- Anything else: `patch_project` (a JSON merge patch on the project file) and `apply_command` (a raw
+  `azam_doc::Command`); `undo`, `redo` and `history`, one step per tool call.
+- Seeing it: `simulate` (drapes and reports the fit), `screenshot` (the 3D view from any angle in
+  solid or fit-map shading, the pattern editor, or the whole window), `render` (path-traced).
+- Live: `open_window` opens an azam window joined live to the agent's project (it runs
+  `azam --join 127.0.0.1:PORT`; `AZAM_BIN` points it at another binary), so you watch each edit
+  land and can edit alongside. `share_session` and `join_session` link it with a window you already
+  have open (File ▸ Share / Join Session).
+
 ## Layout
 
 | Path | What it is |
@@ -150,6 +183,7 @@ closed shapes (curves kept).
 | `crates/azam-sync` | Live collaboration: a yrs CRDT of the project, peer-to-peer over TCP with mDNS discovery, or an update log next to the project file (File ▸ Share / Join Session). |
 | `crates/azam-render` | Offscreen wgpu renderer for the 3D viewport: studio lighting, key-light shadow map with a shadow-catching floor, procedural fabric weaves, Blender's floor grid. |
 | `crates/azam-app` | The application: Blender-style window, editors, operators. Binary `azam`. |
+| `crates/azam-mcp` | MCP server for AI agents: pattern CAD tools, draping and screenshots over the headless app. Binary `azam-mcp`. |
 | `tools/mhpack` | Builds `assets/makehuman/makehuman-cc0.bin` from MakeHuman's CC0 assets (see `assets/makehuman/README.md`). |
 | `third_party/bui` | The BUI fork, created by `scripts/setup-bui.sh` (git-ignored): upstream BUI at `third_party/bui-base-commit.txt` plus `third_party/bui-azam.patch`. After changing the fork, regenerate the patch with `cd third_party/bui && git add -N . && git diff --binary > ../bui-azam.patch`. |
 | `tools/golden` | Node scripts that run the reference JavaScript engine (`src.js`) and record golden data for the Rust tests. |

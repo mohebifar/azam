@@ -22,6 +22,8 @@ struct Args {
     shading: Option<azam_app::operators::Shading>,
     /// A project file to open (the first argument that is not an option or its value).
     open: Option<String>,
+    /// A live session to join (`host:port` or a share code).
+    join: Option<String>,
     frames: usize,
     size: (f32, f32),
 }
@@ -42,11 +44,13 @@ Options:
   --size WxH           window size for --screenshot (default 1480x900)
   --render-size WxH    image size for --render (default 1280x800)
   --samples N          samples per pixel for --render
+  --join TARGET        join a live session (host:port or a share code) on opening
   -h, --help           show this help
 ";
 
 /// Options that take a value.
-const WITH_VALUE: [&str; 9] = [
+const WITH_VALUE: [&str; 10] = [
+    "--join",
     "--shading",
     "--screenshot",
     "--render",
@@ -83,6 +87,7 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
         template: None,
         shading: None,
         open: None,
+        join: None,
         frames: 0,
         size: WINDOW_SIZE,
     };
@@ -100,6 +105,7 @@ fn parse_args(args: &[String]) -> Result<Option<Args>, String> {
             match flag {
                 "--screenshot" => a.screenshot = Some(value),
                 "--render" => a.render = Some(value),
+                "--join" => a.join = Some(value),
                 "--render-size" => a.render_size = parse_size(flag, &value)?,
                 "--samples" => a.samples = parse_num(flag, &value)?,
                 "--workspace" => {
@@ -271,6 +277,13 @@ fn main() {
                 app.set_workspace(w);
             }
         });
+        if let Some(target) = args.join.clone().filter(|_| !headless) {
+            window.root().update(cx, |app, cx| {
+                if let Err(e) = app.join_session(&target, cx) {
+                    eprintln!("azam: could not join {target}: {e}");
+                }
+            });
+        }
         if headless {
             // The first frame lays out the areas; the second renders the viewport at its size.
             for _ in 0..3 {
@@ -330,6 +343,14 @@ mod tests {
         assert_eq!(a.workspace.as_deref(), Some("grading"));
         assert_eq!(a.frames, 30);
         assert_eq!(a.open.as_deref(), Some("shirt.azam.json"));
+        assert_eq!(
+            parse("--join 127.0.0.1:4000")
+                .expect("valid")
+                .expect("not help")
+                .join
+                .as_deref(),
+            Some("127.0.0.1:4000")
+        );
         assert!(matches!(parse("--help"), Ok(None)));
         assert!(matches!(parse("-h"), Ok(None)));
         assert!(parse("--bogus").unwrap_err().contains("unknown option"));
