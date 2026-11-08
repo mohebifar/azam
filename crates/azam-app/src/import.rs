@@ -1,6 +1,6 @@
 //! Bringing pattern pieces in from other software: DXF (AAMA blocks) and SVG drawings.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use azam_doc::{LinePoint, PieceId, Project};
 use azam_io::ImportedPiece;
@@ -64,19 +64,85 @@ impl AzamApp {
                 return;
             }
         };
-        let imported = std::fs::read_to_string(&path)
-            .map_err(|e| e.to_string())
-            .and_then(|text| format.read(&text));
-        match imported {
-            Ok(pieces) => {
-                let count = pieces.len();
-                self.session.edit(&format!("Import {}", format.name()), |p| {
-                    add_imported_pieces(p, &pieces);
-                });
-                self.status = format!("Imported {count} piece(s) from {}", path.display());
+        self.status = match self.import_path(format, &path) {
+            Ok(note) => note,
+            Err(e) => format!("Import failed: {e}"),
+        };
+    }
+
+    /// Adds the pieces of the `format` file at `path` to the project, as one undoable edit; an
+    /// ASTM DXF with rule numbers is graded by the rule table next to it (same name, `.rul`).
+    /// Returns what was imported.
+    ///
+    /// # Errors
+    /// Why the file (or its rule table) could not be read.
+    pub fn import_path(&mut self, format: ImportFormat, path: &Path) -> Result<String, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let pieces = format.read(&text)?;
+        let graded = pieces.iter().any(|pc| pc.rules.iter().any(Option::is_some));
+        let table = if graded {
+            ["rul", "RUL"]
+                .iter()
+                .map(|ext| path.with_extension(ext))
+                .find(|p| p.exists())
+                .map(|p| {
+                    std::fs::read_to_string(&p)
+                        .map_err(|e| e.to_string())
+                        .and_then(|t| azam_io::import_rul(&t).map_err(|e| format!("{}: {e}", p.display())))
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let count = pieces.len();
+        self.session.edit(&format!("Import {}", format.name()), |p| {
+            let created = add_imported_pieces(p, &pieces);
+            if let Some(table) = &table {
+                apply_rule_table(p, &created, &pieces, table);
             }
-            Err(e) => self.status = format!("Import failed: {e}"),
+        });
+        let graded_note = match &table {
+            Some(t) => format!(", graded {} sizes by rule table {}", t.sizes.len(), t.name),
+            None if graded => " (rule numbers but no .rul table next to it: base size only)".to_owned(),
+            None => String::new(),
+        };
+        let note = format!("Imported {count} piece(s) from {}{graded_note}", path.display());
+        Ok(note)
+    }
+}
+
+/// Grades the imported pieces `created` (from `pieces`, in order) by `table`: the project takes
+/// the table's size run and sample size, and each point with a rule number its offsets.
+pub fn apply_rule_table(
+    project: &mut Project,
+    created: &[PieceId],
+    pieces: &[ImportedPiece],
+    table: &azam_io::GradeRuleTable,
+) {
+    azam_doc::set_sizes(project, &table.sizes);
+    azam_doc::set_base_size(project, &table.sample);
+    project.active_size = table.sample.clone();
+    for (id, imported) in created.iter().zip(pieces) {
+        let Some(pc) = project.pieces.get_mut(id) else {
+            continue;
+        };
+        let mut rules = azam_geom::GradeRules::new();
+        for (point, rule) in pc.pts.iter().zip(&imported.rules) {
+            let Some(offsets) = rule.and_then(|n| table.rules.get(&n)) else {
+                continue;
+            };
+            let per_size: std::collections::BTreeMap<_, _> = table
+                .sizes
+                .iter()
+                .zip(offsets)
+                .filter(|&(size, d)| *size != table.sample && (d.x != 0.0 || d.y != 0.0))
+                .map(|(size, d)| (size.clone(), azam_geom::GradeDelta { dx: d.x, dy: d.y }))
+                .collect();
+            if !per_size.is_empty() {
+                rules.insert(point.id.clone(), per_size);
+            }
         }
+        pc.grade = (!rules.is_empty()).then_some(rules);
     }
 }
 
@@ -182,6 +248,10 @@ pub fn add_imported_pieces(project: &mut Project, pieces: &[ImportedPiece]) -> V
             if let Some(g) = piece.grain {
                 pc.grain = g;
             }
+            if piece.allowance_included {
+                // the outline is the cut line already
+                pc.sa = 0.0;
+            }
             pc.name.clone_from(&piece.name);
             if let Some(slot) = slot {
                 slot.clone_into(&mut pc.arr.slot);
@@ -225,6 +295,8 @@ mod tests {
             }],
             notches: vec![Vec2::new(x + 30.0, 0.0)],
             grain: Some(15.0),
+            rules: Vec::new(),
+            allowance_included: false,
         }
     }
 

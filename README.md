@@ -87,7 +87,10 @@ File ▸ Export DXF (All Sizes)… writes the graded nest: every piece in every 
 the sizes laid over each other. File ▸ Export ASTM DXF + Rules… writes the base size as an ASTM
 D6673 DXF (turn points on layer 2, curve points on layer 3, each graded point tagged with its rule
 number) and the matching `.rul` grade-rule table next to it, which pattern CAD systems read back as
-a graded pattern.
+a graded pattern. File ▸ Import DXF reads such a file back: when its boundary points carry rule
+numbers and a `.rul` table of the same name sits next to it, the pieces come in graded (the
+project takes the table's size run and sample size; METRIC and ENGLISH tables, DELTA rules), with
+the cut line as the outline and no added allowance.
 
 Sizes are graded in the Project tab (size run, base size) and the Piece tab's Grading panel (a step
 per size for the selected points); the templates come graded from the size chart, and the avatar

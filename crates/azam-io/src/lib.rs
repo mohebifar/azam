@@ -28,7 +28,8 @@ mod svg;
 mod techpack;
 
 pub use dxf::{
-    AstmFiles, DxfError, ImportedLine, ImportedPiece, export_astm, export_dxf, export_dxf_graded, import_dxf,
+    AstmFiles, DxfError, GradeRuleTable, ImportedLine, ImportedPiece, RulError, export_astm, export_dxf,
+    export_dxf_graded, import_dxf, import_rul,
 };
 pub use fbx::export_fbx;
 pub use gltf::{Animation, MeshFrame, export_glb, export_glb_animated};

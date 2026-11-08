@@ -13,6 +13,8 @@ const SIMPLIFY_TOLERANCE_MM: f64 = 0.4;
 const CLOSE_DISTANCE_MM: f64 = 0.5;
 /// Text that names a piece starts with this (compared without regard to case).
 const NAME_LABEL: &str = "piece name";
+/// A rule number's text sits within this distance of its boundary vertex, in mm.
+const RULE_TEXT_REACH_MM: f64 = 0.5;
 
 /// An open or closed line inside an imported piece.
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +39,12 @@ pub struct ImportedPiece {
     pub notches: Vec<Vec2>,
     /// Grain line angle (layer 7) in degrees from vertical, -90..90, if the block has one.
     pub grain: Option<f64>,
+    /// ASTM grade rule number of each point (a `# n` text on it), or empty when the block
+    /// carries no rule numbers. A graded block's points are its boundary's vertices as written.
+    pub rules: Vec<Option<u32>>,
+    /// Whether the outline is the cut line (an ASTM boundary), so its seam allowance is already
+    /// in it.
+    pub allowance_included: bool,
 }
 
 /// Why a DXF file could not be imported.
@@ -249,6 +257,14 @@ impl Reader {
             (Kind::Line, 11) => e.pts[1].x = num()?,
             (Kind::Line, 21) => e.pts[1].y = -num()?,
             (Kind::Text, 1) => value.clone_into(&mut e.text),
+            (Kind::Text, 10) => e.pts = vec![Vec2::new(num()?, e.pts.first().map_or(0.0, |p| p.y))],
+            (Kind::Text, 20) => {
+                let y = -num()?;
+                match e.pts.first_mut() {
+                    Some(p) => p.y = y,
+                    None => e.pts.push(Vec2::new(0.0, y)),
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -331,20 +347,46 @@ fn make_piece(arena: &[Entity], block_name: &str, items: &[usize]) -> Option<Imp
         .map(|&i| &arena[i])
         .filter(|e| e.is_shape())
         .collect();
-    let net_index = polys
+    // ASTM rule numbers: `# n` texts on the boundary (layer 1)
+    let rule_marks: Vec<(Vec2, u32)> = items
         .iter()
-        .position(|e| e.layer == layer::SEW)
-        .or_else(|| polys.iter().position(|e| e.layer == layer::CUT))
-        .or_else(|| largest(&polys))?;
+        .map(|&i| &arena[i])
+        .filter(|e| e.kind == Kind::Text && e.layer == layer::CUT && e.pts.len() == 1)
+        .filter_map(|e| Some((e.pts[0], rule_number(&e.text)?)))
+        .collect();
+    let boundary = polys.iter().position(|e| e.layer == layer::CUT);
+    let graded = !rule_marks.is_empty() && boundary.is_some();
+    let net_index = if graded {
+        boundary?
+    } else {
+        polys
+            .iter()
+            .position(|e| e.layer == layer::SEW)
+            .or(boundary)
+            .or_else(|| largest(&polys))?
+    };
     let net = polys[net_index];
 
     let mut pts = net.pts.clone();
     if ends_meet(&pts) {
         pts.pop();
     }
-    pts.push(pts[0]);
-    let mut pts = simplify(&pts, SIMPLIFY_TOLERANCE_MM);
-    pts.pop();
+    let rules = if graded {
+        // every vertex as written: rules hang on them
+        pts.iter()
+            .map(|&p| {
+                rule_marks
+                    .iter()
+                    .find(|(at, _)| (*at - p).length() <= RULE_TEXT_REACH_MM)
+                    .map(|&(_, n)| n)
+            })
+            .collect()
+    } else {
+        pts.push(pts[0]);
+        pts = simplify(&pts, SIMPLIFY_TOLERANCE_MM);
+        pts.pop();
+        Vec::new()
+    };
 
     let name = items
         .iter()
@@ -398,7 +440,14 @@ fn make_piece(arena: &[Entity], block_name: &str, items: &[usize]) -> Option<Imp
         internals,
         notches,
         grain,
+        rules,
+        allowance_included: graded,
     })
+}
+
+/// The rule number of an ASTM rule text (`# 12`, `#12`).
+fn rule_number(text: &str) -> Option<u32> {
+    text.trim().strip_prefix('#')?.trim().parse().ok()
 }
 
 /// Distance from `q` to the closed polygon `pts`.

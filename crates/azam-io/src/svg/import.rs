@@ -217,6 +217,8 @@ fn assemble(shapes: &[Shape], groups: &[Group], scale: f64) -> Vec<ImportedPiece
                 .collect(),
             notches: Vec::new(),
             grain: None,
+            rules: Vec::new(),
+            allowance_included: false,
         });
     };
     let area = |s: &Shape| signed_area(&s.points.iter().map(|(p, _)| *p).collect::<Vec<_>>()).abs();

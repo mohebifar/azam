@@ -4,7 +4,7 @@ mod astm;
 mod export;
 mod import;
 
-pub use astm::{AstmFiles, export_astm};
+pub use astm::{AstmFiles, GradeRuleTable, RulError, export_astm, import_rul};
 pub use export::{export_dxf, export_dxf_graded};
 pub use import::{DxfError, ImportedLine, ImportedPiece, import_dxf};
 

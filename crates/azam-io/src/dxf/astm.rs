@@ -254,6 +254,131 @@ impl RuleTable {
     }
 }
 
+/// Millimetres per inch, for rule tables in English units.
+const MM_PER_INCH: f64 = 25.4;
+
+/// A grade rule table read from a `.rul` file.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GradeRuleTable {
+    /// The table's name.
+    pub name: String,
+    /// The size run, smallest first.
+    pub sizes: Vec<SizeName>,
+    /// The sample (base) size the pattern is drawn in.
+    pub sample: SizeName,
+    /// Per rule number, how far the point sits from its sample-size position in each size of
+    /// the run: mm, pattern frame (x right, y down).
+    pub rules: BTreeMap<u32, Vec<Vec2>>,
+}
+
+/// Why a rule table could not be read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RulError {
+    /// The table names no sizes.
+    NoSizes,
+    /// The sample size is not one of the sizes.
+    UnknownSample(String),
+    /// A rule has too few values for the size run.
+    ShortRule(u32),
+    /// A rule kind other than `DELTA`.
+    UnsupportedRule(String),
+}
+
+impl std::fmt::Display for RulError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoSizes => f.write_str("the rule table lists no sizes"),
+            Self::UnknownSample(s) => write!(f, "the sample size {s:?} is not in the size list"),
+            Self::ShortRule(n) => write!(f, "rule {n} has fewer values than there are sizes"),
+            Self::UnsupportedRule(k) => write!(f, "rules of kind {k:?} are not supported (only DELTA)"),
+        }
+    }
+}
+
+impl std::error::Error for RulError {}
+
+/// Reads an ASTM D6673 rule table. `DELTA` rules (each size's step from the next smaller size)
+/// are summed into each size's offset from the sample size; English units are converted to mm.
+///
+/// # Errors
+/// A [`RulError`] when the size list, the sample size or a rule does not make sense.
+pub fn import_rul(text: &str) -> Result<GradeRuleTable, RulError> {
+    let mut name = String::new();
+    let mut sizes: Vec<SizeName> = Vec::new();
+    let mut sample = String::new();
+    let mut scale = 1.0;
+    let mut steps: BTreeMap<u32, Vec<f64>> = BTreeMap::new();
+    let mut current: Option<u32> = None;
+    let value = |line: &str, key: &str| -> Option<String> {
+        let (k, v) = line.split_once(':')?;
+        k.trim().eq_ignore_ascii_case(key).then(|| v.trim().to_owned())
+    };
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(v) = value(line, "UNITS") {
+            scale = if v.eq_ignore_ascii_case("ENGLISH") {
+                MM_PER_INCH
+            } else {
+                1.0
+            };
+        } else if let Some(v) = value(line, "GRADE RULE TABLE") {
+            name = v;
+        } else if let Some(v) = value(line, "SIZE LIST") {
+            sizes = v.split_whitespace().map(SizeName::from).collect();
+        } else if let Some(v) = value(line, "SAMPLE SIZE") {
+            sample = v;
+        } else if let Some(v) = value(line, "RULE") {
+            let mut words = v.split_whitespace();
+            let kind = words.next().unwrap_or_default();
+            if !kind.eq_ignore_ascii_case("DELTA") {
+                return Err(RulError::UnsupportedRule(kind.to_owned()));
+            }
+            current = words.next().and_then(|n| n.parse().ok());
+            if let Some(n) = current {
+                steps.insert(n, Vec::new());
+            }
+        } else if line.eq_ignore_ascii_case("END") {
+            current = None;
+        } else if let Some(values) = current.and_then(|n| steps.get_mut(&n)) {
+            values.extend(
+                line.split(|c: char| c.is_whitespace() || c == ',')
+                    .filter_map(|w| w.parse::<f64>().ok()),
+            );
+        }
+    }
+    if sizes.is_empty() {
+        return Err(RulError::NoSizes);
+    }
+    let sample_index = sizes
+        .iter()
+        .position(|s| s.0 == sample)
+        .ok_or_else(|| RulError::UnknownSample(sample.clone()))?;
+    let mut rules = BTreeMap::new();
+    for (n, values) in steps {
+        if values.len() < 2 * sizes.len() {
+            return Err(RulError::ShortRule(n));
+        }
+        let mut at = Vec2::ZERO;
+        let summed: Vec<Vec2> = (0..sizes.len())
+            .map(|i| {
+                // y up in the file, down in the pattern
+                at += Vec2::new(values[2 * i] * scale, -values[2 * i + 1] * scale);
+                at
+            })
+            .collect();
+        let origin = summed[sample_index];
+        rules.insert(n, summed.into_iter().map(|p| p - origin).collect());
+    }
+    Ok(GradeRuleTable {
+        name,
+        sample: sizes[sample_index].clone(),
+        sizes,
+        rules,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +475,56 @@ mod tests {
         };
         assert!(on("2") >= 4, "corners are turn points");
         assert!(on("3") > on("2"), "curves are mostly curve points");
+    }
+
+    #[test]
+    fn the_rule_table_reads_back_as_each_sizes_offsets() {
+        let p = tee();
+        let files = export_astm(&p, "TEE", ("", ""));
+        let table = import_rul(&files.rul).expect("readable");
+        assert_eq!(table.name, "TEE");
+        assert_eq!(table.sizes, p.sizes);
+        assert_eq!(table.sample, p.base_size);
+        // vertex for vertex, the rules move the base boundary onto each size's boundary
+        let pieces = crate::import_dxf(&files.dxf).expect("readable DXF");
+        let pc = pieces_in_id_order(&p)[0];
+        let boundary = graded_boundary(&p, pc, &p.sizes);
+        let imported = &pieces[0];
+        assert!(imported.allowance_included);
+        assert_eq!(imported.points.len(), boundary[0].len());
+        let base = table
+            .sizes
+            .iter()
+            .position(|s| *s == table.sample)
+            .expect("sample");
+        let mut graded = 0;
+        for (v, pt) in imported.points.iter().enumerate() {
+            assert!((pt.pos - boundary[base][v]).length() < 0.01, "base vertex {v}");
+            let Some(rule) = imported.rules[v] else { continue };
+            graded += 1;
+            for (k, line) in boundary.iter().enumerate() {
+                let moved = pt.pos + table.rules[&rule][k];
+                assert!(
+                    (moved - line[v]).length() < 0.02,
+                    "vertex {v} in size {k}: {moved:?} vs {:?}",
+                    line[v]
+                );
+            }
+        }
+        assert!(graded > 4, "{graded} graded vertices");
+    }
+
+    #[test]
+    fn english_rule_tables_are_converted_to_millimetres() {
+        let rul = "UNITS: ENGLISH\nGRADE RULE TABLE: T\nSIZE LIST: 8 10 12\nSAMPLE SIZE: 10\nRULE: DELTA 1\n0,0 0.25,0.5\n0.25,0.5\nEND\n";
+        let t = import_rul(rul).expect("readable");
+        let r = &t.rules[&1];
+        assert!((r[0] - Vec2::new(-6.35, 12.7)).length() < 1e-9, "{r:?}");
+        assert_eq!(r[1], Vec2::ZERO);
+        assert!((r[2] - Vec2::new(6.35, -12.7)).length() < 1e-9);
+        assert_eq!(
+            import_rul("SIZE LIST: A B\nSAMPLE SIZE: C\n"),
+            Err(RulError::UnknownSample("C".into()))
+        );
     }
 }

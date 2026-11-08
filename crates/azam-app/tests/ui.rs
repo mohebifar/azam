@@ -708,6 +708,55 @@ fn the_astm_export_writes_the_dxf_and_its_rule_table() {
 }
 
 #[test]
+fn an_astm_export_imports_back_as_the_same_graded_pattern() {
+    Application::headless().run(|cx| {
+        let win = cx
+            .open_window(options(), |_, cx| cx.new(AzamApp::new))
+            .expect("window");
+        let path = std::env::temp_dir().join(format!("azam-astm-rt-{}.dxf", std::process::id()));
+        win.root()
+            .read(cx)
+            .export_to(azam_app::export::ExportKind::Astm, &path)
+            .expect("exported");
+        let original = win.root().read(cx).session().project.clone();
+        let before = original.pieces.len();
+        let note = win
+            .root()
+            .update(cx, |app, _| {
+                app.import_path(azam_app::import::ImportFormat::Dxf, &path)
+            })
+            .expect("imported");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("rul"));
+        assert!(note.contains("graded"), "{note}");
+        let project = win.root().read(cx).session().project.clone();
+        assert_eq!(project.sizes, original.sizes);
+        assert_eq!(project.base_size, original.base_size);
+        // each imported piece's outline in each size is the original's cut line in that size
+        let cut_area = |pc: &azam_doc::Piece, size: &azam_geom::SizeName| {
+            let ol = pc.graded_outline(size, &project.base_size);
+            let cut = azam_geom::cut_outline(&ol, |id| pc.allowances().finish(id));
+            azam_geom::signed_area(&cut).abs()
+        };
+        let mut imported: Vec<_> = project.pieces.values().collect();
+        imported.sort_by_key(|pc| pc.id.0.clone());
+        let mut originals: Vec<_> = original.pieces.values().collect();
+        originals.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        let new_pieces: Vec<_> = imported
+            .iter()
+            .filter(|pc| !original.pieces.contains_key(&pc.id))
+            .collect();
+        assert_eq!(new_pieces.len(), before);
+        for size in &original.sizes {
+            let total = |pcs: &[&azam_doc::Piece]| pcs.iter().map(|pc| cut_area(pc, size)).sum::<f64>();
+            let new: Vec<&azam_doc::Piece> = new_pieces.iter().map(|pc| **pc).collect();
+            let (a, b) = (total(&originals), total(&new));
+            assert!((a - b).abs() / a < 0.005, "size {}: {a:.0} vs {b:.0} mm²", size.0);
+        }
+    });
+}
+
+#[test]
 fn a_shortcut_set_in_preferences_runs_its_command() {
     use azam_app::operators::{Operator, Tool};
     Application::headless().run(|cx| {
